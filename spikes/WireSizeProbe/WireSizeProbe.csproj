@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MessagePack ist schon im Stack (SignalR-Kanal nutzt es); hier explizit, damit die
+         MessagePackSerializer-API im Spike direkt verfügbar ist. Google.Protobuf kommt
+         transitiv via Grpc.AspNetCore aus dem Trame-Projekt. -->
+    <PackageReference Include="MessagePack" Version="3.1.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\TrameCommon\TrameCommon.csproj" />
+    <ProjectReference Include="..\..\Trame\Trame.csproj" />
+  </ItemGroup>
+
+</Project>

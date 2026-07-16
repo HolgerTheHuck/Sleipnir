@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Probe gegen MessagePack 2.5.302 = die gepatchte 2.5.x, die TrameHub (Server)
+       als Floor direkt ref'ed (SignalR 8.0.28 würde sonst 2.5.187 ziehen). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Trame.Spikes.MessagePack</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MessagePack" Version="2.5.302" />
+  </ItemGroup>
+
+  <!-- Die beiden .cs-Dateien im Verzeichnis werden vom SDK automatisch als Compile-
+       Items für JEDES der beiden Projekte globbt — genau der geteilte Source, den wir
+       brauchen (dieselben Files kompilieren gegen 2.5.302 bzw. 3.1.8). -->
+
+</Project>

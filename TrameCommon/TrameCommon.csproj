@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>Trame.Common</PackageId>
+    <Description>Shared models, attributes, and exceptions for Trame RPC framework</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <!-- Project README as the package README (PackageReadmeFile=README.md). -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MessagePack.Annotations" Version="3.1.8" />
+  </ItemGroup>
+
+  <!-- System.Text.Json ist in net8.0 Teil des Frameworks, aber NICHT in der
+       netstandard2.1-API-Oberfläche enthalten → für das netstandard2.1-Target
+       explizit als Paket ziehen (Paket targetet selbst netstandard2.0, läuft also
+       auf netstandard2.1). net8.0 braucht kein redundantes Paket. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+  <!-- Die MessagePack-Formatter (JsonElement, JsonNode, TrameResponse) benötigen die volle
+       MessagePack-Assembly, die TrameCommon nicht referenziert (nur Annotations). Die Dateien
+       werden daher hier NICHT kompiliert, sondern per <Compile Include> in TrameHub + TrameClient
+       gelinkt (jeweils gegen deren eigene MessagePack-Version). -->
+  <ItemGroup>
+    <Compile Remove="MessagePack\JsonElementMessagePackFormatter.cs" />
+    <Compile Remove="MessagePack\JsonNodeMessagePackFormatter.cs" />
+    <Compile Remove="MessagePack\TrameResponseMessagePackFormatter.cs" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Trame.Samples.CSharp</RootNamespace>
+    <AssemblyName>Trame.Samples.CSharp</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Trame.Client zieht transitiv Trame.Core + Trame.Common (REST, WebSocket,
+       SignalR). Ein Paket genügt für alle Client-Szenarien. -->
+  <ItemGroup>
+    <PackageReference Include="Trame.Client" Version="1.0.0" />
+  </ItemGroup>
+
+</Project>

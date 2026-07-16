@@ -1,0 +1,17 @@
+{
+  "name": "trame-devui",
+  "version": "1.0.0",
+  "description": "Standalone Trame Developer UI — konfigurierbare SPA, die auf jeden Trame-Server (REST) zeigt. Eingebettet via NuGet Trame.DeveloperUi; dieses Paket liefert die gehostbare Static-Site.",
+  "license": "MIT",
+  "homepage": "https://github.com/HolgerHuckfeldt/Trame",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HolgerHuckfeldt/Trame.git"
+  },
+  "files": [
+    "dist-standalone"
+  ],
+  "scripts": {
+    "prepack": "vite build --mode standalone"
+  }
+}

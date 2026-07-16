@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AddRazorSupportForMvc>false</AddRazorSupportForMvc>
+    <GenerateRazorCompileOnBuild>false</GenerateRazorCompileOnBuild>
+    <GenerateRazorCompileOnPublish>false</GenerateRazorCompileOnPublish>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageId>Trame.DeveloperUi</PackageId>
+    <Description>Built-in developer web UI for Trame RPC framework</Description>
+    <StaticWebAssetBasePath>developer-static</StaticWebAssetBasePath>
+  </PropertyGroup>
+
+  <!-- Project README as the package README (PackageReadmeFile via Directory.Build.props). -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+  <!-- ASP.NET Core-Typen (IEndpointRouteBuilder) für die Wiring-Extension,
+       die dieses Paket mitliefert. Consumer ist ohnehin eine ASP.NET-App. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Dev-Dateien der Svelte-Buildumgebung NICHT als Content/None ins NuGet
+       packen (sonst werden sie dem Konsumenten als contentFiles ins Projekt
+       injiziert). Die gebauten Assets liegen unter wwwroot/ und werden über
+       den Static-Web-Assets-Mechanismus ausgeliefert. -->
+  <ItemGroup>
+    <None Remove="package.json;package-lock.json;tsconfig.json;tsconfig.test.json;vite.config.ts;svelte.config.js;vitest.config.ts;vitest.e2e.config.ts;index.html" />
+    <Content Remove="package.json;package-lock.json;tsconfig.json;tsconfig.test.json;vite.config.ts;svelte.config.js;vitest.config.ts;vitest.e2e.config.ts;index.html" />
+  </ItemGroup>
+
+  <!-- Rely on Razor SDK implicit wwwroot content -->
+</Project>

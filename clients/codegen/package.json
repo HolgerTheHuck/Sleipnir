@@ -1,0 +1,52 @@
+{
+  "name": "trame-codegen",
+  "version": "1.0.0",
+  "description": "Typed client stub generator for the Trame RPC framework — turns /api/trame/discovery into typed TS/JS (C#/Python later) clients. CLI: trame-gen.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./node": {
+      "import": "./dist/node.js",
+      "types": "./dist/node.d.ts"
+    }
+  },
+  "bin": {
+    "trame-gen": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+  },
+  "keywords": [
+    "trame",
+    "rpc",
+    "codegen",
+    "stub-generator",
+    "discovery",
+    "typescript",
+    "javascript",
+    "client"
+  ],
+  "author": "Trame",
+  "license": "MIT",
+  "dependencies": {
+    "trame-client": "file:../ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,19 @@
+<Project>
+
+  <!-- Geteilte NuGet-Metadaten für alle Trame-Pakete, zentral versioniert.
+       Pro-csproj verbleibt nur Paket-spezifisches: PackageId, Description,
+       PackageReadmeFile, IsPackable, StaticWebAssetBasePath u. ä. -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <Authors>Trame</Authors>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/HolgerTheHuck/Trame</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <!-- Symbol-Pakete für alle packbaren Projekte, damit die CI-Snupkg-Step
+         etwas zum Pushen hat (Source-Link nicht aktiviert — PDBs im snupkg). -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+</Project>

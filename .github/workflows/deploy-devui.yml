@@ -1,0 +1,63 @@
+name: Deploy DevUI (Standalone)
+
+# Baut die Trame DevUI im Standalone-Modus (relative Asset-Base) und deployt sie
+# als statische Site auf GitHub Pages. Die Site liegt unter der Repo-Pages-URL
+# und ist über das Settings-Panel auf jeden Trame-Server richtbar.
+#
+# Voraussetzung (manuell, einmalig): Repo → Settings → Pages → Source = GitHub Actions.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'TrameDeveloperUi/**'
+      - 'clients/ts/**'
+      - '.github/workflows/deploy-devui.yml'
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20.x'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deploy-devui
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Der TS-Client liegt als file:-Dependency (../clients/ts) vor; npm install
+      # baut ihn via dessen prepare-Skript, falls vorhanden — sonst explizit bauen.
+      - name: Install DevUI dependencies
+        working-directory: TrameDeveloperUi
+        run: npm ci || npm install
+
+      - name: Build standalone DevUI
+        working-directory: TrameDeveloperUi
+        run: npm run build:standalone
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: TrameDeveloperUi/dist-standalone
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

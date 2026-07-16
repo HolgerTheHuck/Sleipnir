@@ -1,0 +1,4 @@
+node_modules/
+dist/
+src/api/
+.DS_Store

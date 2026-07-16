@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+coverage/
+out/
+.compile-test/
+.tsc-compile/
+.tsc-e2e/
+.cs-compile/
+.py-compile/

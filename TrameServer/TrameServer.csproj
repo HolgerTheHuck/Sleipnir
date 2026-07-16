@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>Trame.Server</PackageId>
+    <Description>Unified ASP.NET Core server integration for Trame — AddTrame + UseTrameTransports + MapTrame in einem Paket.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <!-- ASP.NET Core-Typen (IApplicationBuilder/IEndpointRouteBuilder/MapHub) —
+       Consumer ist ohnehin eine ASP.NET-App. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Aggregiert alle Transporte + DevUI; transitiv TrameCore/TrameCommon. -->
+  <ItemGroup>
+    <ProjectReference Include="..\TrameHub\TrameHub.csproj" />
+    <ProjectReference Include="..\TrameRest\TrameRest.csproj" />
+    <ProjectReference Include="..\TrameWebSocket\TrameWebSocket.csproj" />
+    <ProjectReference Include="..\TrameDeveloperUi\TrameDeveloperUi.csproj" />
+  </ItemGroup>
+
+  <!-- Project README as the package README (resolves the NU5048 warning). -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+</Project>

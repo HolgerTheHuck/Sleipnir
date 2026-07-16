@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    LINQ-Provider-Spike (Prototyp, kein Produktionscode).
+    Ziel: Trame-Calls typsicher aus C#-Code heraus konstruieren — Controller/Methoden/
+    Parameter werden vom Compiler geprüft, die @alias/JsonPath-Verdrahtung eines
+    Batches wird über Expression Trees typgetreu aufgebaut (statt zur Laufzeit aus
+    JSON-Strings zusammengebaut). Verträge werden aus der Discovery generiert
+    (siehe ContractGenerator / Contracts.cs). Tests laufen in-memory gegen die
+    Sample-App (WebApplicationFactory<Program>) auf der jetzt funktionierenden
+    Dependency-Chaining-Basis.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+    <RootNamespace>Trame.Spike.LinqProvider</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="FluentAssertions" Version="6.12.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Spike nutzt den bestehenden C#-Client als Transport und die Sample-App
+         (Program) für In-memory-Integrationstests gegen das reparierte Chaining. -->
+    <ProjectReference Include="..\..\TrameClient\TrameClient.csproj" />
+    <ProjectReference Include="..\..\TrameCommon\TrameCommon.csproj" />
+    <ProjectReference Include="..\..\Trame\Trame.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="discovery.sample.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

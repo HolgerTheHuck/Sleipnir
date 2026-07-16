@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+
+  <!--
+    Trame.Server.Codegen — server-side contract export + drift-check target.
+
+    Auto-imported when this package is referenced. Runs after Build on server projects that expose
+    a Trame contract (contract.trame.json, or $(TrameContractFile)): regenerates the discovery
+    contract in-process from $(TargetPath) via the export tool and fails the build if it drifts
+    from the committed contract. Set TRAME_REGEN_GOLDEN=1 to regenerate the committed contract
+    instead of failing (the intended-change flow).
+
+    Contract file selection (in priority order):
+      1. $(TrameContractFile) — an explicit path (project-relative or absolute).
+      2. contract.trame.json in the project directory (the default convention).
+    Set TrameContractEnabled=false to opt out.
+
+    The export tool runs in its own process (invoked via dotnet), isolating the server assembly
+    load from the MSBuild process — no version collisions, no locked files. The tool prints a
+    pass / drift-diff / regen message to stdout (which <Exec> echoes to the build log); this
+    target only translates the tool's exit code into a build <Error>.
+  -->
+
+  <PropertyGroup>
+    <TrameContractFile Condition="'$(TrameContractFile)' == '' AND Exists('$(MSBuildProjectDirectory)\contract.trame.json')">contract.trame.json</TrameContractFile>
+    <!-- Default tool location when consumed as a NuGet PackageReference. For in-repo dev
+         (ProjectReference), set TrameExportToolDll to the built tool dll before importing. -->
+    <TrameExportToolDll Condition="'$(TrameExportToolDll)' == ''">$(MSBuildThisFileDirectory)..\tasks\net8.0\Trame.Server.Codegen.dll</TrameExportToolDll>
+    <TrameContractEnabled Condition="'$(TrameContractEnabled)' == ''">true</TrameContractEnabled>
+    <TrameRegen Condition="'$(TRAME_REGEN_GOLDEN)' == '1'">true</TrameRegen>
+  </PropertyGroup>
+
+  <!-- Only run on projects that actually expose a Trame contract (a configured contract file).
+       Skips library/transit projects that happen to reference the NuGet but are not servers. -->
+  <Target Name="TrameExportDriftCheck" AfterTargets="Build"
+          Condition="'$(TrameContractEnabled)' != 'false' AND '$(TrameContractFile)' != '' AND '$(TrameExportToolDll)' != ''">
+
+    <PropertyGroup>
+      <_TrameRegenArg Condition="'$(TrameRegen)' == 'true'">--regen</_TrameRegenArg>
+    </PropertyGroup>
+
+    <!-- IgnoreExitCode=true so <Exec> never fails the build itself; the exit code is translated
+         into a build <Error> below (a custom message is clearer than the raw Exec failure). The
+         tool's stdout (pass / drift diff / regen confirmation) is echoed to the build log. -->
+    <Exec Command="dotnet &quot;$(TrameExportToolDll)&quot; --assembly &quot;$(TargetPath)&quot; --contract &quot;$(TrameContractFile)&quot; $(_TrameRegenArg)"
+          IgnoreExitCode="true"
+          WorkingDirectory="$(MSBuildProjectDirectory)">
+      <Output TaskParameter="ExitCode" PropertyName="TrameExportExitCode" />
+    </Exec>
+
+    <!-- Exit codes from the tool: 0 = ok / regenerated, 1 = drift detected, 2 = tool error. -->
+    <Error Condition="'$(TrameExportExitCode)' == '1'"
+           Text="Trame contract drift detected: the committed $(TrameContractFile) does not match the server's runtime discovery. See the regenerated-vs-committed diff above. If the change is intentional, regenerate with: TRAME_REGEN_GOLDEN=1 dotnet build" />
+    <Error Condition="'$(TrameExportExitCode)' == '2'"
+           Text="Trame export tool error (not a contract drift). See the tool output above." />
+    <Error Condition="'$(TrameExportExitCode)' != '0' AND '$(TrameExportExitCode)' != '1' AND '$(TrameExportExitCode)' != '2'"
+           Text="Trame export tool returned unexpected exit code '$(TrameExportExitCode)'. See the tool output above." />
+  </Target>
+
+</Project>

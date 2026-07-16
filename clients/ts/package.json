@@ -1,0 +1,46 @@
+{
+  "name": "trame-client",
+  "version": "1.0.0",
+  "description": "Isomorphic JavaScript/TypeScript client for the Trame multi-transport RPC framework (REST + WebSocket). Browser + Node.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+  },
+  "keywords": [
+    "trame",
+    "rpc",
+    "rest",
+    "websocket",
+    "isomorphic",
+    "typescript",
+    "browser",
+    "node"
+  ],
+  "author": "Trame",
+  "license": "MIT",
+  "optionalDependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

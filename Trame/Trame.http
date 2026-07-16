@@ -1,0 +1,74 @@
+@Trame_HostAddress = http://localhost:5052
+
+### Discovery – Alle verfügbaren Controller/Methoden abrufen
+GET {{Trame_HostAddress}}/api/trame/discovery
+Accept: application/json
+
+### Single Call – GetAdresse (TestService)
+POST {{Trame_HostAddress}}/api/trame/json
+Content-Type: application/json
+
+{
+  "controller": "TestService",
+  "method": "GetAdresse",
+  "params": [
+    { "parameterName": "id", "data": 1 },
+    { "parameterName": "greet", "data": "Hallo" }
+  ],
+  "id": "TestService.GetAdresse"
+}
+
+### Single Call – GetAllCustomers (Customer)
+POST {{Trame_HostAddress}}/api/trame/json
+Content-Type: application/json
+
+{
+  "controller": "Customer",
+  "method": "GetAllCustomers",
+  "params": [],
+  "id": "Customer.GetAllCustomers"
+}
+
+### Single Call – AddCustomer (Customer)
+POST {{Trame_HostAddress}}/api/trame/json
+Content-Type: application/json
+
+{
+  "controller": "Customer",
+  "method": "AddCustomer",
+  "params": [
+    { "parameterName": "name", "data": "Max Mustermann" }
+  ],
+  "id": "Customer.AddCustomer"
+}
+
+### Multi Call – Serial mit Dependency-Chaining
+POST {{Trame_HostAddress}}/api/trame/json/multi
+Content-Type: application/json
+
+{
+  "requests": [
+    {
+      "controller": "Customer",
+      "method": "AddCustomer",
+      "params": [
+        { "parameterName": "name", "data": "Alice" }
+      ],
+      "id": "createAlice",
+      "dependencyMapping": {
+        "createAliceId": "$"
+      }
+    },
+    {
+      "controller": "Customer",
+      "method": "GetCustomerById",
+      "params": [
+        { "parameterName": "id", "data": "@createAliceId" }
+      ],
+      "id": "getAlice"
+    }
+  ],
+  "mode": 1
+}
+
+###

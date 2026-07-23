@@ -123,6 +123,18 @@ public class TrameWebSocketClientReconnectTests
             }
         }
 
+        /// <summary>
+        /// Stoppt den Listener, ohne den gesamten Server zu disposen. Danach verweigert der
+        /// Port neue Verbindungen (TCP-refused) — <c>ClientWebSocket.ConnectAsync</c> schlägt
+        /// auf jeder Plattform schnell fehl, im Gegensatz zu einem mit HTTP 400 abgewiesenen
+        /// WS-Upgrade, das auf Linux/ManagedWebSocket in <c>ConnectAsync</c> hängen bleibt.
+        /// </summary>
+        public void StopListener()
+        {
+            try { _listener?.Stop(); } catch { /* ignore */ }
+            try { _listener?.Close(); } catch { /* ignore */ }
+        }
+
         public async ValueTask DisposeAsync()
         {
             _cts.Cancel();
@@ -209,17 +221,21 @@ public class TrameWebSocketClientReconnectTests
 
         await using var client = new TrameWebSocketClient(server.BaseUrl,
             autoReconnect: true,
-            reconnectDelays: new[] { TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(20) });
+            reconnectDelays: new[] { TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(20) });
 
         // Connect + Call ok.
         var first = await client.Call(EchoRequest("b1"));
         first!.Code.Should().Be(200);
 
-        // Upgrade abweisen + aktuelle Verbindung droppen -> jeder Reconnect-Versuch
-        // schlägt schnell fehl (400), bis der Backoff erschöpft ist (Disconnected).
-        server.RejectUpgrade = true;
+        // Listener stoppen (Port verweigert neue Verbindungen -> TCP-refused) und aktuelle
+        // Verbindung droppen. Jeder Reconnect-Versuch schlägt auf jeder Plattform zuverlässig
+        // fehl: ein mit HTTP 400 abgewiesenes WS-Upgrade bleibt auf Linux/ManagedWebSocket in
+        // ConnectAsync hängen (auf Windows hingegen schlägt es in ~30 ms fehl) — der tote Port
+        // (TCP-RST) scheitert auf beiden Plattformen, nur auf Windows langsamer (~4 s pro
+        // Versuch, WinHTTP-Connect-Timeout). Daher zwei Versuche und ein großzügiger Wait-Timeout.
+        server.StopListener();
         await server.CloseCurrentAsync();
-        await WaitForStateAsync(client, TrameConnectionState.Disconnected, timeoutMs: 3000);
+        await WaitForStateAsync(client, TrameConnectionState.Disconnected, timeoutMs: 20000);
         client.State.Should().Be(TrameConnectionState.Disconnected);
 
         await client.DisposeAsync();

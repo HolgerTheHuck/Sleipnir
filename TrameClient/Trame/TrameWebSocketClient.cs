@@ -60,6 +60,12 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
     private TrameConnectionState _state = TrameConnectionState.Disconnected;
     private Task? _reconnectTask;
     private CancellationTokenSource? _reconnectCts;
+    // Socket currently in-flight inside ConnectAsync (lazy connect or reconnect). DisposeAsync
+    // aborts it so a ConnectAsync that does not promptly honor its CancellationToken (e.g. a hung
+    // WebSocket upgrade against a 400 rejection on Linux/ManagedWebSocket) cannot block the
+    // await on the reconnect task and deadlock disposal.
+    private ClientWebSocket? _connectingSocket;
+    private readonly object _connectGate = new();
     private bool _disposed;
 
     /// <summary>
@@ -141,12 +147,19 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         SetState(TrameConnectionState.Connecting);
         try
         {
+            lock (_connectGate)
+                _connectingSocket = _webSocket;
             await _webSocket.ConnectAsync(_uri, ct);
         }
         catch
         {
             SetState(TrameConnectionState.Disconnected);
             throw;
+        }
+        finally
+        {
+            lock (_connectGate)
+                _connectingSocket = null;
         }
 
         StartReader();
@@ -495,6 +508,8 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
                     var socket = CreateSocket();
                     try
                     {
+                        lock (_connectGate)
+                            _connectingSocket = socket;
                         await socket.ConnectAsync(_uri, ct);
                         _webSocket = socket;
                         StartReader();
@@ -512,6 +527,14 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
                         _logger?.LogWarning("WebSocket reconnect attempt {Attempt} failed: {Message}", i + 1, ex.Message);
                         try { socket.Dispose(); } catch { /* ignore */ }
                         // weiter zum nächsten Backoff-Intervall
+                    }
+                    finally
+                    {
+                        lock (_connectGate)
+                        {
+                            if (ReferenceEquals(_connectingSocket, socket))
+                                _connectingSocket = null;
+                        }
                     }
                 }
                 finally
@@ -544,6 +567,16 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
 
         // Reconnect stoppen (terminal — kein weiterer Reconnect).
         _reconnectCts?.Cancel();
+        // Ein in-flight ConnectAsync, das seinen Cancellation-Token nicht zügig honoriert
+        // (z. B. ein hängendes WS-Upgrade), würde das await _reconnectTask blockieren lassen.
+        // Den Connecting-Socket abbrechen, damit ConnectAsync sofort beendet wird.
+        ClientWebSocket? inflight;
+        lock (_connectGate)
+            inflight = _connectingSocket;
+        if (inflight != null)
+        {
+            try { inflight.Dispose(); } catch { /* ignore */ }
+        }
         if (_reconnectTask != null)
         {
             try { await _reconnectTask; } catch { /* ignore */ }

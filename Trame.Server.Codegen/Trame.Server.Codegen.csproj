@@ -17,6 +17,10 @@
     <!-- Tool package: the build output ships in tasks/net8.0/ (not lib/), so the "no lib
          assembly" and "deps not referenced" pack warnings are expected and intentional. -->
     <NoWarn>NU5100;NU5128</NoWarn>
+    <!-- Tool package: IncludeBuildOutput=false ships the assembly in tasks/net8.0/ via <None>,
+         so the SDK's snupkg has no .pdb and nuget.org rejects it (400 "no symbol files").
+         Disable symbol packaging here — the 9 library packages still ship snupkgs. -->
+    <IncludeSymbols>false</IncludeSymbols>
   </PropertyGroup>
 
   <ItemGroup>

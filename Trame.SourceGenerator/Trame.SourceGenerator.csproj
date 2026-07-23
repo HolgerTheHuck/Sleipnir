@@ -22,6 +22,10 @@
          internal to Trame, not a versioned analyzer library. -->
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <NoWarn>RS2008;NU5128</NoWarn>
+    <!-- Analyzer package: IncludeBuildOutput=false ships the assembly in analyzers/dotnet/cs/
+         via a <None>, so the SDK's snupkg has no .pdb and nuget.org rejects it (400 "no symbol
+         files"). Disable symbol packaging here — the 9 library packages still ship snupkgs. -->
+    <IncludeSymbols>false</IncludeSymbols>
   </PropertyGroup>
 
   <!-- Expose the TryEmit diagnostic-mapping seam to the test project. The test references this

@@ -1,4 +1,6 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using TrameClient.Trame;
 using TrameCommon.Exceptions;
 using TrameCommon.Models;
@@ -12,98 +14,97 @@ using Xunit;
 namespace TrameTests.Unit.Client;
 
 /// <summary>
-/// Reconnect-Tests für <see cref="TrameWebSocketClient"/>. Da <see cref="ClientWebSocket"/>
-/// sealed ist, läuft ein minimaler <see cref="HttpListener"/>-WS-Server, der Trame-Responses
-/// echoed und den serverseitigen Close (Drop) steuern kann.
+/// Reconnect tests for <see cref="TrameWebSocketClient"/>. Because <see cref="ClientWebSocket"/>
+/// is sealed, a minimal WebSocket server runs in-process. It is built on <b>Kestrel</b>
+/// (the same stack the product ships), not <c>HttpListener</c>: a server-side abort
+/// (<c>WebSocket.Dispose()</c>) must reliably surface as a transport error in the client's
+/// <c>ReceiveAsync</c> on every platform. On Linux, <c>HttpListener</c>'s WebSocket abort
+/// did <i>not</i> unblock a <c>ClientWebSocket</c> (<c>ManagedWebSocket</c>) read, so the
+/// client never noticed the drop and reconnect never started. Kestrel aborts the underlying
+/// TCP connection, which the client detects promptly on Linux too.
 /// </summary>
 public class TrameWebSocketClientReconnectTests
 {
-    /// <summary>Minimaler WS-Server: echoed Trame-Responses, zählt Accepts, hält den aktuellen Socket.</summary>
+    /// <summary>Minimal Kestrel WS server: echoes Trame responses, counts accepts, holds the current socket.</summary>
     private sealed class ReconnectWsServer : IAsyncDisposable
     {
-        private HttpListener? _listener;
-        private CancellationTokenSource _cts = new();
-        private Task? _acceptLoop;
+        private WebApplication? _app;
         private readonly object _gate = new();
         public string BaseUrl { get; private set; } = "";
         public int AcceptCount;
         public WebSocket? Current;
         public bool EchoEnabled = true;
-        public bool RejectUpgrade = false;
 
         public void Start()
         {
-            // Freien Port über TcpListener reservieren (Port 0 -> OS vergibt einen).
+            // Reserve a free port via a throwaway TcpListener (port 0 -> OS assigns one),
+            // then bind Kestrel to exactly that port. Kestrel does not resolve port 0
+            // dynamically the way HttpListener does, so the reservation is needed.
             var tcp = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
             tcp.Start();
-            var port = ((System.Net.IPEndPoint)tcp.LocalEndpoint).Port;
+            var port = ((IPEndPoint)tcp.LocalEndpoint).Port;
             tcp.Stop();
 
-            var prefix = $"http://localhost:{port}/tramews/";
-            _listener = new HttpListener();
-            _listener.Prefixes.Add(prefix);
-            _listener.Start();
-            BaseUrl = $"http://localhost:{port}";
+            var url = $"http://localhost:{port}";
+            var builder = WebApplication.CreateBuilder();
+            // Keep test output clean — no console logging from the ephemeral host.
+            builder.Logging.ClearProviders();
+            builder.WebHost.UseUrls(url);
+            var app = builder.Build();
+            app.UseWebSockets();
 
-            _acceptLoop = Task.Run(AcceptLoopAsync);
-        }
-
-        private async Task AcceptLoopAsync()
-        {
-            while (!_cts.IsCancellationRequested)
+            app.Map("/tramews", async context =>
             {
-                HttpListenerContext ctx;
-                try { ctx = await _listener!.GetContextAsync(); }
-                catch { return; }
-
-                _ = Task.Run(async () =>
+                if (!context.WebSockets.IsWebSocketRequest)
                 {
-                    try
+                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    return;
+                }
+                using var ws = await context.WebSockets.AcceptWebSocketAsync();
+                lock (_gate)
+                {
+                    Interlocked.Increment(ref AcceptCount);
+                    Current = ws;
+                }
+                try
+                {
+                    await EchoLoopAsync(ws);
+                }
+                finally
+                {
+                    lock (_gate)
                     {
-                        if (RejectUpgrade)
-                        {
-                            // WS-Upgrade ablehnen -> ClientWebSocket.ConnectAsync schlägt schnell fehl
-                            // (für die Backoff-Erschöpfung, ohne auf TCP-Refused warten zu müssen).
-                            ctx.Response.StatusCode = 400;
-                            ctx.Response.Close();
-                            return;
-                        }
-                        var wsCtx = await ctx.AcceptWebSocketAsync(subProtocol: null);
-                        using var ws = wsCtx.WebSocket;
-                        lock (_gate)
-                        {
-                            Interlocked.Increment(ref AcceptCount);
-                            Current = ws;
-                        }
-                        await EchoLoopAsync(ws);
-                        lock (_gate)
-                        {
-                            if (Current == ws) Current = null;
-                        }
+                        if (ReferenceEquals(Current, ws))
+                            Current = null;
                     }
-                    catch { /* ignore */ }
-                });
-            }
+                }
+            });
+
+            // StartAsync returns once Kestrel is accepting connections — avoids the
+            // first-connect race a blocking Run would introduce.
+            app.StartAsync().GetAwaiter().GetResult();
+            _app = app;
+            BaseUrl = url;
         }
 
         private async Task EchoLoopAsync(WebSocket ws)
         {
             var buffer = new byte[8192];
-            while (ws.State == WebSocketState.Open && !_cts.IsCancellationRequested)
+            while (ws.State == WebSocketState.Open)
             {
                 WebSocketReceiveResult r;
-                try { r = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token); }
+                try { r = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None); }
                 catch { return; }
                 if (r.MessageType == WebSocketMessageType.Close)
                     return;
                 if (!EchoEnabled)
-                    continue; // Call offen halten (für In-Flight-Drop-Test)
+                    continue; // Keep the call open (for the in-flight drop test)
 
                 var text = Encoding.UTF8.GetString(buffer, 0, r.Count);
                 var id = ExtractId(text);
                 var respJson = $"{{\"code\":200,\"data\":null,\"id\":\"{id}\"}}";
                 var bytes = Encoding.UTF8.GetBytes(respJson);
-                try { await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token); }
+                try { await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None); }
                 catch { return; }
             }
         }
@@ -114,22 +115,27 @@ public class TrameWebSocketClientReconnectTests
             lock (_gate) ws = Current;
             if (ws != null)
             {
-                // Abort (Dispose) statt sauberem CloseAsync: ein gleichzeitiges
-                // ReceiveAsync im EchoLoop würde sonst den Close-Handshake blockieren.
-                // Dispose löst beim Client einen Transportfehler aus (unerwarteter Drop).
-                try { ws.Dispose(); }
+                // Send a close frame (CloseOutputAsync = write direction only; it does NOT
+                // wait for the peer's ack, so it cannot conflict with the echo loop's pending
+                // ReceiveAsync the way CloseAsync would). The client's read loop receives it
+                // as a Close message and treats any server-initiated close as a terminal
+                // error → CancelAllPending + StartReconnect. A close frame is data on the
+                // wire, so it is delivered reliably on both Windows and Linux — unlike an
+                // abort (Dispose), which a Kestrel client's idle ReceiveAsync does not
+                // promptly notice on Windows.
+                try { await ws.CloseOutputAsync(WebSocketCloseStatus.EndpointUnavailable, "drop", CancellationToken.None); }
                 catch { /* ignore */ }
-                await Task.CompletedTask;
             }
         }
 
         public async ValueTask DisposeAsync()
         {
-            _cts.Cancel();
-            try { _listener?.Stop(); } catch { /* ignore */ }
-            try { _listener?.Close(); } catch { /* ignore */ }
-            if (_acceptLoop != null) { try { await _acceptLoop; } catch { /* ignore */ } }
-            _cts.Dispose();
+            var app = _app;
+            if (app != null)
+            {
+                try { await app.StopAsync(); } catch { /* ignore */ }
+                try { await app.DisposeAsync(); } catch { /* ignore */ }
+            }
         }
 
         private static string ExtractId(string json)

@@ -123,18 +123,6 @@ public class TrameWebSocketClientReconnectTests
             }
         }
 
-        /// <summary>
-        /// Stoppt den Listener, ohne den gesamten Server zu disposen. Danach verweigert der
-        /// Port neue Verbindungen (TCP-refused) — <c>ClientWebSocket.ConnectAsync</c> schlägt
-        /// auf jeder Plattform schnell fehl, im Gegensatz zu einem mit HTTP 400 abgewiesenen
-        /// WS-Upgrade, das auf Linux/ManagedWebSocket in <c>ConnectAsync</c> hängen bleibt.
-        /// </summary>
-        public void StopListener()
-        {
-            try { _listener?.Stop(); } catch { /* ignore */ }
-            try { _listener?.Close(); } catch { /* ignore */ }
-        }
-
         public async ValueTask DisposeAsync()
         {
             _cts.Cancel();
@@ -219,23 +207,37 @@ public class TrameWebSocketClientReconnectTests
         await using var server = new ReconnectWsServer();
         server.Start();
 
+        // Socket-Factory: der erste Aufruf (Konstruktor) liefert einen echten Socket, der sich
+        // gegen den Live-Server verbindet. Jeder weitere Aufruf (Reconnect-Versuche) liefert
+        // einen vorab disposeden Socket -> ConnectAsync wirft sofort ObjectDisposedException,
+        // deterministisch auf jeder Plattform (~8 ms, kein TCP-RST-Timing, kein HttpListener-
+        // Teardown nötig). So erschöpft der Backoff verlässlich -> Disconnected. (Ein mit
+        // HTTP 400 abgewiesenes Upgrade hängt auf Linux/ManagedWebSocket in ConnectAsync; ein
+        // toter Port braucht auf Windows ~4 s pro Versuch — beides nicht plattformunabhängig.)
+        var factoryCalls = 0;
+        Func<ClientWebSocket> factory = () =>
+        {
+            var n = Interlocked.Increment(ref factoryCalls);
+            if (n == 1)
+                return new ClientWebSocket();
+            var dead = new ClientWebSocket();
+            dead.Dispose();
+            return dead;
+        };
+
         await using var client = new TrameWebSocketClient(server.BaseUrl,
             autoReconnect: true,
-            reconnectDelays: new[] { TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(20) });
+            reconnectDelays: new[] { TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(20) },
+            socketFactory: factory);
 
-        // Connect + Call ok.
+        // Connect + Call ok (realer Socket gegen den Live-Server).
         var first = await client.Call(EchoRequest("b1"));
         first!.Code.Should().Be(200);
 
-        // Listener stoppen (Port verweigert neue Verbindungen -> TCP-refused) und aktuelle
-        // Verbindung droppen. Jeder Reconnect-Versuch schlägt auf jeder Plattform zuverlässig
-        // fehl: ein mit HTTP 400 abgewiesenes WS-Upgrade bleibt auf Linux/ManagedWebSocket in
-        // ConnectAsync hängen (auf Windows hingegen schlägt es in ~30 ms fehl) — der tote Port
-        // (TCP-RST) scheitert auf beiden Plattformen, nur auf Windows langsamer (~4 s pro
-        // Versuch, WinHTTP-Connect-Timeout). Daher zwei Versuche und ein großzügiger Wait-Timeout.
-        server.StopListener();
+        // Aktuelle Verbindung droppen -> ReadLoop beendet sich -> Hintergrund-Reconnect startet.
+        // Dessen Versuche nutzen den disposeden Socket und schlagen sofort fehl -> Backoff erschöpft.
         await server.CloseCurrentAsync();
-        await WaitForStateAsync(client, TrameConnectionState.Disconnected, timeoutMs: 20000);
+        await WaitForStateAsync(client, TrameConnectionState.Disconnected, timeoutMs: 3000);
         client.State.Should().Be(TrameConnectionState.Disconnected);
 
         await client.DisposeAsync();

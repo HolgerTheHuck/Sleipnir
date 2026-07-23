@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>Trame.Server</PackageId>
-    <Description>Unified ASP.NET Core server integration for Trame — AddTrame + UseTrameTransports + MapTrame in einem Paket.</Description>
+    <Description>Unified ASP.NET Core server integration for Trame — AddTrame + UseTrameTransports + MapTrame in a single package.</Description>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 

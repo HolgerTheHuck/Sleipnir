@@ -30,7 +30,7 @@ public class TrameControllerBuilder
     {
         foreach (var assembly in assemblies.Length > 0 ? assemblies : AppDomain.CurrentDomain.GetAssemblies())
         {
-            foreach (var type in assembly.GetTypes())
+            foreach (var type in TypeScanning.SafeGetTypes(assembly))
             {
                 var attr = type.GetCustomAttributes(typeof(TrameControllerAttribute), true)
                     .OfType<TrameControllerAttribute>().FirstOrDefault();

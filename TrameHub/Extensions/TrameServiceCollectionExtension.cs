@@ -146,7 +146,7 @@ namespace TrameHub.Extensions
             // werden nur auf explizite Registrierung (Builder/Add<T> oder Register<T>) hin DI-registriert.
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
-                foreach (Type type in assembly.GetTypes())
+                foreach (Type type in TypeScanning.SafeGetTypes(assembly))
                 {
                     var attr = type.GetCustomAttributes(typeof(TrameControllerAttribute), true)
                         .OfType<TrameControllerAttribute>().FirstOrDefault();
@@ -182,7 +182,7 @@ namespace TrameHub.Extensions
             // werden hier übersprungen — sie registriert man nur explizit.
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
-                foreach (Type type in assembly.GetTypes())
+                foreach (Type type in TypeScanning.SafeGetTypes(assembly))
                 {
                     var attr = type.GetCustomAttributes(typeof(TrameControllerAttribute), true)
                         .OfType<TrameControllerAttribute>().FirstOrDefault();

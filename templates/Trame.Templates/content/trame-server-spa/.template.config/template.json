@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Trame",
+  "classifications": [ "Web", "Trame", "Server", "SPA", "Svelte" ],
+  "identity": "Trame.Server.Spa",
+  "name": "Trame Server with Svelte SPA",
+  "shortName": "trame-server-spa",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "sourceName": "TrameServerSpaTemplate",
+  "preferNameDirectory": true,
+  "primaryOutputs": [
+    { "path": "TrameServerSpaTemplate.csproj" }
+  ],
+  "sources": [
+    {
+      "source": "./",
+      "target": "./",
+      "exclude": [
+        "**/.template.config/**",
+        "**/node_modules/**",
+        "**/obj/**",
+        "**/bin/**"
+      ]
+    }
+  ]
+}

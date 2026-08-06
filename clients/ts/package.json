@@ -20,7 +20,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "trame",
@@ -34,6 +35,19 @@
   ],
   "author": "Trame",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HolgerTheHuck/Trame.git",
+    "directory": "clients/ts"
+  },
+  "bugs": {
+    "url": "https://github.com/HolgerTheHuck/Trame/issues"
+  },
+  "homepage": "https://github.com/HolgerTheHuck/Trame/tree/main/clients/ts#readme",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "optionalDependencies": {
     "ws": "^8.18.0"
   },

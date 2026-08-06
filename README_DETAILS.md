@@ -48,7 +48,7 @@ Trame is **code-first**: you write C# classes and methods, decorate them with at
 | Dependency-chaining | ❌ calls are independent | ✅ `@alias` resolution |
 | Type contracts | ❌ untyped `params` | ✅ signature inference (`[TrameDataContract]` optional) |
 | API discovery | ❌ (needs OpenRPC) | ✅ built-in `/api/trame/discovery` |
-| Documentation | ❌ (external) | ✅ `[TrameDocumentation]` + `[TrameExample]` |
+| Documentation | ❌ (external) | ✅ `[TrameDocumentation]` + `[TrameExample]` (class/method level in v1) |
 | Streaming | ❌ | ✅ `IAsyncEnumerable<T>` |
 | Authorization | ❌ (transport-level) | ✅ `[TrameAuthorise]` |
 | Error model | ✅ basic (`code` + `message`) | ✅ `TrameError` with details + requestId |
@@ -81,7 +81,7 @@ Trame was designed from the ground up as a **command-oriented web API** — not 
 
 1. **Method-oriented, not resource-oriented**: `[TrameController("Customer")]` + `[TrameMethod("AddOrder")]` — no URL routing, no HTTP verbs to choose, no DTO mapping
 2. **Batch calls**: Send 10 calls in one roundtrip — the server executes them and returns 10 responses
-3. **Dependency chaining** (GraphQL-inspired): One request exposes values via `Exposes("$", "orderId")` (result-relative JSON path), the next uses `WithAlias("@orderId")` — the server resolves dependencies in a single roundtrip. A wildcard path `Exposes("$[*].Id", "ids")` collects **all** matches into an array and injects it as one list-typed parameter — `Search → GetByIds(@ids)` in a single roundtrip, like a server-side `Select`
+3. **Dependency chaining** (GraphQL-inspired): One request exposes values via `Exposes("$", "orderId")` (result-relative JSON path), the next uses `WithAlias("@orderId")` — the server resolves dependencies in a single roundtrip. A wildcard path `Exposes("$[*].id", "ids")` collects **all** matches into an array and injects it as one list-typed parameter — `Search → GetByIds(@ids)` in a single roundtrip, like a server-side `Select`
 4. **Multi-transport**: REST for compatibility, WebSocket for low-latency persistent connections, SignalR for browser clients — same API, different wire protocols
 5. **Expression-Tree invocation**: Methods are pre-compiled to delegates at registration time — no reflection per call
 
@@ -400,7 +400,7 @@ Trame v1 is intentionally focused. The following are deliberate scope decisions,
 |---------|-------------|
 | TrameCommon | Shared models, attributes, exceptions |
 | TrameCore | Invoker, discovery, dependency resolver, interceptors |
-| TrameHub | SignalR transport + AddTrame() / UseTrame() extensions |
+| TrameHub | SignalR transport; AddTrame() and low-level UseTrame() live in `TrameHub.Extensions` |
 | TrameRest | REST transport (Minimal APIs + MVC controller) |
 | TrameWebSocket | WebSocket transport (RFC 6455, JSON text frames) |
 | TrameClient | Client library (REST, WebSocket, SignalR clients) |

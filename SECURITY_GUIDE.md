@@ -159,8 +159,16 @@ Before exposing Trame to untrusted clients:
    generic `500` with no message leak. Business errors you return via `TrameResults.*` are *not*
    gated by this — their messages reach the client by design, so keep them free of sensitive
    context.
-4. **Do not expose the Developer UI publicly.** Omit `MapTrameDeveloperUi` in production, or put
-   it behind auth. It is a dev tool, not a production surface.
+4. **Do not expose the Developer UI publicly.** `MapTrame()` always maps the Developer UI at
+   `/Trame`, so the only way to omit it is to stop using `MapTrame()` and wire the production
+   endpoints manually:
+   ```csharp
+   app.UseTrameTransports();
+   app.MapTrameEndpoints("/api/trame");   // REST only
+   // map the SignalR hub yourself if you need it
+   ```
+   If you keep `MapTrame()`, put `/Trame` behind auth at the reverse proxy or middleware layer.
+   The DevUI is a dev tool, not a production surface.
 5. **Set Kestrel limits** — `MaxConcurrentConnections`, `MaxConcurrentUpgradedConnections`,
    `MaxRequestBodySize`. Trame's framework caps (1 MB REST body, 1 MB WS message) sit on top of
    these; the global limits are the host's responsibility:

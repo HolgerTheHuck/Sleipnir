@@ -52,7 +52,7 @@ This document specifies how. The guiding invariant:
   "methodName": "GetById",
   "returnType": TypeRef,            // the method's effective return type (Task<T> unwrapped; void → {kind:"void"})
   "parameters": [ ParameterMeta, … ],
-  "documentation": "Returns a customer by ID"   // from [TrameDocumentation], or null
+  "documentation": "Returns a customer by ID"   // from [TrameDocumentation] on the method, or null
 }
 ```
 
@@ -63,7 +63,7 @@ This document specifies how. The guiding invariant:
   "parameterName": "id",
   "parameterType": TypeRef,
   "defaultValue": 0,                 // C# default parameter value, or absent/JSON null if none
-  "documentation": "…"
+  "documentation": "…"             // v1: copied from the method-level [TrameDocumentation]; per-parameter docs are not yet read
 }
 ```
 

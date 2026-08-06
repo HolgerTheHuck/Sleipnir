@@ -7,7 +7,7 @@ Trame knowledge assumed; .NET basics assumed.
 > This guide is the **canonical wiring** (`AddTrame` → `UseTrameTransports` → `MapTrame`). For the
 > feature tour see [README.md](README.md); for the wire format see [PROTOCOL.md](PROTOCOL.md);
 > for the worked stories see [docs/stories/](docs/stories/); for north-bound hardening see
-> [SECURITY.md](SECURITY.md).
+> [SECURITY_GUIDE.md](SECURITY_GUIDE.md).
 
 ---
 
@@ -205,7 +205,7 @@ curl -s -X POST http://localhost:5000/api/trame/json \
 - **Command fan-out with isolation**: [docs/stories/02-one-button-seven-commands.md](docs/stories/02-one-button-seven-commands.md)
 - **Three transports, one contract**: [docs/stories/03-the-same-contract-three-wires.md](docs/stories/03-the-same-contract-three-wires.md)
 - **Going north-bound (untrusted clients)**: [docs/stories/04-north-bound-security.md](docs/stories/04-north-bound-security.md)
-  + [SECURITY.md](SECURITY.md) — flip `RequireAuthentication`, set rate limits and batch caps.
+  + [SECURITY_GUIDE.md](SECURITY_GUIDE.md) — flip `RequireAuthentication`, set rate limits and batch caps.
 - **Runnable samples** (NuGet/npm-based): [samples/README.md](samples/README.md).
 - **Full feature reference**: [README_DETAILS.md](README_DETAILS.md).
 - **Wire format**: [PROTOCOL.md](PROTOCOL.md).

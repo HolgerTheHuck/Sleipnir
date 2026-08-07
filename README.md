@@ -75,6 +75,43 @@ Full reasoning and trade-offs: [`BEST_PRACTICES.md`](BEST_PRACTICES.md).
 
 ---
 
+## Trame + REST — not a replacement, a complement
+
+Trame doesn't replace your REST API. It **sits next to it** on the same host, sharing the
+service layer. Your C# service stays the single source of truth; two thin facades expose it:
+
+```csharp
+// REST facade (minimal API) — for resources, binary, OpenAPI/Swagger, legacy clients
+app.MapGet("/api/customers/{id}", async (int id, ICustomerService s, CancellationToken ct) =>
+    Results.Ok(await s.GetById(id, ct)));
+
+// Trame facade — for commands, batch, dependency chaining, multi-transport
+[TrameController("Customer")]
+public class CustomerController(ICustomerService service)
+{
+    [TrameMethod("GetById")] public Task<Customer?> GetById(int id, CancellationToken ct)
+        => service.GetById(id, ct);
+}
+```
+
+**Use each for what it does well:**
+
+| Use REST for | Use Trame for |
+|---|---|
+| A single resource by id (`GET /api/orders/42`) | A screen with multiple dependent calls in one roundtrip |
+| Cacheable GETs, proxy- and curl-friendly ops | Command fan-out with per-call isolation |
+| Large binary uploads/downloads, streaming | A typed contract shared across REST/WebSocket/SignalR |
+| Webhook receivers, OpenAPI/Swagger, legacy clients | `.NET`-to-`.NET` binary channel (SignalR+MessagePack) |
+
+**OpenAPI/Swagger** comes from the REST side automatically (Swashbuckle/NSwag) — Trame
+doesn't need its own OpenAPI emitter. **Legacy clients** that can't use a Trame client get a
+plain ASP.NET controller over the same service — no Trame runtime surface, no second protocol.
+Both coexist on one host, both above the same services where the bulk logic lives.
+
+Details and migration paths: [`BEST_PRACTICES.md`](BEST_PRACTICES.md) §4 *Interplay with REST*.
+
+---
+
 ## Code-first contract
 
 ```csharp
@@ -164,8 +201,31 @@ Details: [`README_DETAILS.md#developer-ui`](README_DETAILS.md#developer-ui)
 
 ## Installation
 
+### Packages
+
+| Package | NuGet | npm | What |
+|---|---|---|---|
+| **`Trame.Server`** | ✅ `1.0.0` | — | All-in-one server meta-package (all transports + DevUI). Pulls Core/Hub/Rest/WebSocket/DeveloperUi transitively. |
+| `Trame.Core` | ✅ `1.0.0` | — | Execution engine (invoker, discovery, dependency resolver). |
+| `Trame.Hub` | ✅ `1.0.0` | — | SignalR transport + `AddTrame`/`UseTrame` host. |
+| `Trame.Rest` | ✅ `1.0.0` | — | REST / JSON minimal-API transport. |
+| `Trame.WebSocket` | ✅ `1.0.0` | — | RFC 6455 WebSocket transport. |
+| `Trame.DeveloperUi` | ✅ (via Server) | — | Built-in Developer UI (served by host; included in `Trame.Server`). |
+| `Trame.Telemetry` | ✅ `1.0.0` | — | Optional OpenTelemetry SDK bootstrap (OTLP/Console exporters). |
+| `Trame.Client` | ✅ `1.0.0` | — | C# client (REST + WebSocket + SignalR, fluent builder). |
+| **`trame-client`** | — | ✅ `trame-client` | TypeScript/JavaScript client (REST + WebSocket, isomorphic). |
+| `trame-codegen` | — | ✅ (soon) | CLI: typed client stubs from discovery (`trame-gen --lang ts\|js\|cs\|py`). |
+| `Trame.Generator` | ✅ (soon) | — | Roslyn source generator (typed C# client from `contract.trame.json`). |
+| `Trame.Server.Codegen` | ✅ (soon) | — | Server-side contract export + drift-check (build-time). |
+
+> **Pick `Trame.Server` when you want everything.** Reference a single transport package
+> directly (e.g. `Trame.Rest` for REST-only, `Trame.WebSocket` for a non-.NET client) to skip
+> the rest. See [`README_DETAILS.md`](README_DETAILS.md) *Project Structure*.
+
+### Server (NuGet)
+
 ```xml
-<!-- Server: all transports + Developer UI -->
+<!-- All transports + Developer UI -->
 <PackageReference Include="Trame.Server" Version="1.0.0" />
 
 <!-- Optional: OpenTelemetry bootstrap -->
@@ -174,6 +234,8 @@ Details: [`README_DETAILS.md#developer-ui`](README_DETAILS.md#developer-ui)
 <!-- C# client -->
 <PackageReference Include="Trame.Client" Version="1.0.0" />
 ```
+
+### Client (npm)
 
 ```bash
 # TypeScript / JavaScript client

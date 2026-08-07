@@ -48,12 +48,12 @@ public class TrameDiscoveryServiceTests
         var controller = discovery.Controllers[0];
 
         // Assert
-        controller.Methods.Should().HaveCount(18); // All methods decorated with [TrameMethod]
+        controller.Methods.Should().HaveCount(19); // All methods decorated with [TrameMethod]
         controller.Methods.Select(m => m.MethodName).Should().Contain(new[]
         {
             "Echo", "Add", "EchoAsync", "AddAsync", "VoidMethod",
             "WithCancellation", "ComplexReturn", "NoParams", "Secured", "SecuredWithRole",
-            "StreamNumbers", "StreamNumbersTask", "UploadBlob", "DownloadBlob", "UploadAndProcess", "DownloadStream",
+            "StreamNumbers", "StreamNumbersTask", "ObservableStrings", "UploadBlob", "DownloadBlob", "UploadAndProcess", "DownloadStream",
             "GetOr404", "ValidationProblem"
         });
     }
@@ -277,6 +277,19 @@ public class TrameDiscoveryServiceTests
         method.ReturnType.Element.Should().NotBeNull();
         method.ReturnType.Element!.Kind.Should().Be("scalar");
         method.ReturnType.Element!.Name.Should().Be("int");
+    }
+
+    /// <summary>IObservable&lt;T&gt; wird als event deklariert (Phase 3), nicht als stream/array.</summary>
+    [Fact]
+    public void GetDiscoveryInfo_ObservableIsEvent()
+    {
+        var discovery = _invoker.GetDiscoveryInfo();
+        var method = discovery.Controllers[0].Methods.First(m => m.MethodName == "ObservableStrings");
+
+        method.ReturnType.Kind.Should().Be("event");
+        method.ReturnType.Element.Should().NotBeNull();
+        method.ReturnType.Element!.Kind.Should().Be("scalar");
+        method.ReturnType.Element!.Name.Should().Be("string");
     }
 
     /// <summary>byte[] wird als scalar "bytes" emittiert (binär), nicht als int-Array.</summary>

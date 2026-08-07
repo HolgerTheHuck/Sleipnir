@@ -236,6 +236,8 @@ namespace TrameCore.Services
                     return new TypeRef { Kind = "map", Key = BuildTypeRef(mapKey!, null, ctx), Value = BuildTypeRef(mapValue!, null, ctx), Nullable = nullable };
                 if (collKind == "stream")
                     return new TypeRef { Kind = "stream", Element = BuildTypeRef(element!, null, ctx) };
+                if (collKind == "event")
+                    return new TypeRef { Kind = "event", Element = BuildTypeRef(element!, null, ctx) };
                 return new TypeRef { Kind = collKind, Element = BuildTypeRef(element!, null, ctx), Nullable = nullable };
             }
 
@@ -267,6 +269,7 @@ namespace TrameCore.Services
             var args = type.GetGenericArguments();
 
             if (def == typeof(IAsyncEnumerable<>)) { element = args[0]; kind = "stream"; return true; }
+            if (def == typeof(IObservable<>)) { element = args[0]; kind = "event"; return true; }
             if (ArrayDefinitions.Contains(def)) { element = args[0]; kind = "array"; return true; }
             if (SetDefinitions.Contains(def)) { element = args[0]; kind = "set"; return true; }
             if (MapDefinitions.Contains(def)) { key = args[0]; value = args[1]; kind = "map"; return true; }

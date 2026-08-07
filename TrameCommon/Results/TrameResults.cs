@@ -51,7 +51,7 @@ public static class TrameResults
         if (result is null) return NoContent();
         return new TrameResponse
         {
-            Code = 200,
+            Code = TrameErrorCodes.Ok,
             DataBytes = JsonSerializer.SerializeToUtf8Bytes(result, CamelCaseJsonOptions),
         };
     }
@@ -65,7 +65,7 @@ public static class TrameResults
     /// </summary>
     public static TrameResponse Ok(string jsonData) => new()
     {
-        Code = 200,
+        Code = TrameErrorCodes.Ok,
         DataBytes = Encoding.UTF8.GetBytes(jsonData),
     };
 
@@ -77,25 +77,30 @@ public static class TrameResults
     /// </summary>
     public static TrameResponse Ok(byte[] binary) => new()
     {
-        Code = 200,
+        Code = TrameErrorCodes.Ok,
         Content = binary,
     };
 
     /// <summary>204 No Content — für <c>void</c>-/<c>Task</c>-Methoden ohne Ergebnis.</summary>
-    public static TrameResponse NoContent() => new() { Code = 204 };
+    public static TrameResponse NoContent() => new() { Code = TrameErrorCodes.NoContent };
 
     /// <summary>
     /// Non-2xx-Fehlerantwort. <paramref name="message"/> wohnt ausschließlich in
     /// <see cref="TrameError.Message"/> (Data bleibt null) — strukturierte Clients
     /// lesen <c>response.error.message</c>, der C#-Client wirft
     /// <c>TrameException.Error.Message</c>, der JS/TS-Client <c>response.error.message</c>.
+    /// Die semantische <paramref name="category"/> wird *zusätzlich* zum numerischen
+    /// <paramref name="code"/> gesetzt (Phase 1, siehe <c>ERROR_CATALOG.md</c>); Default
+    /// <see cref="TrameErrorCategory.None"/> für Abwärtskompatibilität.
     /// </summary>
-    /// <param name="code">HTTP-like Status-Code (400, 401, 404, 409, 500, …).</param>
+    /// <param name="code">HTTP-like Status-Code (siehe <see cref="TrameErrorCodes"/>).</param>
     /// <param name="message">Mensch-lesbare Fehlernachricht (sichtbar beim Client).</param>
+    /// <param name="category">Semantische Kategorie (maschinenlesbar, transport-uniform).</param>
     /// <param name="details">Optionale Details (z. B. Diagnose-Hinweis; NICHT für
     /// sensible Stack-Traces verwenden — die gehören in <c>EnableDetailedErrors</c>
     /// auf Server-Seite und werden dort vom Invoker verwaltet).</param>
-    public static TrameResponse Error(int code, string message, string? details = null) => new()
+    public static TrameResponse Error(int code, string message,
+        TrameErrorCategory category = TrameErrorCategory.None, string? details = null) => new()
     {
         Code = code,
         Data = null,
@@ -104,24 +109,29 @@ public static class TrameResults
             Code = code,
             Message = message,
             Details = details,
+            Category = category,
         },
     };
 
     /// <summary>400 Bad Request — ungültige Parameter / Validierungsfehler.</summary>
     public static TrameResponse BadRequest(string message, string? details = null)
-        => Error(400, message, details);
+        => Error(TrameErrorCodes.BadRequest, message, TrameErrorCategory.InvalidArgument, details);
 
     /// <summary>401 Unauthorized — Authentifizierung erforderlich/fehlgeschlagen.</summary>
     public static TrameResponse Unauthorized(string message = "Unauthorized.")
-        => Error(401, message);
+        => Error(TrameErrorCodes.Unauthorized, message, TrameErrorCategory.Unauthenticated);
 
-    /// <summary>404 Not Found — Ressource/Entität nicht gefunden.</summary>
+    /// <summary>403 Forbidden — authentifiziert, aber nicht erlaubt (Policy-basiert, Phase 1).</summary>
+    public static TrameResponse Forbidden(string message = "Forbidden.", string? details = null)
+        => Error(TrameErrorCodes.Forbidden, message, TrameErrorCategory.PermissionDenied, details);
+
+    /// <summary>404 Not Found — Ressource/Entität nicht gefunden (Business-NotFound).</summary>
     public static TrameResponse NotFound(string message, string? details = null)
-        => Error(404, message, details);
+        => Error(TrameErrorCodes.NotFound, message, TrameErrorCategory.NotFound, details);
 
     /// <summary>409 Conflict — Konflikt mit aktuellem Zustand (z. B. Duplikat).</summary>
     public static TrameResponse Conflict(string message, string? details = null)
-        => Error(409, message, details);
+        => Error(TrameErrorCodes.Conflict, message, TrameErrorCategory.Conflict, details);
 
     /// <summary>
     /// 500 Internal Server Error — nur für Controller, die bewusst eine interne
@@ -129,7 +139,7 @@ public static class TrameResults
     /// eine Exception (der Invoker erzeugt das generische 500 + Dev-Details).
     /// </summary>
     public static TrameResponse InternalServerError(string message, string? details = null)
-        => Error(500, message, details);
+        => Error(TrameErrorCodes.InternalServerError, message, TrameErrorCategory.Internal, details);
 
     /// <summary>
     /// Non-2xx-Fehlerantwort im RFC-7807-ProblemDetails-Stil. <paramref name="problem"/>

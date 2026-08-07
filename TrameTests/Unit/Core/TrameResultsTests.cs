@@ -86,30 +86,37 @@ public class TrameResultsTests
     [Fact]
     public void Error_with_details_carries_them()
     {
-        var resp = TrameResults.Error(400, "Invalid parameter 'id'.", "Expected positive int, got -1.");
+        var resp = TrameResults.Error(400, "Invalid parameter 'id'.",
+            TrameErrorCategory.InvalidArgument, "Expected positive int, got -1.");
 
         resp.Error!.Details.Should().Be("Expected positive int, got -1.");
+        resp.Error!.Category.Should().Be(TrameErrorCategory.InvalidArgument);
     }
 
     [Theory]
-    [InlineData(nameof(TrameResults.BadRequest), 400)]
-    [InlineData(nameof(TrameResults.NotFound), 404)]
-    [InlineData(nameof(TrameResults.Conflict), 409)]
-    [InlineData(nameof(TrameResults.InternalServerError), 500)]
-    public void Convenience_methods_use_correct_codes(string method, int expected)
+    [InlineData(nameof(TrameResults.BadRequest), 400, nameof(TrameErrorCategory.InvalidArgument))]
+    [InlineData(nameof(TrameResults.Unauthorized), 401, nameof(TrameErrorCategory.Unauthenticated))]
+    [InlineData(nameof(TrameResults.Forbidden), 403, nameof(TrameErrorCategory.PermissionDenied))]
+    [InlineData(nameof(TrameResults.NotFound), 404, nameof(TrameErrorCategory.NotFound))]
+    [InlineData(nameof(TrameResults.Conflict), 409, nameof(TrameErrorCategory.Conflict))]
+    [InlineData(nameof(TrameResults.InternalServerError), 500, nameof(TrameErrorCategory.Internal))]
+    public void Convenience_methods_set_semantic_category(string method, int expectedCode, string expectedCategory)
     {
         var resp = method switch
         {
             nameof(TrameResults.BadRequest) => TrameResults.BadRequest("x"),
+            nameof(TrameResults.Unauthorized) => TrameResults.Unauthorized(),
+            nameof(TrameResults.Forbidden) => TrameResults.Forbidden(),
             nameof(TrameResults.NotFound) => TrameResults.NotFound("x"),
             nameof(TrameResults.Conflict) => TrameResults.Conflict("x"),
             nameof(TrameResults.InternalServerError) => TrameResults.InternalServerError("x"),
             _ => throw new InvalidOperationException($"unmapped method {method}"),
         };
 
-        resp.Code.Should().Be(expected);
+        resp.Code.Should().Be(expectedCode);
         resp.IsSuccess.Should().BeFalse();
-        resp.Error!.Code.Should().Be(expected);
+        resp.Error!.Code.Should().Be(expectedCode);
+        resp.Error!.Category.Should().Be(Enum.Parse<TrameErrorCategory>(expectedCategory));
     }
 
     [Fact]

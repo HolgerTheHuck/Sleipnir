@@ -14,6 +14,8 @@ using TrameCore.Services.Helper;
 using System.Diagnostics;
 using TrameCore.Tracing;
 using Microsoft.Extensions.Logging; // Für JsonPath.Net
+using TrameCommon.Results;
+using TrameCommon.Models;
 
 namespace TrameCore.Services
 {
@@ -1822,26 +1824,26 @@ namespace TrameCore.Services
         #region Response-Generierung
 
         private TrameResponse BadRequest(string message, HttpStatusCode code = HttpStatusCode.BadRequest)
-            => CreateError(code, message);
+            => CreateError((int)code, message, CategoryFor((int)code));
 
         // Erfolg: strukturierter Ergebniswert in Data (roh, ein Pass — kein Double-Wrapping).
         // Der Bulk-Pfad nutzt Ok(byte[]) mit rohen UTF-8-Bytes (DataBytes); Data bleibt
         // null und wird erst lazy materialisiert, wenn ein Reader (Dep-Chaining, Tests)
         // darauf zugreift. Ok(JsonElement?) bleibt für den Legacy/Spezial-Pfad.
         private TrameResponse Ok(JsonElement? data)
-            => new() { Code = (int)HttpStatusCode.OK, Data = data };
+            => new() { Code = TrameErrorCodes.Ok, Data = data };
 
         private TrameResponse Ok(byte[]? dataBytes)
-            => new() { Code = (int)HttpStatusCode.OK, DataBytes = dataBytes };
+            => new() { Code = TrameErrorCodes.Ok, DataBytes = dataBytes };
 
         private TrameResponse NoContent()
-            => new() { Code = (int)HttpStatusCode.NoContent };
+            => new() { Code = TrameErrorCodes.NoContent };
 
         private TrameResponse Unauthorized()
-            => CreateError(HttpStatusCode.Unauthorized, "Unauthorized.");
+            => CreateError(TrameErrorCodes.Unauthorized, "Unauthorized.", TrameErrorCategory.Unauthenticated);
 
         private TrameResponse InternalServerError(string message)
-            => CreateError(HttpStatusCode.InternalServerError, message);
+            => CreateError(TrameErrorCodes.InternalServerError, message, TrameErrorCategory.Internal);
 
         /// <summary>
         /// Erzeugt eine 500-Response. Die Message bleibt generisch (kein Leak in Produktion);
@@ -1850,7 +1852,7 @@ namespace TrameCore.Services
         /// </summary>
         private TrameResponse InternalServerError(string message, Exception? ex)
         {
-            var response = CreateError(HttpStatusCode.InternalServerError, message);
+            var response = CreateError(TrameErrorCodes.InternalServerError, message, TrameErrorCategory.Internal);
             if (ex != null && EnableDetailedErrors && response.Error != null)
                 response.Error.Details = ex.ToString();
             return response;
@@ -1859,20 +1861,44 @@ namespace TrameCore.Services
         /// <summary>
         /// Fehler-Response: Data bleibt null (Fehler tragen nur Code + Error-Objekt),
         /// die Message wohnt in Error.Message. Kein String-Payload in Data mehr.
+        /// Die semantische Kategorie wird aus dem Code abgeleitet (siehe <see cref="CategoryFor"/>),
+        /// falls der Caller keine explizite angibt — so bleiben die bestehenden Aufrufstellen
+        /// ohne Änderung kategorisiert.
         /// </summary>
-        private TrameResponse CreateError(HttpStatusCode code, string? message)
+        private TrameResponse CreateError(int code, string? message, TrameErrorCategory category = TrameErrorCategory.None)
         {
             return new TrameResponse
             {
-                Code = (int)code,
+                Code = code,
                 Data = null,
                 Error = new TrameError
                 {
-                    Code = (int)code,
-                    Message = message ?? "Unknown error"
+                    Code = code,
+                    Message = message ?? "Unknown error",
+                    Category = category == TrameErrorCategory.None ? CategoryFor(code) : category,
                 }
             };
         }
+
+        /// <summary>
+        /// Leitet die semantische <see cref="TrameErrorCategory"/> aus einem numerischen
+        /// Code ab (Default-Kategorisierung für bestehende Aufrufstellen, die keine
+        /// explizite Kategorie übergeben). Hält die Kategorisierung an einer Stelle
+        /// zentral, statt sie in jeder Fabrik zu duplizieren.
+        /// </summary>
+        private static TrameErrorCategory CategoryFor(int code) => code switch
+        {
+            TrameErrorCodes.BadRequest or 422 => TrameErrorCategory.InvalidArgument,
+            TrameErrorCodes.Unauthorized => TrameErrorCategory.Unauthenticated,
+            TrameErrorCodes.Forbidden => TrameErrorCategory.PermissionDenied,
+            TrameErrorCodes.NotFound => TrameErrorCategory.NotFound,
+            TrameErrorCodes.Conflict => TrameErrorCategory.Conflict,
+            TrameErrorCodes.RequestEntityTooLarge or 429 => TrameErrorCategory.ResourceExhausted,
+            TrameErrorCodes.InternalServerError => TrameErrorCategory.Internal,
+            TrameErrorCodes.ServiceUnavailable => TrameErrorCategory.Unavailable,
+            TrameErrorCodes.ClientClosedRequest => TrameErrorCategory.Cancelled,
+            _ => TrameErrorCategory.None,
+        };
 
         #endregion
 

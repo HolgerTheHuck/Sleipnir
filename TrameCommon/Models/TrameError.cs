@@ -1,5 +1,6 @@
 using MessagePack;
 using System.Text.Json.Serialization;
+using TrameCommon.Results;
 
 namespace TrameCommon.Models;
 
@@ -39,6 +40,18 @@ public class TrameError
     public string? RequestId { get; set; }
 
     /// <summary>
+    /// Semantische Fehler-Kategorie — *zusätzlich* zu <see cref="Code"/>, nicht
+    /// ersetzend. Additives Feld (Phase 1, siehe <c>STABILITY.md</c> §1.4/§3.2):
+    /// bestehende 1.0.0-Responses haben <see cref="TrameErrorCategory.None"/> und
+    /// bleiben damit abwärtskompatibel. Erlaubt Clients, Fehler einheitlich über
+    /// alle Transporte zu behandeln; generierte Clients können pro Kategorie
+    /// typisierte Exceptions werfen. Siehe <c>ERROR_CATALOG.md</c>.
+    /// </summary>
+    [Key(4)]
+    [JsonPropertyName("category")]
+    public TrameErrorCategory Category { get; set; } = TrameErrorCategory.None;
+
+    /// <summary>
     /// Creates an TrameError from an TrameResponse (when Code != 200). Die Message
     /// stammt aus <see cref="TrameResponse.Error"/> (Fehler tragen seit dem Single-Pass-
     /// Fix ihre Message in Error.Message, nicht mehr in Data).
@@ -49,7 +62,8 @@ public class TrameError
         {
             Code = response.Code,
             Message = response.Error?.Message ?? $"Trame call failed with code {response.Code}.",
-            RequestId = response.Id
+            RequestId = response.Id,
+            Category = response.Error?.Category ?? TrameErrorCategory.None,
         };
     }
 }

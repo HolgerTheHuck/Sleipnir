@@ -15,14 +15,14 @@ namespace TrameCommon.Models
     public sealed class TrameSubscribeResult
     {
         /// <summary>Fehler-Response bei Auth/Routing/Binding-Fehler; null bei Erfolg.</summary>
-        public TrameResponse? Error { get; init; }
+        public TrameResponse? Error { get; set; }
 
         /// <summary>
         /// Das IObservable bei Erfolg (der Server subscribt darauf und pusht jedes
         /// Element als Event-Frame); null bei Fehler. Elemente sind <c>object?</c>
         /// (werden als JSON serialisiert).
         /// </summary>
-        public IObservable<object?>? Observable { get; init; }
+        public IObservable<object?>? Observable { get; set; }
 
         public static TrameSubscribeResult Ok(IObservable<object?> observable) => new() { Observable = observable };
         public static TrameSubscribeResult Fail(TrameResponse error) => new() { Error = error };

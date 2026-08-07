@@ -22,7 +22,7 @@ Please include:
 - A clear description of the vulnerability and its impact.
 - The affected transport (REST, WebSocket, SignalR, JSON-RPC).
 - Reproduction steps or a proof-of-concept.
-- If known, the audit finding code (F1–F12 from [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md)).
+- If known, the audit finding code (F1–F12).
 
 **Response timeline:**
 
@@ -81,5 +81,4 @@ Before exposing Trame to untrusted clients:
 7. **Discovery is behind auth** (automatic with `RequireAuthentication`).
 8. **Smoke test**: unauthenticated call → rejected; authenticated → 200; `[TrameAnonymous]` method → 200 unauth; `[TrameAuthorise("admin")]` without role → 401; batch > `MaximumBatchSize` → 400.
 
-Full audit (findings F1–F12, roadmap, compensation guidance): [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md).
 Operational guide: [`SECURITY_GUIDE.md`](SECURITY_GUIDE.md).

@@ -244,15 +244,37 @@ internal static class CsEmitter
     {
         var parms = new List<string>(m.Parameters.Count);
         foreach (var p in m.Parameters)
-            parms.Add("Arg<" + EmitterBuilder.CsTypeOfRef(p.TypeRef, resolver) + "> " + p.Name);
+            parms.Add(EmitterBuilder.CsTypeOfRef(p.TypeRef, resolver) + " " + p.Name);
         var paramChain = new StringBuilder();
         foreach (var p in m.Parameters)
-            paramChain.Append(".Param(\"" + p.Name + "\", " + p.Name + ".ToWireValue())");
+            paramChain.Append(".Param(\"" + p.Name + "\", " + p.Name + ")");
         var doc = !string.IsNullOrEmpty(m.Documentation) ? "        /// <summary>" + m.Documentation + "</summary>\n" : "";
         var todo = (m.ReturnType.Kind == "opaque" && !m.IsVoid)
             ? "        // TODO: return type \"" + (m.ReturnType.NativeName ?? "?") + "\" is an opaque framework/BCL type not modelled in discovery; deserialize as object.\n"
             : "";
-        return doc + todo + "        public Call " + m.MethodName + "(" + string.Join(", ", parms) + ") => new Call(TrameCall.Init(\"" + ctrl.Name + "\", \"" + m.MethodName + "\")" + paramChain + ");";
+
+        // Phase 3: Event-Methoden (kind:"event") → SubscribeAsync<T> statt Call.
+        if (m.ReturnType.Kind == "event" && m.ReturnType.Element != null)
+        {
+            var elementType = EmitterBuilder.CsTypeOfRef(m.ReturnType.Element, resolver);
+            return doc + todo + "        public System.Threading.Tasks.Task<TrameClient.Trame.TrameSubscription<" + elementType + ">> " + m.MethodName + "(" + string.Join(", ", parms) + ") => _client.SubscribeAsync<" + elementType + ">(\"" + ctrl.Name + "\", \"" + m.MethodName + "\", " + BuildArgsArray(m) + ");";
+        }
+
+        // Call-Methoden (bestehend): Arg<T>-Wrapper für Dependency-Chaining.
+        var argParms = new List<string>(m.Parameters.Count);
+        foreach (var p in m.Parameters)
+            argParms.Add("Arg<" + EmitterBuilder.CsTypeOfRef(p.TypeRef, resolver) + "> " + p.Name);
+        var argParamChain = new StringBuilder();
+        foreach (var p in m.Parameters)
+            argParamChain.Append(".Param(\"" + p.Name + "\", " + p.Name + ".ToWireValue())");
+        return doc + todo + "        public Call " + m.MethodName + "(" + string.Join(", ", argParms) + ") => new Call(TrameCall.Init(\"" + ctrl.Name + "\", \"" + m.MethodName + "\")" + argParamChain + ");";
+    }
+
+    /// <summary>Buildet ein args-Array für SubscribeAsync (object?[]-Parameter).</summary>
+    private static string BuildArgsArray(ResolvedMethod m)
+    {
+        if (m.Parameters.Count == 0) return "null";
+        return "new object?[] { " + string.Join(", ", m.Parameters.Select(p => p.Name)) + " }";
     }
 
     private static string EmitRootClient(List<ResolvedController> controllers)

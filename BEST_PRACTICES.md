@@ -88,6 +88,52 @@ and — importantly for WebSocket — **connection-rate limiting** (the WS trans
 middleware, so per-connection rate limiting belongs to the proxy, e.g. `limit_conn`). Configure
 CORS with a named, scoped policy if browser clients call you cross-origin; avoid `*`.
 
+### 1.6 Compression — enable at the transport, not in Trame
+
+Trame does **not** compress payloads itself — compression is transport infrastructure and is
+handled at the host/proxy layer. This keeps Trame's wire format clean and lets you tune
+compression per deployment without framework code. The options, by transport:
+
+**REST (HTTP).** Use ASP.NET Core's response compression middleware (gzip/brotli). It honors
+`Accept-Encoding` and compresses JSON responses automatically:
+
+```csharp
+builder.Services.AddResponseCompression(o =>
+{
+    o.EnableForHttps = true;            // safe with TLS after .NET 7
+    o.Providers.Add<BrotliCompressionProvider>();
+    o.Providers.Add<GzipCompressionProvider>();
+});
+var app = builder.Build();
+app.UseResponseCompression();           // before MapTrame
+```
+
+A reverse proxy (nginx `gzip on;`, Caddy `encode gzip zstd`) does the same at the edge and is
+the recommended north-bound choice — it keeps the app process free of compression CPU.
+
+**WebSocket.** Enable `permessage-deflate` (RFC 7692) on Kestrel — it negotiates compression per
+WS connection transparently:
+
+```csharp
+builder.WebHost.ConfigureKestrel(k =>
+{
+    k.ConfigureWebSocketOptions(o => o.AllowedCompression = WebSocketCompressionFlags.All);
+});
+```
+
+The Trame WS transport inherits this; no Trame-side change is needed. Note: `permessage-deflate`
+adds per-message overhead for very small frames — for tiny high-frequency calls it may *hurt*;
+profile before enabling broadly.
+
+**SignalR.** MessagePack is already compact (binary, no base64 for `byte[]`). For JSON-hub
+mode, ASP.NET Core's hub response compression applies. Trame's `UseMessagePack = true` is the
+single most effective "compression" for SignalR.
+
+**What *not* to do.** Don't add a Trame-side compression layer that double-compresses with the
+transport (wasteful) or competes with `Content-Encoding` (confusing for clients). Don't
+compress the small Trame envelope when the large `data` is already compressed by the transport.
+The transport layer is the right place; Trame stays out of it.
+
 ---
 
 ## 2. Binary and streams

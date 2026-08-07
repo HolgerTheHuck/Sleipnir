@@ -4,6 +4,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using TrameCommon.Models;
 
 namespace TrameClient.Trame;
 
@@ -45,6 +46,8 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly SemaphoreSlim _connectLock = new(1, 1);
     private readonly ConcurrentDictionary<string, ITcsHolder> _pendingRequests = new();
+    private readonly ConcurrentDictionary<string, ITrameSubscriptionHandler> _subscriptions = new();
+    private readonly ConcurrentDictionary<string, SubscribeRequestRecord> _subscribeRequests = new();
     private readonly ILogger<TrameWebSocketClient>? _logger;
 
     private readonly Func<ClientWebSocket>? _socketFactory;
@@ -380,6 +383,11 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
     /// </summary>
     private void DispatchResponse(ReadOnlyMemory<byte> messageBytes)
     {
+        // Phase 3: Event-Frames ({type:"event"/"complete"/"error",...}) zuerst erkennen.
+        // Sie haben kein "code"-Feld und korrelieren per subscriptionId, nicht per Call-id.
+        if (TryDispatchEventFrame(messageBytes))
+            return;
+
         try
         {
             var (result, responseId) = ParseMessage(messageBytes);
@@ -515,6 +523,10 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
                         StartReader();
                         SetState(TrameConnectionState.Connected);
                         _logger?.LogInformation("WebSocket reconnected after {Attempt} attempt(s).", i + 1);
+
+                        // Phase 3: alle aktiven Subscriptions re-subscriben (Entscheidung 6).
+                        _ = Task.Run(() => ResubscribeAllAsync(ct), ct);
+
                         return; // Erfolg
                     }
                     catch (OperationCanceledException)
@@ -590,6 +602,7 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         }
 
         CancelAllPending(new ObjectDisposedException(nameof(TrameWebSocketClient)));
+        CancelAllSubscriptions(new ObjectDisposedException(nameof(TrameWebSocketClient)));
 
         if (_webSocket.State == WebSocketState.Open)
         {
@@ -606,4 +619,227 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         _connectLock.Dispose();
         _readerCts?.Dispose();
     }
+
+    // ─── Phase 3: Subscribe / Unsubscribe / Event-Dispatch ────────────────
+
+    /// <summary>
+    /// Subscribiert auf ein Server-Event (Phase 3). Sendet <c>{kind:"subscribe",...}</c>,
+    /// empfängt die Subscribe-Response mit <c>subscriptionId</c> und gibt ein
+    /// <see cref="TrameSubscription{T}"/> zurück, das die Server-Events pusht. Bei Reconnect
+    /// (Auto-Reconnect an) re-subscribed der Client automatisch mit denselben Parametern.
+    /// </summary>
+    public async Task<TrameSubscription<T>> SubscribeAsync<T>(
+        string controller, string method, object?[]? args = null, CancellationToken ct = default)
+    {
+        await EnsureConnectedAsync(ct);
+
+        var requestId = NextId();
+        var subscribeJson = JsonSerializer.Serialize(new
+        {
+            kind = "subscribe",
+            controller,
+            method,
+            @params = BuildParams(args),
+            id = requestId,
+        }, JsonOptions);
+
+        var holder = new TcsHolder<TrameResponse>();
+        _pendingRequests[requestId] = holder;
+        _subscribeRequests[requestId] = new SubscribeRequestRecord(controller, method, args);
+
+        await SendRawAsync(subscribeJson, ct);
+
+        TrameResponse? response;
+        try { response = await holder.Tcs.Task; }
+        finally { _pendingRequests.TryRemove(requestId, out _); }
+
+        if (response == null || !response.IsSuccess)
+            throw new TrameException($"Subscribe failed: code={response?.Code}, msg={response?.Error?.Message}");
+
+        var subscriptionId = ExtractSubscriptionId(response);
+        if (string.IsNullOrEmpty(subscriptionId))
+            throw new TrameException("Subscribe response missing subscriptionId.");
+
+        var subscription = new TrameSubscription<T>(subscriptionId!, UnsubscribeAsync, ct);
+        _subscriptions[subscriptionId!] = new TrameSubscriptionHandler<T>(subscription);
+
+        return subscription;
+    }
+
+    private async Task UnsubscribeAsync(string subscriptionId, CancellationToken ct)
+    {
+        if (!_subscriptions.TryRemove(subscriptionId, out _)) return;
+        _subscribeRequests.Remove(subscriptionId, out _);
+
+        var unsubJson = JsonSerializer.Serialize(new
+        {
+            kind = "unsubscribe",
+            subscriptionId,
+            id = NextId(),
+        }, JsonOptions);
+
+        try { await SendRawAsync(unsubJson, ct); } catch { /* best-effort */ }
+    }
+
+    /// <summary>
+    /// Erkennt Event-Frames in der Read-Loop und leitet sie an die passende Subscription.
+    /// Gibt true zurück, wenn es ein Event-Frame war (bereits dispatched).
+    /// </summary>
+    private bool TryDispatchEventFrame(ReadOnlyMemory<byte> messageBytes)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(messageBytes);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var typeProp)) return false;
+
+            var type = typeProp.GetString();
+            if (string.IsNullOrEmpty(type)) return false;
+
+            if (!root.TryGetProperty("subscriptionId", out var subIdProp)) return false;
+            var subscriptionId = subIdProp.GetString();
+            if (string.IsNullOrEmpty(subscriptionId) || !_subscriptions.TryGetValue(subscriptionId!, out var handler))
+                return false;
+
+            switch (type)
+            {
+                case "event":
+                    if (root.TryGetProperty("data", out var dataProp))
+                        handler.OnNext(dataProp.GetRawText());
+                    return true;
+                case "complete":
+                    handler.OnCompleted();
+                    return true;
+                case "error":
+                    var msg = root.TryGetProperty("message", out var msgProp) ? msgProp.GetString() : "Subscription error";
+                    handler.OnError(new TrameException(msg ?? "Subscription error"));
+                    return true;
+                default:
+                    return false;
+            }
+        }
+        catch (JsonException) { return false; }
+    }
+
+    private void CancelAllSubscriptions(Exception ex)
+    {
+        foreach (var kv in _subscriptions) kv.Value.OnError(ex);
+        _subscriptions.Clear();
+    }
+
+    /// <summary>
+    /// Re-subscribed alle aktiven Subscriptions nach Reconnect (Entscheidung 6:
+    /// client-side Re-Subscribe mit neuen subscriptionIds, da die Connection neu ist).
+    /// </summary>
+    private async Task ResubscribeAllAsync(CancellationToken ct)
+    {
+        if (_subscriptions.IsEmpty) return;
+        _logger?.LogDebug("Re-subscribing {Count} subscriptions after reconnect", _subscriptions.Count);
+
+        var oldSubscriptions = _subscriptions.ToArray();
+        _subscriptions.Clear();
+
+        foreach (var kv in oldSubscriptions)
+        {
+            var oldId = kv.Key;
+            var handler = kv.Value;
+            if (!_subscribeRequests.TryRemove(oldId, out var record)) continue;
+
+            try
+            {
+                var requestId = NextId();
+                var subscribeJson = JsonSerializer.Serialize(new
+                {
+                    kind = "subscribe",
+                    controller = record.Controller,
+                    method = record.Method,
+                    @params = BuildParams(record.Args),
+                    id = requestId,
+                }, JsonOptions);
+
+                var holder = new TcsHolder<TrameResponse>();
+                _pendingRequests[requestId] = holder;
+                _subscribeRequests[requestId] = record;
+
+                await SendRawAsync(subscribeJson, ct);
+                var response = await holder.Tcs.Task;
+                _pendingRequests.TryRemove(requestId, out _);
+
+                var newSubId = ExtractSubscriptionId(response);
+                if (!string.IsNullOrEmpty(newSubId))
+                    _subscriptions[newSubId!] = handler;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Re-subscribe failed for {Controller}.{Method}", record.Controller, record.Method);
+                handler.OnError(ex);
+            }
+        }
+    }
+
+    private static string? ExtractSubscriptionId(TrameResponse response)
+    {
+        if (response.Data == null) return null;
+        if (response.Data.Value.ValueKind == JsonValueKind.Object)
+        {
+            if (response.Data.Value.TryGetProperty("subscriptionId", out var subId))
+                return subId.GetString();
+        }
+        return response.Data.Value.GetString();
+    }
+
+    private static List<TrameParameter>? BuildParams(object?[]? args)
+    {
+        if (args == null || args.Length == 0) return null;
+        var list = new List<TrameParameter>(args.Length);
+        for (int i = 0; i < args.Length; i++)
+            list.Add(new TrameParameter { ParameterName = $"arg{i}", Data = JsonSerializer.SerializeToNode(args[i], JsonOptions) });
+        return list;
+    }
+
+    private async Task SendRawAsync(string json, CancellationToken ct)
+    {
+        var bytes = Encoding.UTF8.GetBytes(json);
+        await _sendLock.WaitAsync(ct);
+        try
+        {
+            await _webSocket.SendAsync(new ArraySegment<byte>(bytes),
+                WebSocketMessageType.Text, endOfMessage: true, ct);
+        }
+        finally { _sendLock.Release(); }
+    }
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private interface ITrameSubscriptionHandler
+    {
+        void OnNext(string dataJson);
+        void OnCompleted();
+        void OnError(Exception ex);
+    }
+
+    private sealed class TrameSubscriptionHandler<T> : ITrameSubscriptionHandler
+    {
+        private readonly TrameSubscription<T> _subscription;
+        public TrameSubscriptionHandler(TrameSubscription<T> subscription) => _subscription = subscription;
+
+        public void OnNext(string dataJson)
+        {
+            try
+            {
+                var value = JsonSerializer.Deserialize<T>(dataJson, JsonOptions);
+                _subscription.Subject.OnNext(value!);
+            }
+            catch (JsonException ex) { _subscription.Subject.OnError(ex); }
+        }
+
+        public void OnCompleted() => _subscription.Subject.OnCompleted();
+        public void OnError(Exception ex) => _subscription.Subject.OnError(ex);
+    }
+
+    private sealed record SubscribeRequestRecord(string Controller, string Method, object?[]? Args);
 }

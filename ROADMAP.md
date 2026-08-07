@@ -2,7 +2,7 @@
 
 > Post-v1, forward-looking. This file lists features that deliberately did *not* make the first
 > public release — either because they would touch the v1 contract, or because they are optional
-> and must not change the code-first default model. As of: 2026-07-08.
+> and must not change the code-first default model. As of: 2026-08-07.
 >
 > **Shipped with v1:** an isomorphic JS/TypeScript client (REST + WebSocket) at
 > [`clients/ts/`](clients/ts/) (`npm i trame-client`). SignalR for JS/TS and
@@ -11,6 +11,12 @@
 > **In progress — client stub generators:** typed client stubs (TS/JS/C#/Python) generated from
 > runtime discovery, plus the v1.1 source-generator endgame. Tracked in
 > [`CLIENT_GENERATION.md`](CLIENT_GENERATION.md) (Increment 1: TS + JS + `trame-gen` CLI).
+>
+> **New — Benutzbarkeit-Roadmap (v1.1 → v1.2):** the section below structures the next increments
+> around *making Trame productively usable*, not adding depth. Trame's technical depth is already
+> in place; the gating items for adoption are stability promises, coherent architecture seams,
+> real-time coherence, and adoption-positioning. See
+> [Benutzbarkeit-Roadmap](#benutzbarkeit-roadmap--trame-produktiv-benutzbar-machen).
 
 ---
 
@@ -27,6 +33,184 @@ the server building special-purpose methods.** An observed example from a real a
 That is the potential the architecture carries: the client orchestrates, the server resolves and
 parallelizes. The features documented below exist to make this model *safer* at scale — not to
 replace it.
+
+---
+
+## Benutzbarkeit-Roadmap — Trame produktiv benutzbar machen
+
+> Trame's technical depth is in place (multi-transport, codegen, drift-check, security posture,
+> DevUI, dependency chaining). What gates adoption is **not** the next feature — it is
+> **stability promises, coherent architecture seams, real-time coherence, and adoption
+> positioning.** This section structures the next increments around those. Detail sections for the
+> individual features (v1.1 Versioning, Binary, Later) remain below as reference; this is the
+> phase plan that orders them.
+
+### Leitgedanke
+
+Trame ist nicht zu wenig feature-reich, sondern *zu wenig benutzbar*. Was zwischen heute und
+"produktiv adoptiert" steht, ist Adoptions-Reibung und Produktionsreife-Garantien — nicht Tiefe.
+Die Roadmap ordnet danach: erst das Fundament, das jeder weitere Schritt braucht; dann die
+Architektur-Seams, die spätere Refactors vermeiden; dann Features; dann Doku/Polish, die die
+Adoption öffnen.
+
+### Phasen-Übersicht
+
+| Phase | Fokus | Items | Warum jetzt |
+|---|---|---|---|
+| **0 — Fundament** | Stabilitätsversprechen | C1 `STABILITY.md`, C2 `CHANGELOG.md` + SemVer | asymmetrisch billig, öffnet Produktion-Adoption; vor jedem Feature, das stabile Oberflächen definiert |
+| **1 — Architektur-Fundament** | Ein Seam für Auth + OTel + Fehler | 1 Authorise→Policies, 4 OTel Metrics/Logging, A Fehler-Taxonomie | drei Speziallocken heute → eine Interceptor-Pipeline; einzeln erweitern heißt drei Refactors |
+| **2 — Produktionsreife** | Persistenz | 2 North-Bound Secure Store | setzt Phase 1 voraus (auth-gated Store); vor Phase 3, um Store-Wechsel nicht mit Events-Lifecycle zu kollidieren |
+| **3 — Echtzeit-Kohärenz** | Push + Testbarkeit | 3 Events/Server-Push, B Client-Test-Doubles | Events brauchen Codegen-Erweiterung → B dort billig; nachträglich teuer |
+| **4 — Doku & Adoption-Polish** | Adoption öffnen | 5 Doku, 6 Trame/REST-Positionierung, P1 NuGet-first-Sample, P2 Public Benchmarks, P3 Idempotency-Guidance | Doku nach Features (sonst lügt sie APIs herbei); Polish setzt stabile Story voraus |
+
+### Kritische Pfade & Koppelungen
+
+```mermaid
+graph TD
+    C[C1+C2: STABILITY.md, CHANGELOG] --> A[A: Fehler-Taxonomie]
+    C --> P1[Interceptor-Pipeline]
+    A --> P1
+    P1 --> E1[1: Authorise→Policies]
+    P1 --> E4[4: OTel Metrics/Logging]
+    E1 --> S[2: Secure Store]
+    E4 --> S
+    P1 --> EV[3: Events/Server-Push]
+    EV --> B[B: Client-Test-Doubles im Codegen]
+    EV --> D[5: Doku]
+    S --> D
+    D --> L[6: Trame/REST Landing-Page]
+    D --> POL[P1+P2+P3: NuGet-Sample, Benchmarks, Idempotency]
+```
+
+**Drei harte Koppelungen, nicht auflösbar:**
+
+- **1 + 4 + A = ein Durchgang.** Auth, OTel und Fehler-Klassifizierung sind heute drei
+  Speziallocken im Invoker (`CheckAuthorisation`, Tracing-Hooks, Error-Factory). Eine
+  Interceptor-Pipeline ersetzt alle drei + zukünftige (Validation, Caching, Retry). Punkt 1, 4
+  und A sind *ein* Architektur-Entscheid, nicht drei.
+- **3 + B = ein Durchgang.** Events brauchen eine Codegen-Erweiterung (typisierte
+  Subscribe-Oberfläche, `kind: "event"` in Discovery). Genau dann, wenn der Codegen ohnehin für
+  Events erweitert wird, ist B (mockbare `ITrameClient`-Schnittstelle + In-Memory-Test-Transport)
+  billig. Nachträglich teuer.
+- **5 + 6 + Polish = nach Features.** Doku/Polish vor Features lügen APIs herbei.
+
+### Phase 0 — Fundament (vor allem anderen)
+
+| Item | Was | Erfolgskriterium |
+|---|---|---|
+| **C1** | `STABILITY.md` — Liste der garantiert-stabilen Oberfläche (`[TrameController]`, `[TrameMethod]`, `TrameCall`, `TrameOptions`, `TrameResponse`, Wire-Format, `discoveryVersion`) vs. experimentell (Codegen-Attribute, `Arg<T>`, Interceptors, Events). | Datei committed; jedes neue Feature deklariert darin stable/experimental. |
+| **C2** | `CHANGELOG.md` + SemVer-Disziplin. | 1.0.0 rückwirkend changeloged; jedes Release hat Eintrag. |
+
+**Warum zuerst:** Fehler-Taxonomie (A) und Interceptor-Pipeline (1+4) definieren *stabile*
+Oberflächen — ohne Stabilitätsversprechen riskierst du, sie im nächsten Major zu brechen.
+Außerdem signalisiert `STABILITY.md` dem Anwender "1.0.0 ist sicher für Produktion", was der
+Nr.-1-Adoptions-Blocker ist. Klein, asymmetrisch hoher ROI. `CHANGELOG.md` existiert bereits und
+ist fortzuführen.
+
+### Phase 1 — Architektur-Fundament (gekoppelt, ein Durchgang)
+
+| Item | Was | Verknüpfung |
+|---|---|---|
+| **1** | `[TrameAuthorise]` → Policies (`[TrameAuthorise(Policy=…)]` an ASP.NET Core `IAuthorizationHandler`), sodass `403` (authenticated-but-not-permitted) von `401` (not authenticated) unterscheidbar wird. | **Als Interceptor-Pipeline anlegen**, nicht als weitere Speziallogik im Invoker. `[TrameAuthorise]` wird zum default-Interceptor, `[TrameAnonymous]` zur Skip-Annotation. |
+| **4** | OTel erweitern: Metrics (`trame.call.duration`, `trame.call.count`, `trame.batch.fan_out`, `trame.error.rate`) + Logging-Conventions (OTel-RPC-Semantic-Conventions), nicht nur Traces. | **Dieselbe Pipeline** — Tracing/Logging/Metrics sind Interceptors. Auth-Interceptor und OTel-Interceptor zusammen designen. |
+| **A** | Fehler-Taxonomie: stabiler, transport-uniformer Katalog (InvalidArgument/NotFound/Unauthenticated/PermissionDenied/FailedPrecondition/Unavailable/ResourceExhausted). `TrameError.Code` + semantische Kategorie; generierte Clients werfen typisierte Exceptions. | **Vor der Pipeline festnageln** — Interceptors produzieren/klassifizieren Fehler. |
+
+**Erfolgskriterium:** `RequireAuthentication` + Policy-basierte Auth via Pipeline; `trame.*`-Metrics
+in OTLP; ein `ERROR_CATALOG.md` mit den stabilen Codes; generierte Clients mit typisierten
+Exceptions.
+
+**Warum gekoppelt:** Auth, OTel und Fehler-Klassifizierung sind *drei Speziallocken*, die heute
+im Invoker sitzen. Jede einzeln erweitern heißt drei Refactors. Eine Interceptor-Pipeline einmal
+bauen heißt ein Seam für alle drei + zukünftige (Validation, Caching, Retry). Punkt 1, 4 und A
+sind *ein* Architektur-Entscheid, nicht drei. Siehe auch *Later* unten (Policy-based
+authorization, Input validation) — diese Punkte werden hier herein gehoben, nicht separat
+verfolgt.
+
+### Phase 2 — Produktionsreife
+
+| Item | Was | Abhängigkeit |
+|---|---|---|
+| **2** | North-Bound Secure Store: Repository/DI-Muster, Persistenz (mind. eine dokumentierte Implementierung, z. B. EF/SQLite). `NotificationStore` → `INotificationRepository`. | Setzt Phase 1 voraus — Store-Zugriffe müssen auth-gated sein. |
+
+**Erfolgskriterium:** Demo-Domain läuft gegen persistierten Store; Repository-Pattern in Doku als
+empfohlene North-Bound-Struktur.
+
+**Warum hier:** North-Bound braucht echte Persistenz. Aber *vor* Phase 1 wäre der Store nicht
+auth-gated → unsicher. *Nach* Phase 3 (Events) würde der Store-Wechsel die
+Events-Subscription-Lifecycle verkomplizieren. Phase 2 ist das natürliche Fenster.
+
+### Phase 3 — Echtzeit-Kohärenz (gekoppelt)
+
+| Item | Was | Verknüpfung |
+|---|---|---|
+| **3** | Events/Server-Push: `[TrameEvent]` + typisierte Subscribe-Oberfläche; Discovery-`kind: "event"`; Lifecycle (subscribe/unsubscribe, Reconnect-Resubscribe, gap-Semantik dokumentiert); WS/SignalR-only; Auth pro Subscription. | **Kompositionsregel festnageln:** Events *nicht chainbar* (wie Streams) — Compile-Fehler im Codegen, nicht Laufzeit-Überraschung. |
+| **B** | Client-Test-Doubles: generierte Clients gegen mockbare `ITrameClient`-Schnittstelle + In-Memory-Test-Transport. | **Bei Events-Codegen-Erweiterung gleich designen** — Events brauchen Codegen-Erweiterung → dort mockbare Subscribe-Oberfläche mit designen. |
+
+**Erfolgskriterium:** `client.chat.onMessageReceived(id).subscribe(…)` typisiert; Reconnect
+re-subscribed automatisch; Auth an Subscribe-Zeit geprüft; generierter Client in Unit-Test ohne
+Server mockbar; `kind: "event"` in Discovery.
+
+**Warum gekoppelt:** Events brauchen eine Codegen-Erweiterung (typisierte Subscribe-Oberfläche).
+Genau dann, wenn du Codegen ohnehin für Events erweiterst, ist B billig. Nachträglich teuer. B
+ist kein separater Punkt, er gehört in 3's Codegen-Design.
+
+### Phase 4 — Doku & Adoption-Polish
+
+| Item | Was |
+|---|---|
+| **5** | Doku für Phase 1–3 anpassen: Interceptor-Pipeline, Policies, Fehler-Katalog, OTel-Metrics, Events-Lifecycle, Secure-Store-Pattern. |
+| **6** | Trame/REST Zusammenspiel auf Landing Page: "Trame sits next to REST, shares the service layer" — die `BEST_PRACTICES.md` §4.6-Positionierung nach vorne. Explizit: "ASP.NET-Controller über dem Service ist ein erstklassiger Weg für Legacy/OpenAPI, kein Workaround." |
+| **P1** | NuGet-first-Sample + Package-Matrix im README (Server/Client/Generator × NuGet/npm × Status). Quickstart ab `dotnet add package`. |
+| **P2** | Public Benchmarks: `TrameBench`-Report veröffentlichen (Trame-Batch vs. REST-Loop vs. gRPC). |
+| **P3** | Idempotency/Retry-Guidance in Doku: welche Calls sind safe-to-retry; optionaler `Idempotency-Key` als Interceptor. |
+
+**Erfolgskriterium:** Landing-Page-Positionierung trägt die "Trame+REST"-Story; Quickstart ohne
+Repo-Clone lauffähig; Benchmarks öffentlich; Retry-Regeln dokumentiert.
+
+**Warum zuletzt:** Doku für Phase 1–3 braucht, dass sie fertig sind (sonst doku-st du unhaltbare
+APIs). Polish-Items P1/P2/P3 sind Adoption-Öffner, aber sie *setzen* eine benutzbare stabile Story
+voraus — vorher bewarben sie eine halbfertige Sache.
+
+### Offene Design-Entscheidungen (pro Phase zu treffen)
+
+| Phase | Entscheidung |
+|---|---|
+| 0 | Ist `discoveryVersion` ein SemVer-Feld oder additive-only-Counter? (Heute additive-only — bestätigen.) |
+| 1 | Interceptor-Reihenfolge festlegen: Auth → Validation → Tracing → Method? (Auth *vor* allem anderen, inkl. OTel, sonst loggst du unautorisieren Traffic.) |
+| 1 | Fehler-Taxonomie: eigene Codes oder an gRPC-Status-Codes lehnen? (gRPC-Anlehnung senkt polyglotte Adoption-Reibung.) |
+| 3 | Events gap-Semantik: at-most-once-while-disconnected (v1) vs. `Last-Event-Id`-Resume (v1.x)? (v1: at-most-once, dokumentiert; v1.x: Resume.) |
+| 3 | Subscribe-Parameter (z. B. `chatId`) als First-Class in der Subscription-ID oder nachgelagertes Filter? (First-Class — dominiert in der Praxis.) |
+| 4 | Positionierung: "Trame + REST" als *erste* Aussage auf der Landing Page oder als eigener Abschnitt? (Erste — es ist die Nr.-1-Adoptions-Frage.) |
+
+### Trame + REST — die Positionierung, die Phase 4/6 trägt
+
+Die Diskussion, die zu dieser Roadmap führte, hat eine Position geschärft, die hier festgehalten
+wird, weil sie mehrere der Phasen-Items leitet (insb. 6 und P1):
+
+- **Trame ist Komplement zu REST, nicht Ersatz.** Der Service-Layer ist der Seam; Trame-Controller
+  und REST-Controller sind zwei dünne Fassaden darüber (siehe `BEST_PRACTICES.md` §4.6: *design
+  the service once, expose it N times*).
+- **OpenAPI entsteht beim REST-Teil von selbst** (Swashbuckle/NSwag). Trame braucht keinen
+  eigenen OpenAPI-Emitter — der REST-Teil der App hat sein OpenAPI, weil er normales ASP.NET ist.
+- **Legacy-Clients ohne Trame-Client-Möglichkeit** bekommen einen normalen ASP.NET-Controller
+  über demselben Service — kein Trame-Runtime-Sub-System, keine neue Attribut-Klasse, keine
+  neue Route-Konvention. Das ist Standard-ASP.NET, das der Anwender ohnehin kann, und es ist ein
+  *empfohlener Weg*, kein Workaround.
+- **Optional später: ein Codegen-Template**, das aus der Trame-Declaration einen normalen
+  ASP.NET-Controller-Stub generiert (mit `[HttpGet]`/`[Route]` und Service-Calls). Der Output ist
+  *standard ASP.NET*, kein Trame-Sub-System — mit allem, was ASP.NET-Codegen bietet (Swagger,
+  Model-Binding, etc.). Das ist ein Komfort-Feature für viele Methoden, kein Kern-Feature; es
+  gehört auf *Later*, nicht auf eine Phase.
+
+Damit entfällt die in früheren Entwürfen erwogene "flache REST-Projektion als
+Trame-Runtime-Feature" — sie wäre ein zweites, dümmeres REST neben ASP.NET gewesen. Die Lösung ist
+normales ASP.NET über dem Service, was Trame ohnehin empfiehlt.
+
+### Wenn nur drei Dinge — die asymmetrisch wirksamen
+
+Wenn du nicht die ganze Roadmap auf einmal angehst: **C1/C2 (STABILITY.md + CHANGELOG), dann
+1+4+A als Interceptor-Pipeline, dann 6 (Trame/REST-Positionierung).** Das macht Trame benutzbar.
+Der Rest ist Ausbau.
 
 ---
 
@@ -233,10 +417,15 @@ transfer. The v1.x+ plan raises binary to that level without breaking the JSON w
   source generator described above and shares its drift-check requirement.
 - **Policy-based authorization** for `[TrameAuthorise]` via `IAuthorizationHandler`, so that
   `403` (authenticated but not permitted) can be distinguished from `401` (not authenticated) —
-  currently a roadmap item in RELEASE-PLAN Phase 3.1.
+  **→ gehoben in [Benutzbarkeit-Roadmap Phase 1](#phase-1--architektur-fundament-gekoppelt-ein-durchgang)** (Punkt 1, als Interceptor-Pipeline).
 - **Direct/fluent handler registration** without `[TrameController]`/`[TrameMethod]` — for
   scenarios that do not want attribute-scan registration.
 - **Input validation** of parameters (DataAnnotations / FluentValidation) in the interceptor
-  pipeline.
+  pipeline — **→ gehoben in [Benutzbarkeit-Roadmap Phase 1](#phase-1--architektur-fundament-gekoppelt-ein-durchgang)** (als weiterer Interceptor, nachdem die Pipeline aus Punkt 1/4/A steht).
 - **True REST streams** instead of materialization to a JSON array (currently a limitation;
   WebSocket/SignalR offer streaming semantics).
+- **Optional ASP.NET-Controller-Codegen-Template** — ein `trame-gen --lang aspnet`-Template, das
+  aus der Trame-Declaration einen normalen ASP.NET-Controller-Stub generiert (`[HttpGet]`/`[Route]`
+  + Service-Calls). Output ist Standard-ASP.NET (Swagger/Model-Binding inklusive), kein
+  Trame-Runtime-Sub-System. Komfort-Feature für viele Legacy-Methoden; siehe
+  [Trame + REST Positionierung](#trame--rest--die-positionierung-die-phase-46-trägt).

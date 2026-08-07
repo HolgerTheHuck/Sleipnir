@@ -5,7 +5,7 @@ using Trame.Samples.NotificationChat.Server.Models;
 namespace Trame.Samples.NotificationChat.Server.Controllers;
 
 [TrameController("Notification")]
-public class NotificationController(NotificationStore store)
+public class NotificationController(INotificationStore store)
 {
     [TrameMethod("GetInbox")]
     public IReadOnlyList<Notification> GetInbox()

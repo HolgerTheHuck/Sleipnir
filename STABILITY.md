@@ -51,9 +51,11 @@ requires a 2.0.0 (SemVer major).
 - `[TrameController("name")]` and `[TrameController("name", AutoDiscover = false)]` — names,
   constructor signatures, and discovery semantics are stable.
 - `[TrameMethod("name")]` — stable.
-- `[TrameAuthorise]` and `[TrameAuthorise(Role = "...")]` — stable. **The `Policy` argument is
-  experimental** (planned, see `ROADMAP.md` Phase 1) until the interceptor pipeline lands; until
-  then, role-based authorization is the stable form.
+- `[TrameAuthorise]` and `[TrameAuthorise(Role = "...")]` — stable. **`[TrameAuthorise(Policy = "...")]`
+  is stable as of Phase 1** (policy-based authorization via ASP.NET Core `IAuthorizationService`,
+  `resource: null` in v1.1). `403 Forbidden` (`PermissionDenied`) is now distinguished from
+  `401 Unauthorized` (`Unauthenticated`) — see `ERROR_CATALOG.md` and
+  `docs/design/phase-1-interceptor-pipeline.md`.
 - `[TrameAnonymous]` — stable (method-level opt-out from `RequireAuthentication`).
 - `[TrameDataContract]` and `[TrameDataContract(Exclude = true)]` — stable.
 - `[TrameDocumentation("...")]` / `[TrameExample("...")]` — stable (additive; new optional
@@ -70,17 +72,43 @@ requires a 2.0.0 (SemVer major).
   within 1.x.
 - `TrameOptions.AliasBindingMode` (`Weak` / `Strict` / `Paranoid`) — the three modes and their
   semantics (`DEPENDENCY_BINDING.md` §7) are stable. `Weak` remains the default.
+- **`TrameOptions.Interceptors` / `TrameOptions.BatchInterceptors` (Phase 1, additive)** —
+  collections for user interceptors; `RegisterBuiltInInterceptors` (default `true`) toggles the
+  built-in Auth/Telemetry/Logging interceptors. Additive properties with safe defaults.
+- **`ITrameInterceptor` + `TrameInvocationContext` (Phase 1)** — stable in the single-call
+  path. The signature `InvokeAsync(TrameInvocationContext, TrameInvocationDelegate)` is stable;
+  `TrameInvocationContext` carries `Request`, `HttpContext`, `InvokeInfo`, `Response`,
+  `Activity`, `CancellationToken`. New context properties may be added additively. The batch
+  path's use of the pipeline is experimental (see §2).
+- **Built-in interceptors** (`TrameAuthorizationInterceptor`, `TrameTelemetryInterceptor`,
+  `TrameLoggingInterceptor`) — stable in behavior and registration order (Auth → Telemetry →
+  Logging, outer to inner). `TrameAuthorizationInterceptor` evaluates `[TrameAuthorise]` +
+  `Policy` via `IAuthorizationService` (optional); `TrameTelemetryInterceptor` emits
+  `trame.*` metrics and OTel-convention logs. See `docs/design/phase-1-interceptor-pipeline.md`.
 
 ### 1.4 Response and error model
 - `TrameResponse` / `TrameError` field shape and meaning — stable.
-- The Trame logical codes returned in `TrameResponse.code` (`200`, `204`, `400`, `401`, `404`,
-  `413`, `499`, `500`) — stable in their current mapping. A future **error taxonomy**
-  (`ROADMAP.md` Phase 1, item A) will add *semantic categories* on top, not replace the existing
-  numeric codes.
-- `TrameResults.*` factory (`Ok`, `NotFound`, `BadRequest`, `Error(...)`, etc.) — stable.
+- The Trame logical codes returned in `TrameResponse.code` (`200`, `204`, `400`, `401`, `403`,
+  `404`, `409`, `413`, `499`, `500`) — stable in their current mapping. See `ERROR_CATALOG.md`
+  for the authoritative catalog. A future **error taxonomy** (`ROADMAP.md` Phase 1, item A)
+  adds *semantic categories* on top, not replaces the existing numeric codes.
+- **`TrameError.Category` (Phase 1, additive)** — a new `TrameErrorCategory` enum field
+  (`InvalidArgument`/`Unauthenticated`/`PermissionDenied`/`NotFound`/`Conflict`/
+  `FailedPrecondition`/`ResourceExhausted`/`Internal`/`Unavailable`/`Cancelled`) carried on the
+  wire as `error.category` (string, default `None`). Additive per STABILITY.md §3.2 — existing
+  1.0.0 clients ignore it. See `ERROR_CATALOG.md`.
+- `TrameErrorCodes` constants (Phase 1) — stable named constants for the numeric codes; replace
+  the magic numbers that were scattered across `TrameResults` and the Invoker. The numeric
+  values are unchanged from 1.0.0.
+- `TrameResults.*` factory (`Ok`, `NotFound`, `BadRequest`, `Forbidden` (new, Phase 1),
+  `Error(...)`, etc.) — stable. `Error(code, message, category, details)` takes an optional
+  category; the convenience methods set it automatically.
 - `TrameException` on the client (thrown on non-2xx body `code` from `Call<T>`) — stable.
 - `OperationCanceledException` propagation semantics (cancellation surfaces as OCE, not wrapped)
   — stable.
+- `ForbiddenAccessException` (Phase 1) — thrown by the auth path when authenticated but
+  role/policy denied; translated to `403 Forbidden` (`PermissionDenied`). Distinct from
+  `UnauthorizedAccessException` (→ `401 Unauthorized` / `Unauthenticated`).
 
 ### 1.5 Client runtime
 - `ITrameClient` interface and the three implementations (`TrameRestJsonClient`,
@@ -102,9 +130,10 @@ requires a 2.0.0 (SemVer major).
 
 ## 2. Experimental surface (may change within 1.x)
 
-These exist in 1.0.0 but are **not yet stability-guaranteed**. They may be renamed, restructured,
-or removed in a minor version. Pin the exact Trame version if you build on them. They are
-expected to *graduate* into the stable surface as the corresponding `ROADMAP.md` phases land.
+These exist in 1.0.0/Phase 1 but are **not yet stability-guaranteed**. They may be renamed,
+restructured, or removed in a minor version. Pin the exact Trame version if you build on them.
+They are expected to *graduate* into the stable surface as the corresponding `ROADMAP.md`
+phases land.
 
 - **Codegen outputs.** Everything generated by `trame-gen` (`--lang ts | js | cs | py`) and by
   the Roslyn `Trame.SourceGenerator`: the `TrameGeneratedClient`, per-controller `*Client`
@@ -116,21 +145,32 @@ expected to *graduate* into the stable surface as the corresponding `ROADMAP.md`
   model, `ROADMAP.md` "v1.1 — Versioning & build-time contract"). The drift-check is a
   build-time guarantee, not yet a stable public surface — its CLI flags and target names may
   settle in 1.1.
-- **Interceptor pipeline extension points** beyond the built-in `TrameLoggingInterceptor`.
-  `ITrameInterceptor` exists, but the Phase 1 work (`ROADMAP.md`) will reshape the pipeline to
-  host Auth/OTel/error-classification as first-class interceptors. Custom interceptors written
-  against the 1.0.0 `ITrameInterceptor` may need adjustment in a 1.x minor.
+- **Interceptor pipeline in the batch path.** Phase 1 lands the pipeline (`ITrameInterceptor`
+  + `TrameInvocationContext`) as stable in the single-call path, and registers built-in
+  interceptors (Auth/Telemetry/Logging). The *batch path* (`ExecuteInParallel`/
+  `ExecuteSequentially`/`ExecuteInDependencyBatches`) runs Auth via the serial pre-pass and
+  Tracing/Metrics via direct calls in `ExecuteAuthorized`/`TraceCallError` — **not** through
+  the per-element interceptor pipeline. User interceptors registered via
+  `TrameOptions.Interceptors` currently run *only* in the single-call path. Routing the batch
+  path through the per-element pipeline (so user interceptors run for batch elements too) is a
+  post-Phase-1 refactor that must preserve the serial-auth-pre-pass constraint. See
+  `docs/design/phase-1-interceptor-pipeline.md` step 7.
+- **`ITrameBatchInterceptor`** (Phase 1) — the batch-level interceptor surface exists and is
+  registered via `TrameOptions.BatchInterceptors`, but no built-in batch interceptor ships yet
+  (batch metrics are emitted directly in `InvokeDi(IEnumerable)` via `TrameMetrics.RecordBatch`).
+  The interface is stable in shape; the built-in batch interceptors that will use it are
+  post-Phase-1.
 - **`EnableJsonRpcCompat` adapter limitations** are documented (no `@alias` chaining, no
   execution-mode selection, no binary out-of-band, no streaming). The adapter is stable in
   what it *does*; what it *does not do* may change as it graduates.
 - **Developer UI** (`/Trame`). Its layout, tabs, history, codegen panel, and dependency builder
   are conveniences, not contract. The DevUI reflects the stable discovery; the DevUI itself is
   free to evolve.
-- **Telemetry `trame.*` span/tag names** as currently emitted. `rpc.system`, `rpc.service`,
-  `rpc.method` follow OTel RPC semantic conventions (stable); the Trame-specific tag names
-  (`trame.request_id`, `trame.batch.*`, `trame.binary.length`) are stable in 1.0.0 but the
-  **metrics** added in Phase 1 (`trame.call.duration`, `trame.call.count`,
-  `trame.batch.fan_out`, `trame.error.rate`) are new and will settle as the pipeline lands.
+- **Telemetry `trame.*` metric instruments** as currently emitted (`trame.call.duration`,
+  `trame.call.count`, `trame.error.count`, `trame.batch.fan_out`, `trame.batch.count`). The
+  `Meter "Trame"` name and the OTel RPC span tag names (`rpc.system`/`rpc.service`/`rpc.method`)
+  are stable; the *metric instrument names and tag keys* are stable in Phase 1 but may gain
+  additional instruments/tags in minor versions (additive). See `ERROR_CATALOG.md` §6.
 - **The `samples/`, `spikes/`, `stories/`, and `Trame/` (sample app) projects.** Reference and
   demo material; no stability promise.
 

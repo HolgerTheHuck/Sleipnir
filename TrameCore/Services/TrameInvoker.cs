@@ -14,6 +14,9 @@ using TrameCore.Services.Helper;
 using System.Diagnostics;
 using TrameCore.Tracing;
 using Microsoft.Extensions.Logging; // Für JsonPath.Net
+using TrameCommon.Results;
+using TrameCommon.Models;
+using TrameCommon;
 
 namespace TrameCore.Services
 {
@@ -223,6 +226,9 @@ namespace TrameCore.Services
             // Batch-Parent-Activity (rpc.system + trame.batch.mode/count). Null ohne Listener.
             using var batchActivity = TrameTracing.StartBatch(requestList, mode);
 
+            // Batch-Metrics (trame.batch.fan_out/count) — kostenneutral ohne MetricReader.
+            TrameMetrics.RecordBatch(requestList, mode);
+
             // Auto-detect: if requests have DependencyMappings, use batch-based
             // topological execution regardless of the specified mode.
             if (requestList.Any(r => r.DependencyMapping != null && r.DependencyMapping.Count > 0))
@@ -246,15 +252,16 @@ namespace TrameCore.Services
 
         public async Task<TrameResponse?> InvokeDi(TrameRequest request, HttpContext? context, CancellationToken ct = default)
         {
-            // Build the interceptor pipeline wrapping the actual execution
-            TrameInvocationDelegate pipeline = (req, token) => ExecuteSingleInvocationSimple(req, context, token);
+            // Build the interceptor pipeline wrapping the actual execution.
+            // Phase 1: Pipeline trägt TrameInvocationContext (HttpContext, später InvokeInfo/Activity).
+            TrameInvocationDelegate pipeline = ctx => ExecuteSingleInvocationSimple(ctx.Request, ctx.HttpContext, ctx.CancellationToken);
 
-            // Wrap interceptors in reverse order (last interceptor runs first)
+            // Wrap interceptors in reverse order (last interceptor runs first).
             for (int i = _interceptors.Count - 1; i >= 0; i--)
             {
                 var interceptor = _interceptors[i];
                 var next = pipeline;
-                pipeline = (req, token) => interceptor.InvokeAsync(req, next, token);
+                pipeline = ctx => interceptor.InvokeAsync(ctx, next);
             }
 
             var stopwatch = Stopwatch.StartNew();
@@ -263,10 +270,19 @@ namespace TrameCore.Services
             using var activity = TrameTracing.StartCall(request);
             _logger.LogTrace("Starting RPC call {Controller}.{Method} with request ID {RequestId}", request.Controller, request.Method, request.Id);
 
+            var invocationContext = new TrameInvocationContext
+            {
+                Request = request,
+                HttpContext = context,
+                CancellationToken = ct,
+                Activity = activity,
+            };
+
             TrameResponse? response;
             try
             {
-                response = await pipeline(request, ct);
+                response = await pipeline(invocationContext);
+                invocationContext.Response = response;
                 TrameTracing.SetCallStatus(activity, response);
                 _logger.LogDebug("RPC call {Controller}.{Method} completed. Status Code: {Code}", request.Controller, request.Method, response?.Code);
             }
@@ -274,6 +290,7 @@ namespace TrameCore.Services
             {
                 _logger.LogError(ex, "RPC call {Controller}.{Method} failed.", request.Controller, request.Method);
                 response = InternalServerError("An internal error occurred while processing the request.", ex);
+                invocationContext.Response = response;
                 TrameTracing.RecordException(activity, ex);
                 TrameTracing.SetCallStatus(activity, response);
             }
@@ -316,6 +333,10 @@ namespace TrameCore.Services
                 catch (UnauthorizedAccessException)
                 {
                     return Unauthorized();
+                }
+                catch (ForbiddenAccessException)
+                {
+                    return Forbidden();
                 }
 
                 // Im Single-Call ohne Dependencies brauchen wir keine Alias-Auflösung:
@@ -1187,6 +1208,10 @@ namespace TrameCore.Services
             {
                 return new AuthDecision(null, null, TraceCallError(request, Unauthorized()));
             }
+            catch (ForbiddenAccessException)
+            {
+                return new AuthDecision(null, null, TraceCallError(request, Forbidden()));
+            }
 
             return new AuthDecision(invokeInfo, controllerType, null);
         }
@@ -1268,7 +1293,10 @@ namespace TrameCore.Services
             catch (Exception ex)
             {
                 TrameTracing.RecordException(activity, ex);
-                return Status(InternalServerError("An internal error occurred while processing the request.", ex));
+                var errorResponse = InternalServerError("An internal error occurred while processing the request.", ex);
+                // Metrics für den Exception-Pfad (Internal, 5xx).
+                TrameMetrics.RecordCall(request, errorResponse, durationMs: 0, TrameErrorCategory.Internal);
+                return Status(errorResponse);
             }
             finally
             {
@@ -1279,6 +1307,12 @@ namespace TrameCore.Services
             TrameResponse? Status(TrameResponse? response)
             {
                 TrameTracing.SetCallStatus(activity, response);
+                // Metrics für den Erfolgs-/Business-Fehler-Pfad. durationMs=0 hier, da
+                // die genaue Dauer nur dem Single-Call-Pfad (Telemetry-Interceptor) vorbe-
+                // halten ist — im Batch-Pfad messen wir Counts/ErrorRate, nicht p50/p90
+                // (die würden durch die parallele Fan-out-Statistik verfälscht).
+                TrameMetrics.RecordCall(request, response, durationMs: 0,
+                    category: response?.Error?.Category ?? TrameErrorCategory.None);
                 return response;
             }
         }
@@ -1294,6 +1328,9 @@ namespace TrameCore.Services
         {
             using var activity = TrameTracing.StartCall(request);
             TrameTracing.SetCallStatus(activity, response);
+            // Metrics für Pre-Execution-Fehler (Auth/Lookup/Verfügbarkeit).
+            TrameMetrics.RecordCall(request, response, durationMs: 0,
+                category: response?.Error?.Category ?? TrameErrorCategory.None);
             return response;
         }
 
@@ -1787,11 +1824,23 @@ namespace TrameCore.Services
             if (invokeInfo.AnonymousAttribute != null) return;
 
             // Explizite [TrameAuthorise] (Method- oder Controller-Level) →
-            // Role/Authentication-Check wie bisher.
+            // Role/Authentication-Check. Phase 1: 403 (Forbidden) wenn authentifiziert,
+            // aber Rolle verweigert; 401 (Unauthorized) wenn nicht authentifiziert.
+            // Policy-Evaluation läuft hier *nicht* — das übernimmt der
+            // TrameAuthorizationInterceptor via IAuthorizationService (TrameHub), der
+            // zusätzlich zur Pipeline läuft. Hier wird nur Role/IsAuthenticated geprüft.
             if (invokeInfo.AuthoriseAttribute != null)
             {
                 if (!await invokeInfo.AuthoriseAttribute.OnAuthorization(context))
-                    throw new UnauthorizedAccessException();
+                {
+                    // OnAuthorization liefert false bei: context==null, nicht authentifiziert,
+                    // oder Rolle nicht erfüllt. Unterscheide 401 vs 403 (Phase 1):
+                    var authenticated = context?.User?.Identity?.IsAuthenticated ?? false;
+                    if (!authenticated)
+                        throw new UnauthorizedAccessException();
+                    // Authentifiziert, aber Rolle verweigert → 403
+                    throw new ForbiddenAccessException();
+                }
                 return;
             }
 
@@ -1811,26 +1860,33 @@ namespace TrameCore.Services
         #region Response-Generierung
 
         private TrameResponse BadRequest(string message, HttpStatusCode code = HttpStatusCode.BadRequest)
-            => CreateError(code, message);
+            => CreateError((int)code, message, CategoryFor((int)code));
 
         // Erfolg: strukturierter Ergebniswert in Data (roh, ein Pass — kein Double-Wrapping).
         // Der Bulk-Pfad nutzt Ok(byte[]) mit rohen UTF-8-Bytes (DataBytes); Data bleibt
         // null und wird erst lazy materialisiert, wenn ein Reader (Dep-Chaining, Tests)
         // darauf zugreift. Ok(JsonElement?) bleibt für den Legacy/Spezial-Pfad.
         private TrameResponse Ok(JsonElement? data)
-            => new() { Code = (int)HttpStatusCode.OK, Data = data };
+            => new() { Code = TrameErrorCodes.Ok, Data = data };
 
         private TrameResponse Ok(byte[]? dataBytes)
-            => new() { Code = (int)HttpStatusCode.OK, DataBytes = dataBytes };
+            => new() { Code = TrameErrorCodes.Ok, DataBytes = dataBytes };
 
         private TrameResponse NoContent()
-            => new() { Code = (int)HttpStatusCode.NoContent };
+            => new() { Code = TrameErrorCodes.NoContent };
 
         private TrameResponse Unauthorized()
-            => CreateError(HttpStatusCode.Unauthorized, "Unauthorized.");
+            => CreateError(TrameErrorCodes.Unauthorized, "Unauthorized.", TrameErrorCategory.Unauthenticated);
+
+        /// <summary>
+        /// 403 Forbidden — authentifiziert, aber Rolle/Policy verweigert (Phase 1).
+        /// Spiegel von <see cref="TrameResults.Forbidden"/>; PermissionDenied-Kategorie.
+        /// </summary>
+        private TrameResponse Forbidden()
+            => CreateError(TrameErrorCodes.Forbidden, "Forbidden.", TrameErrorCategory.PermissionDenied);
 
         private TrameResponse InternalServerError(string message)
-            => CreateError(HttpStatusCode.InternalServerError, message);
+            => CreateError(TrameErrorCodes.InternalServerError, message, TrameErrorCategory.Internal);
 
         /// <summary>
         /// Erzeugt eine 500-Response. Die Message bleibt generisch (kein Leak in Produktion);
@@ -1839,7 +1895,7 @@ namespace TrameCore.Services
         /// </summary>
         private TrameResponse InternalServerError(string message, Exception? ex)
         {
-            var response = CreateError(HttpStatusCode.InternalServerError, message);
+            var response = CreateError(TrameErrorCodes.InternalServerError, message, TrameErrorCategory.Internal);
             if (ex != null && EnableDetailedErrors && response.Error != null)
                 response.Error.Details = ex.ToString();
             return response;
@@ -1848,20 +1904,44 @@ namespace TrameCore.Services
         /// <summary>
         /// Fehler-Response: Data bleibt null (Fehler tragen nur Code + Error-Objekt),
         /// die Message wohnt in Error.Message. Kein String-Payload in Data mehr.
+        /// Die semantische Kategorie wird aus dem Code abgeleitet (siehe <see cref="CategoryFor"/>),
+        /// falls der Caller keine explizite angibt — so bleiben die bestehenden Aufrufstellen
+        /// ohne Änderung kategorisiert.
         /// </summary>
-        private TrameResponse CreateError(HttpStatusCode code, string? message)
+        private TrameResponse CreateError(int code, string? message, TrameErrorCategory category = TrameErrorCategory.None)
         {
             return new TrameResponse
             {
-                Code = (int)code,
+                Code = code,
                 Data = null,
                 Error = new TrameError
                 {
-                    Code = (int)code,
-                    Message = message ?? "Unknown error"
+                    Code = code,
+                    Message = message ?? "Unknown error",
+                    Category = category == TrameErrorCategory.None ? CategoryFor(code) : category,
                 }
             };
         }
+
+        /// <summary>
+        /// Leitet die semantische <see cref="TrameErrorCategory"/> aus einem numerischen
+        /// Code ab (Default-Kategorisierung für bestehende Aufrufstellen, die keine
+        /// explizite Kategorie übergeben). Hält die Kategorisierung an einer Stelle
+        /// zentral, statt sie in jeder Fabrik zu duplizieren.
+        /// </summary>
+        private static TrameErrorCategory CategoryFor(int code) => code switch
+        {
+            TrameErrorCodes.BadRequest or 422 => TrameErrorCategory.InvalidArgument,
+            TrameErrorCodes.Unauthorized => TrameErrorCategory.Unauthenticated,
+            TrameErrorCodes.Forbidden => TrameErrorCategory.PermissionDenied,
+            TrameErrorCodes.NotFound => TrameErrorCategory.NotFound,
+            TrameErrorCodes.Conflict => TrameErrorCategory.Conflict,
+            TrameErrorCodes.RequestEntityTooLarge or 429 => TrameErrorCategory.ResourceExhausted,
+            TrameErrorCodes.InternalServerError => TrameErrorCategory.Internal,
+            TrameErrorCodes.ServiceUnavailable => TrameErrorCategory.Unavailable,
+            TrameErrorCodes.ClientClosedRequest => TrameErrorCategory.Cancelled,
+            _ => TrameErrorCategory.None,
+        };
 
         #endregion
 

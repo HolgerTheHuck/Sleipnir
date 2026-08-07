@@ -10,27 +10,26 @@ namespace TrameCore.Services;
 public class TrameLoggingInterceptor(ILogger<TrameLoggingInterceptor> logger) : ITrameInterceptor
 {
     public async Task<TrameResponse?> InvokeAsync(
-        TrameRequest request,
-        TrameInvocationDelegate next,
-        CancellationToken ct)
+        TrameInvocationContext context,
+        TrameInvocationDelegate next)
     {
         var stopwatch = Stopwatch.StartNew();
         logger.LogTrace("Starting RPC call {Controller}.{Method} [{RequestId}]",
-            request.Controller, request.Method, request.Id);
+            context.ControllerName, context.MethodName, context.RequestId);
 
         try
         {
-            var response = await next(request, ct);
+            var response = await next(context);
             stopwatch.Stop();
             logger.LogDebug("RPC call {Controller}.{Method} completed in {Duration}ms [{StatusCode}]",
-                request.Controller, request.Method, stopwatch.ElapsedMilliseconds, response?.Code);
+                context.ControllerName, context.MethodName, stopwatch.ElapsedMilliseconds, response?.Code);
             return response;
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
             logger.LogError(ex, "RPC call {Controller}.{Method} failed after {Duration}ms",
-                request.Controller, request.Method, stopwatch.ElapsedMilliseconds);
+                context.ControllerName, context.MethodName, stopwatch.ElapsedMilliseconds);
             throw;
         }
     }

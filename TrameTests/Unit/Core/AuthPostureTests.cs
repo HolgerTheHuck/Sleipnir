@@ -127,9 +127,10 @@ public class AuthPostureTests
         _invoker.RequireAuthentication = true;
         (await Invoke(_invoker, Req("Locked"), null)).Should().Be(HttpStatusCode.Unauthorized);
         (await Invoke(_invoker, Req("Locked"), AuthenticatedContext())).Should().Be(HttpStatusCode.OK);
-        // AdminOnly: auth ohne Admin-Rolle → 401 (OnAuthorization gibt false).
+        // AdminOnly: auth ohne Admin-Rolle → 403 Forbidden (Phase 1: authentifiziert,
+        // aber Rolle verweigert = PermissionDenied, nicht mehr 401 Unauthenticated).
         (await Invoke(_invoker, Req("AdminOnly"), AuthenticatedContext(admin: false)))
-            .Should().Be(HttpStatusCode.Unauthorized);
+            .Should().Be(HttpStatusCode.Forbidden);
         (await Invoke(_invoker, Req("AdminOnly"), AuthenticatedContext(admin: true)))
             .Should().Be(HttpStatusCode.OK);
         AuthPostureController.LockedCalls.Should().Be(1);

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using TrameCommon.Models;
+using TrameCommon.Results;
 using TrameRest.JsonRpc;
 using Xunit;
 
@@ -140,14 +141,17 @@ public class JsonRpcAdapterTests
     [Fact]
     public void MapErrorCode_Routing404_IsMethodNotFound()
     {
-        JsonRpcAdapter.MapErrorCode(404, "Controller 'Ghost' not found.").Should().Be(-32601);
-        JsonRpcAdapter.MapErrorCode(404, "Method 'X' not found on controller 'Y'.").Should().Be(-32601);
+        JsonRpcAdapter.MapErrorCode(404, TrameErrorCategory.None, "Controller 'Ghost' not found.").Should().Be(-32601);
+        JsonRpcAdapter.MapErrorCode(404, TrameErrorCategory.None, "Method 'X' not found on controller 'Y'.").Should().Be(-32601);
     }
 
     [Fact]
     public void MapErrorCode_Business404_IsServerError()
     {
-        JsonRpcAdapter.MapErrorCode(404, "Customer '42' not found.").Should().Be(-32000);
+        // Ohne Category (None) → numerischer Fallback → -32000 (catch-all).
+        JsonRpcAdapter.MapErrorCode(404, TrameErrorCategory.None, "Customer '42' not found.").Should().Be(-32000);
+        // Mit Category=NotFound → -32000 (Business-NotFound, catch-all).
+        JsonRpcAdapter.MapErrorCode(404, TrameErrorCategory.NotFound, "Customer '42' not found.").Should().Be(-32000);
     }
 
     [Theory]
@@ -159,7 +163,22 @@ public class JsonRpcAdapterTests
     [InlineData(429, -32000)]
     [InlineData(499, -32000)]
     public void MapErrorCode_TrimeTypeToRpc(int trame, int expected)
-        => JsonRpcAdapter.MapErrorCode(trame, "x").Should().Be(expected);
+        => JsonRpcAdapter.MapErrorCode(trame, TrameErrorCategory.None, "x").Should().Be(expected);
+
+    [Theory]
+    // Phase 1: Category-basierte Map (präziser als numerischer Code allein).
+    [InlineData(TrameErrorCategory.InvalidArgument, -32602)]
+    [InlineData(TrameErrorCategory.Unauthenticated, -32001)]
+    [InlineData(TrameErrorCategory.PermissionDenied, -32001)]
+    [InlineData(TrameErrorCategory.NotFound, -32000)]
+    [InlineData(TrameErrorCategory.Conflict, -32000)]
+    [InlineData(TrameErrorCategory.FailedPrecondition, -32602)]
+    [InlineData(TrameErrorCategory.ResourceExhausted, -32000)]
+    [InlineData(TrameErrorCategory.Internal, -32603)]
+    [InlineData(TrameErrorCategory.Unavailable, -32003)]
+    [InlineData(TrameErrorCategory.Cancelled, -32000)]
+    public void MapErrorCode_CategoryBasedMap(TrameErrorCategory category, int expected)
+        => JsonRpcAdapter.MapErrorCode(0, category, "x").Should().Be(expected);
 
     // === Response-Mapping ==================================================
 

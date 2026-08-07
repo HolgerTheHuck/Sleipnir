@@ -138,17 +138,48 @@ internal static class JsonRpcAdapter
     }
 
     /// <summary>
-    /// Mappt einen Trame-Status-Code auf einen JSON-RPC-Fehlercode. Das Framework
-    /// unterscheidet Routing-404 (Controller/Methode fehlt) von Business-404 per
-    /// Message-Präfix; nur die Routing-Variante wird -32601 (Method not found).
+    /// Mappt einen Trame-Status-Code (plus semantische Kategorie, Phase 1) auf einen
+    /// JSON-RPC-Fehlercode. Die Kategorie löst die bisherige String-Präfix-Kopplung ab:
+    /// statt <c>errorMessage.StartsWith("Controller '…")</c> wird <see cref="TrameErrorCategory.NotFound"/>
+    /// mit Routing-Kontext unterschieden — sauberer und nicht an Invoker-Fehlermeldungen gekoppelt.
     /// </summary>
-    public static int MapErrorCode(int trameCode, string? errorMessage)
+    /// <remarks>
+    /// Phase 1 — siehe <c>docs/design/phase-1-interceptor-pipeline.md</c>. Die Category ist
+    /// *zusätzlich* zum numerischen Code vorhanden; falls <paramref name="category"/> == None
+    /// (ältere Responses ohne Category), fällt die Map auf den numerischen Code zurück (wie v1.0).
+    /// </remarks>
+    public static int MapErrorCode(int trameCode, TrameCommon.Results.TrameErrorCategory category, string? errorMessage)
     {
+        // Routing-404 (Controller/Methode fehlt) → -32601 (Method not found).
+        // Ab v1.1 (Phase 1) primär über die Category + Message-Präfix (Fallback für
+        // Responses ohne Category): NotFound + "Controller '/Method '"-Präfix = Routing.
+        // Business-NotFound (z. B. "Customer '99' not found") fällt durch zu -32000.
         if (trameCode == 404 && errorMessage is not null
             && (errorMessage.StartsWith("Controller '", StringComparison.Ordinal)
                 || errorMessage.StartsWith("Method '", StringComparison.Ordinal)))
             return -32601;
 
+        // Phase 1: Category-basierte Map (präziser als numerischer Code allein).
+        // None/Default fällt durch zur numerischen switch (unten) — Abwärtskompatibilität.
+        if (category != TrameCommon.Results.TrameErrorCategory.None)
+        {
+            return category switch
+            {
+                TrameCommon.Results.TrameErrorCategory.InvalidArgument => -32602,   // Invalid params
+                TrameCommon.Results.TrameErrorCategory.Unauthenticated => -32001,   // Auth (401)
+                TrameCommon.Results.TrameErrorCategory.PermissionDenied => -32001,  // Auth (403)
+                TrameCommon.Results.TrameErrorCategory.NotFound => -32000,          // Business-NotFound (catch-all)
+                TrameCommon.Results.TrameErrorCategory.Conflict => -32000,
+                TrameCommon.Results.TrameErrorCategory.FailedPrecondition => -32602,// Invalid params (Dep-Kette)
+                TrameCommon.Results.TrameErrorCategory.ResourceExhausted => -32000,
+                TrameCommon.Results.TrameErrorCategory.Internal => -32603,          // Internal error
+                TrameCommon.Results.TrameErrorCategory.Unavailable => -32003,       // Server error (overload)
+                TrameCommon.Results.TrameErrorCategory.Cancelled => -32000,         // catch-all (499)
+                _ => -32000,
+            };
+        }
+
+        // Fallback: numerischer Code (v1.0-Verhalten für Responses ohne Category).
         return trameCode switch
         {
             400 or 422 => -32602,   // Invalid params (Bindung/Validierung)
@@ -176,7 +207,7 @@ internal static class JsonRpcAdapter
             var msg = trame.Error?.Message ?? $"Trame error {trame.Code}.";
             var err = new JsonObject
             {
-                ["code"] = MapErrorCode(trame.Code, trame.Error?.Message),
+                ["code"] = MapErrorCode(trame.Code, trame.Error?.Category ?? TrameCommon.Results.TrameErrorCategory.None, trame.Error?.Message),
                 ["message"] = msg,
             };
             // error.data: bevorzugt das strukturierte Trame-Data (z.B. ProblemDetails),

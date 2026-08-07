@@ -5,7 +5,7 @@ using Trame.Samples.NotificationChat.Server.Models;
 namespace Trame.Samples.NotificationChat.Server.Controllers;
 
 [TrameController("Media")]
-public class MediaController(NotificationStore store)
+public class MediaController(INotificationStore store)
 {
     [TrameMethod("GetGallery")]
     public IReadOnlyList<MediaItem> GetGallery()

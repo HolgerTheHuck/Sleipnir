@@ -5,7 +5,7 @@ using Trame.Samples.NotificationChat.Server.Models;
 namespace Trame.Samples.NotificationChat.Server.Controllers;
 
 [TrameController("Chat")]
-public class ChatController(NotificationStore store)
+public class ChatController(INotificationStore store)
 {
     [TrameMethod("GetChats")]
     public IReadOnlyList<Chat> GetChats()

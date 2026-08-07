@@ -20,7 +20,7 @@ builder.Services.AddCors(options =>
         .AllowAnyMethod());
 });
 
-builder.Services.AddSingleton<NotificationStore>();
+builder.Services.AddSingleton<INotificationStore, NotificationStore>();
 
 builder.Services.AddTrame(o =>
 {

@@ -3,7 +3,7 @@ using Trame.Samples.NotificationChat.Server.Models;
 
 namespace Trame.Samples.NotificationChat.Server.Data;
 
-public sealed class NotificationStore
+public sealed class NotificationStore : INotificationStore
 {
     private int _nextNotificationId;
     private int _nextChatId;

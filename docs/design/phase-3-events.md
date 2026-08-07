@@ -129,6 +129,31 @@ Element-Typ aus `IObservable<T>`. Parameter wie Call-Methoden.
 v1: WS-Transport bekommt den Push-Kanal (Text-Frame pro Event). SignalR folgt später (hat
 eingebauten Push, aber andere Hub-Methode-Form). REST: nein.
 
+### Entscheidung 6 — Reconnect: subscriptionId pro-Connection + client-side Re-Subscribe
+Reconnect = neue Connection = neue `subscriptionId`s. Der Client merkt sich die Subscribe-
+Parameter und ruft nach Reconnect automatisch wieder `subscribe` auf. Der Server hält
+Subscriptions **pro Connection** (Auto-Cleanup bei Disconnect). Entspricht at-most-once-
+while-disconnected (Entscheidung 2) — Gap-Events während Drop gehen verloren, dokumentiert.
+Voraussetzung für `Last-Event-Id`-Resume (v1.x+): der Client schickt die letzte `eventId` mit,
+der Server replayed ab dort (post-Phase-3).
+
+### Entscheidung 7 — Backpressure: Bounded Buffer + Drop-oldest mit Metrik
+Server puffert begrenzt (Default z. B. 100 Events pro Subscription, via `TrameOptions`).
+Wenn voll, droppt die ältesten. Eine `trame.event.dropped`-Metrik zählt. DoS-sicher,
+deterministisch, dokumentiert "at-most-once" implizit. Block (Server blockiert bis Client
+liest) ist riskant bei WS (Server-Thread blockiert, Producer blockiert) — nicht gewählt.
+Disconnect bei vollem Puffer ist hart — nicht gewählt.
+
+### Entscheidung 8 — Wire-Format: Separater Frame-Typ
+Event-Frame ist ein separater Frame-Typ auf dem Wire:
+```json
+{"type":"event","subscriptionId":"...","eventId":42,"data":{...}}
+```
+Klar von `TrameResponse` getrennt (Calls vs. Events). Erweiterbar für zukünftige Frame-Typen
+(`type:"complete"`, `type:"error"` für Subscription-Ende). Subscribe-/Unsubscribe-Requests
+bleiben `TrameRequest` (mit `kind:"subscribe"`-Feld oder separatem Dispatcher-Pfad);
+Subscribe-Response ist eine `TrameResponse`, die die `subscriptionId` trägt.
+
 ---
 
 ## Abgrenzung (was Phase 3 *nicht* macht)

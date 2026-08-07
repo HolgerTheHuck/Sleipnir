@@ -21,6 +21,20 @@ namespace TrameCore.Attributes
         /// </summary>
         public string? Role { get; set; }
 
+        /// <summary>
+        /// Optionale ASP.NET Core Authorization-Policy, die evaluiert wird (Phase 1).
+        /// Wenn gesetzt, prüft der <c>TrameAuthorizationInterceptor</c> die Policy via
+        /// <c>IAuthorizationService.AuthorizeAsync(user, resource: null, policy)</c>
+        /// *zusätzlich* zu <see cref="Role"/>. Schlägt die Policy fehl, ist die Response
+        /// <c>403 Forbidden</c> (PermissionDenied) — authentifiziert, aber nicht erlaubt.
+        /// Schlägt die Authentifizierung fehl (nicht eingeloggt), bleibt es
+        /// <c>401 Unauthorized</c> (Unauthenticated). Siehe <c>SECURITY.md</c> /
+        /// <c>docs/design/phase-1-interceptor-pipeline.md</c>. <c>resource</c> ist in
+        /// v1.1 <c>null</c> (command-orientiert, kein Resource-Begriff); ein
+        /// <c>[TrameAuthorizeResource]</c>-Hook für resource-basierte Policies ist v1.x+.
+        /// </summary>
+        public string? Policy { get; set; }
+
         public TrameAuthoriseAttribute()
         {
         }
@@ -32,7 +46,11 @@ namespace TrameCore.Attributes
 
         /// <summary>
         /// Die Methode wird im TrameService vor dem eigentlichen Methodenaufruf aufgerufen.
-        /// Gibt true zurück, wenn autorisiert; false sonst.
+        /// Gibt true zurück, wenn authentifiziert UND (falls gesetzt) die Rolle erfüllt ist.
+        /// Policy-Evaluation läuft *nicht* hier (die braucht IAuthorizationService, der
+        /// im TrameAuthorizationInterceptor in TrameHub injiziert wird) — diese Methode
+        /// prüft nur Role + IsAuthenticated. Policy = false (hier) heißt also *nicht*
+        /// "verweigert", sondern "nicht hier geprüft" — der Interktor übernimmt sie.
         /// </summary>
         public virtual Task<bool> OnAuthorization(HttpContext? context)
         {

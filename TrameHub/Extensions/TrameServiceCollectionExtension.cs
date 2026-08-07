@@ -138,8 +138,39 @@ namespace TrameHub.Extensions
                 return invoker;
             });
 
-            // Register built-in interceptors
-            services.AddSingleton<TrameCore.Services.ITrameInterceptor, TrameCore.Services.TrameLoggingInterceptor>();
+            // Register built-in interceptors (Phase 1: feste Reihenfolge Auth → Logging).
+            // Auth *vor* Logging → Auth läuft außen, lehnt unautorisierte Calls ab, bevor
+            // der Logging-Interceptor sie misst (sonst loggen wir unautorisierten Traffic).
+            // User-Interceptors aus options.Interceptors kommen *nach* den Built-ins
+            // (innen, näher an der Method-Invocation) — sie können auf gelöste InvokeInfo
+            // und autorisierte Requests aufsetzen.
+            if (options.RegisterBuiltInInterceptors)
+            {
+                // Auth (außen) — IAuthorizationService ist optional (South-Bound ohne
+                // ASP.NET Core Authorization); Policies werden nur ausgewertet, wenn
+                // registriert. RequireAuthentication wird via Closure durchgereicht.
+                services.AddSingleton<TrameCore.Services.ITrameInterceptor>(
+                    sp => new TrameHub.Interceptors.TrameAuthorizationInterceptor(
+                        sp.GetService<Microsoft.AspNetCore.Authorization.IAuthorizationService>(),
+                        sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TrameHub.Interceptors.TrameAuthorizationInterceptor>>(),
+                        options.RequireAuthentication));
+
+                // Logging (innen nach Auth) — der bestehende Built-in aus v1.0.
+                services.AddSingleton<TrameCore.Services.ITrameInterceptor, TrameCore.Services.TrameLoggingInterceptor>();
+            }
+
+            // User-Interceptors (nach Built-ins → innen). Die Reihenfolge in der
+            // Collection bleibt erhalten; IEnumerable<ITrameInterceptor> liefert sie
+            // in DI-Registrierungsreihenfolge, und die Pipeline baut reversed (letzter
+            // läuft zuerst). Built-ins (oben) sind zuerst registriert → sie laufen außen.
+            foreach (var userInterceptor in options.Interceptors)
+            {
+                services.AddSingleton<TrameCore.Services.ITrameInterceptor>(_ => userInterceptor);
+            }
+            foreach (var userBatchInterceptor in options.BatchInterceptors)
+            {
+                services.AddSingleton<TrameCore.Services.ITrameBatchInterceptor>(_ => userBatchInterceptor);
+            }
 
             // Register Fast-Controller as Scoped.
             // AutoDiscover=false-Controller bleiben dem Bulk-Scan bewusst fern — sie

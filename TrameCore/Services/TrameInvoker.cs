@@ -16,6 +16,7 @@ using TrameCore.Tracing;
 using Microsoft.Extensions.Logging; // Für JsonPath.Net
 using TrameCommon.Results;
 using TrameCommon.Models;
+using TrameCommon;
 
 namespace TrameCore.Services
 {
@@ -329,6 +330,10 @@ namespace TrameCore.Services
                 catch (UnauthorizedAccessException)
                 {
                     return Unauthorized();
+                }
+                catch (ForbiddenAccessException)
+                {
+                    return Forbidden();
                 }
 
                 // Im Single-Call ohne Dependencies brauchen wir keine Alias-Auflösung:
@@ -1200,6 +1205,10 @@ namespace TrameCore.Services
             {
                 return new AuthDecision(null, null, TraceCallError(request, Unauthorized()));
             }
+            catch (ForbiddenAccessException)
+            {
+                return new AuthDecision(null, null, TraceCallError(request, Forbidden()));
+            }
 
             return new AuthDecision(invokeInfo, controllerType, null);
         }
@@ -1800,11 +1809,23 @@ namespace TrameCore.Services
             if (invokeInfo.AnonymousAttribute != null) return;
 
             // Explizite [TrameAuthorise] (Method- oder Controller-Level) →
-            // Role/Authentication-Check wie bisher.
+            // Role/Authentication-Check. Phase 1: 403 (Forbidden) wenn authentifiziert,
+            // aber Rolle verweigert; 401 (Unauthorized) wenn nicht authentifiziert.
+            // Policy-Evaluation läuft hier *nicht* — das übernimmt der
+            // TrameAuthorizationInterceptor via IAuthorizationService (TrameHub), der
+            // zusätzlich zur Pipeline läuft. Hier wird nur Role/IsAuthenticated geprüft.
             if (invokeInfo.AuthoriseAttribute != null)
             {
                 if (!await invokeInfo.AuthoriseAttribute.OnAuthorization(context))
-                    throw new UnauthorizedAccessException();
+                {
+                    // OnAuthorization liefert false bei: context==null, nicht authentifiziert,
+                    // oder Rolle nicht erfüllt. Unterscheide 401 vs 403 (Phase 1):
+                    var authenticated = context?.User?.Identity?.IsAuthenticated ?? false;
+                    if (!authenticated)
+                        throw new UnauthorizedAccessException();
+                    // Authentifiziert, aber Rolle verweigert → 403
+                    throw new ForbiddenAccessException();
+                }
                 return;
             }
 
@@ -1841,6 +1862,13 @@ namespace TrameCore.Services
 
         private TrameResponse Unauthorized()
             => CreateError(TrameErrorCodes.Unauthorized, "Unauthorized.", TrameErrorCategory.Unauthenticated);
+
+        /// <summary>
+        /// 403 Forbidden — authentifiziert, aber Rolle/Policy verweigert (Phase 1).
+        /// Spiegel von <see cref="TrameResults.Forbidden"/>; PermissionDenied-Kategorie.
+        /// </summary>
+        private TrameResponse Forbidden()
+            => CreateError(TrameErrorCodes.Forbidden, "Forbidden.", TrameErrorCategory.PermissionDenied);
 
         private TrameResponse InternalServerError(string message)
             => CreateError(TrameErrorCodes.InternalServerError, message, TrameErrorCategory.Internal);

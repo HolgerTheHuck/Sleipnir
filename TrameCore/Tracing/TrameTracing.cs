@@ -65,7 +65,7 @@ public static class TrameTracing
     /// <summary>Setzt den OTel-Status aus der <see cref="TrameResponse"/>.</summary>
     /// <param name="activity">Der Call-/Batch-Activity (darf null sein — dann No-op).</param>
     /// <param name="response">Die Antwort (IsSuccess bestimmt Ok vs. Error).</param>
-    internal static void SetCallStatus(Activity? activity, TrameResponse? response)
+    public static void SetCallStatus(Activity? activity, TrameResponse? response)
     {
         if (activity is null)
             return;
@@ -84,7 +84,7 @@ public static class TrameTracing
     /// </summary>
     /// <param name="activity">Der Activity (darf null sein — dann No-op).</param>
     /// <param name="ex">Die zu recordede Ausnahme.</param>
-    internal static void RecordException(Activity? activity, Exception ex)
+    public static void RecordException(Activity? activity, Exception ex)
     {
         if (activity is null)
             return;

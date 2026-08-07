@@ -155,7 +155,15 @@ namespace TrameHub.Extensions
                         sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TrameHub.Interceptors.TrameAuthorizationInterceptor>>(),
                         options.RequireAuthentication));
 
-                // Logging (innen nach Auth) — der bestehende Built-in aus v1.0.
+                // Telemetry (Mitte) — Tracing + Metrics + OTel-Logging-Conventions.
+                // Läuft nach Auth (misst nur autorisierten Traffic) und vor Logging
+                // (außen, umschließt die Method-Invocation mit der Pipeline-Span).
+                services.AddSingleton<TrameCore.Services.ITrameInterceptor>(
+                    sp => new TrameHub.Interceptors.TrameTelemetryInterceptor(
+                        sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TrameHub.Interceptors.TrameTelemetryInterceptor>>()));
+
+                // Logging (innen, nach Telemetry) — der bestehende Built-in aus v1.0
+                // (Dauer-Logger, bleibt als einfacher Logger erhalten).
                 services.AddSingleton<TrameCore.Services.ITrameInterceptor, TrameCore.Services.TrameLoggingInterceptor>();
             }
 

@@ -226,6 +226,9 @@ namespace TrameCore.Services
             // Batch-Parent-Activity (rpc.system + trame.batch.mode/count). Null ohne Listener.
             using var batchActivity = TrameTracing.StartBatch(requestList, mode);
 
+            // Batch-Metrics (trame.batch.fan_out/count) — kostenneutral ohne MetricReader.
+            TrameMetrics.RecordBatch(requestList, mode);
+
             // Auto-detect: if requests have DependencyMappings, use batch-based
             // topological execution regardless of the specified mode.
             if (requestList.Any(r => r.DependencyMapping != null && r.DependencyMapping.Count > 0))
@@ -1290,7 +1293,10 @@ namespace TrameCore.Services
             catch (Exception ex)
             {
                 TrameTracing.RecordException(activity, ex);
-                return Status(InternalServerError("An internal error occurred while processing the request.", ex));
+                var errorResponse = InternalServerError("An internal error occurred while processing the request.", ex);
+                // Metrics für den Exception-Pfad (Internal, 5xx).
+                TrameMetrics.RecordCall(request, errorResponse, durationMs: 0, TrameErrorCategory.Internal);
+                return Status(errorResponse);
             }
             finally
             {
@@ -1301,6 +1307,12 @@ namespace TrameCore.Services
             TrameResponse? Status(TrameResponse? response)
             {
                 TrameTracing.SetCallStatus(activity, response);
+                // Metrics für den Erfolgs-/Business-Fehler-Pfad. durationMs=0 hier, da
+                // die genaue Dauer nur dem Single-Call-Pfad (Telemetry-Interceptor) vorbe-
+                // halten ist — im Batch-Pfad messen wir Counts/ErrorRate, nicht p50/p90
+                // (die würden durch die parallele Fan-out-Statistik verfälscht).
+                TrameMetrics.RecordCall(request, response, durationMs: 0,
+                    category: response?.Error?.Category ?? TrameErrorCategory.None);
                 return response;
             }
         }
@@ -1316,6 +1328,9 @@ namespace TrameCore.Services
         {
             using var activity = TrameTracing.StartCall(request);
             TrameTracing.SetCallStatus(activity, response);
+            // Metrics für Pre-Execution-Fehler (Auth/Lookup/Verfügbarkeit).
+            TrameMetrics.RecordCall(request, response, durationMs: 0,
+                category: response?.Error?.Category ?? TrameErrorCategory.None);
             return response;
         }
 

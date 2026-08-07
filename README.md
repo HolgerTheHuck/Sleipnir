@@ -41,7 +41,7 @@ curl -k -X POST https://localhost:5001/api/trame/json \
 ```
 
 > Want a full server + Svelte SPA? Use `dotnet new trame-server-spa` instead.  
-> Want a drop-in sample in this repo? See [`samples/HelloTrame`](samples/HelloTrame).
+> Want a drop-in sample that uses Trame from NuGet (no repo clone needed)? See [`samples/HelloTrame`](samples/HelloTrame) — a minimal server with `<PackageReference Include="Trame.Server" Version="1.0.0" />`.
 
 ---
 

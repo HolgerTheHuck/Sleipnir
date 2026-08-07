@@ -82,6 +82,16 @@ public class TestInvokerController
     public async Task<IAsyncEnumerable<int>> StreamNumbersTask(int count, CancellationToken ct = default)
         => StreamNumbers(count, ct);
 
+    [TrameMethod("ObservableStrings")]
+    public IObservable<string> ObservableStrings(int count)
+        => new SimpleObservable<string>(observer =>
+        {
+            for (int i = 0; i < count; i++)
+                observer.OnNext($"evt-{i}");
+            observer.OnCompleted();
+            return () => { };
+        });
+
     [TrameMethod("UploadBlob")]
     public string UploadBlob(byte[] data, string filename)
         => $"Received {data.Length} bytes for {filename}";

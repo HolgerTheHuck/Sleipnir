@@ -167,10 +167,19 @@ phases land.
   are conveniences, not contract. The DevUI reflects the stable discovery; the DevUI itself is
   free to evolve.
 - **Telemetry `trame.*` metric instruments** as currently emitted (`trame.call.duration`,
-  `trame.call.count`, `trame.error.count`, `trame.batch.fan_out`, `trame.batch.count`). The
-  `Meter "Trame"` name and the OTel RPC span tag names (`rpc.system`/`rpc.service`/`rpc.method`)
-  are stable; the *metric instrument names and tag keys* are stable in Phase 1 but may gain
-  additional instruments/tags in minor versions (additive). See `ERROR_CATALOG.md` §6.
+  `trame.call.count`, `trame.error.count`, `trame.batch.fan_out`, `trame.batch.count`,
+  `trame.event.dropped` (Phase 3)). The `Meter "Trame"` name and the OTel RPC span tag names
+  (`rpc.system`/`rpc.service`/`rpc.method`) are stable; the *metric instrument names and tag
+  keys* are stable in Phase 1/3 but may gain additional instruments/tags in minor versions
+  (additive). See `ERROR_CATALOG.md` §6.
+- **Events / Server-Push (Phase 3)** — `[TrameEvent]` attribute, `IObservable<T>` subscribe
+  surface, `ITrameCore.SubscribeAsync`, the WS subscribe/unsubscribe/event-frame wire
+  (`kind:"subscribe"`/`kind:"unsubscribe"`/`{type:"event",...}`), the `TrameSubscriptionManager`,
+  and `trame.event.dropped` metric. **Experimental in v1**: the wire format, subscription
+  lifecycle (pro-Connection, client-side re-subscribe, at-most-once-while-disconnected),
+  and backpressure (bounded buffer + drop-oldest) are implemented but may settle in a minor
+  version. WS-only in v1; SignalR and REST-Long-Polling are out of scope. `Last-Event-Id`-
+  resume and server-side buffer are v1.x+. See `docs/design/phase-3-events.md`.
 - **The `samples/`, `spikes/`, `stories/`, and `Trame/` (sample app) projects.** Reference and
   demo material; no stability promise.
 

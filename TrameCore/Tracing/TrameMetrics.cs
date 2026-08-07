@@ -78,6 +78,25 @@ public static class TrameMetrics
         unit: "{batch}",
         description: "Total number of Trame batches processed.");
 
+    // ─── Event-Ebene (Phase 3) ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Anzahl gedroppter Events (Counter) — wenn der per-Subscription-Buffer voll ist
+    /// (Backpressure, Entscheidung 7: bounded Buffer + drop-oldest). Tag: subscriptionId
+    /// (ein Hash davon, um Kardinalität zu begrenzen — hier die rohe ID; ggf. später hashen).
+    /// </summary>
+    internal static readonly Counter<long> EventDroppedCounter = Meter.CreateCounter<long>(
+        "trame.event.dropped",
+        unit: "{event}",
+        description: "Events dropped because the per-subscription buffer was full (backpressure).");
+
+    /// <summary>Recordet ein gedropptes Event (Backpressure-Metrik).</summary>
+    public static void EventDropped(string subscriptionId)
+    {
+        if (!EventDroppedCounter.Enabled) return;
+        EventDroppedCounter.Add(1, new TagList { RpcSystemTag, new("trame.subscription_id", subscriptionId) });
+    }
+
     // ─── Convenience: Tags als ReadOnlySpan ─────────────────────────────────
 
     /// <summary>Standard-Tag-Set für einen Call (rpc.system immer "trame").</summary>

@@ -305,6 +305,60 @@ namespace TrameCore.Services
             return response;
         }
 
+        /// <summary>
+        /// Phase 3 (Events): Resolve + Auth + Parameter-Binding, dann Methodenaufruf, der
+        /// ein <c>IObservable&lt;T&gt;</c> zurückgeben muss. Gibt das Observable roh zurück
+        /// (statt es zu serialisieren) — der Aufrufer subscribt darauf und pusht Events.
+        /// Auth läuft über <see cref="CheckAuthorisation"/> (wie Calls); Parameter über
+        /// <see cref="BuildParameters"/>. CancellationToken wird injiziert. Siehe
+        /// <c>docs/design/phase-3-events.md</c>.
+        /// </summary>
+        public async Task<TrameSubscribeResult> SubscribeAsync(
+            TrameRequest request, HttpContext? context, CancellationToken ct = default)
+        {
+            try
+            {
+                var controllerType = GetControllerType(request.Controller);
+                if (controllerType == null)
+                    return TrameSubscribeResult.Fail(BadRequest($"Controller '{request.Controller}' not found.", HttpStatusCode.NotFound));
+
+                string key = $"{request.Controller}_{request.Method}";
+                if (!_invokeCache.TryGetValue(key, out var invokeInfo))
+                    return TrameSubscribeResult.Fail(BadRequest($"Method '{request.Method}' not found on controller '{request.Controller}'."));
+
+                // Auth (wie Calls — 401/403 Unterscheidung, Phase 1).
+                try { await CheckAuthorisation(invokeInfo, context); }
+                catch (UnauthorizedAccessException) { return TrameSubscribeResult.Fail(Unauthorized()); }
+                catch (ForbiddenAccessException) { return TrameSubscribeResult.Fail(Forbidden()); }
+
+                // Parameter binden (wie Calls).
+                var parameters = BuildParameters(request?.Params, invokeInfo.MethodInfo!.GetParameters(), ct);
+                if (parameters.Items == null) return TrameSubscribeResult.Fail(parameters.Response!);
+
+                // Binary-Params (symmetrisch zu Calls, falls ein Event mal byte[]-Params braucht).
+                InjectBinaryParameters(parameters.Items!, invokeInfo.MethodInfo.GetParameters(), request?.BinaryData);
+
+                // Controller via DI resolved + kompilierten Delegate aufrufen (wie ExecuteMethod).
+                using var scope = _serviceScopeFactory.CreateScope();
+                var instance = scope.ServiceProvider.GetService(controllerType);
+                if (instance == null)
+                    return TrameSubscribeResult.Fail(InternalServerError($"Controller '{request.Controller}' not registered in DI."));
+
+                var result = invokeInfo.CompiledInvocation?.Invoke(instance, parameters.Items!);
+
+                // Ergebnis muss IObservable<T> sein — sonst ist die Methode kein [TrameEvent].
+                if (result is not IObservable<object?> observable)
+                    return TrameSubscribeResult.Fail(BadRequest(
+                        $"Method '{request.Method}' on controller '{request.Controller}' does not return an IObservable<T> — not a subscribable event."));
+
+                return TrameSubscribeResult.Ok(observable);
+            }
+            catch (Exception ex)
+            {
+                return TrameSubscribeResult.Fail(InternalServerError("An internal error occurred while subscribing.", ex));
+            }
+        }
+
 
         #endregion
 

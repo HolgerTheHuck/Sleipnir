@@ -11,7 +11,8 @@ namespace TrameCore.Model.Messages.Mex
     public class TypeRef
     {
         /// <summary>
-        /// The discriminator. One of: scalar, array, set, map, stream, ref, opaque, void.
+        /// The discriminator. One of: scalar, array, set, map, stream, event, ref, opaque, void.
+        /// (event = Phase 3: <c>IObservable&lt;T&gt;</c>, server-pushed subscription.)
         /// </summary>
         public string Kind { get; set; } = "opaque";
 

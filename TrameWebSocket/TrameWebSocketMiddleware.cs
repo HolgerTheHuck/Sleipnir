@@ -72,57 +72,113 @@ public class TrameWebSocketMiddleware
 
     private async Task HandleConnectionAsync(HttpContext context, WebSocket webSocket)
     {
-        var buffer = new byte[1024 * 4];
-
-        while (webSocket.State == WebSocketState.Open)
+        // Phase 3: pro-Connection Subscription-Manager für Events.
+        var subscriptions = new TrameSubscriptionManager(webSocket, _trameCore, _logger);
+        try
         {
-            // Bytes sammeln (nicht pro Chunk dekodieren) — sonst korruptieren
-            // Multi-Byte-Zeichen an Chunk-Grenzen (A2).
-            using var messageStream = new MemoryStream();
-            WebSocketReceiveResult result;
+            var buffer = new byte[1024 * 4];
 
-            do
+            while (webSocket.State == WebSocketState.Open)
             {
-                result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), context.RequestAborted);
+                // Bytes sammeln (nicht pro Chunk dekodieren) — sonst korruptieren
+                // Multi-Byte-Zeichen an Chunk-Grenzen (A2).
+                using var messageStream = new MemoryStream();
+                WebSocketReceiveResult result;
 
-                if (result.MessageType == WebSocketMessageType.Close)
+                do
                 {
-                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
-                    return;
-                }
+                    result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), context.RequestAborted);
 
-                if (result.MessageType == WebSocketMessageType.Text && result.Count > 0)
-                {
-                    messageStream.Write(buffer, 0, result.Count);
-
-                    if (messageStream.Length > MaxMessageSize)
+                    if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        await SendErrorAsync(webSocket, "Message too large.");
+                        await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
                         return;
                     }
+
+                    if (result.MessageType == WebSocketMessageType.Text && result.Count > 0)
+                    {
+                        messageStream.Write(buffer, 0, result.Count);
+
+                        if (messageStream.Length > MaxMessageSize)
+                        {
+                            await SendErrorAsync(webSocket, "Message too large.");
+                            return;
+                        }
+                    }
                 }
+                while (!result.EndOfMessage);
+
+                if (messageStream.Length == 0)
+                    continue;
+
+                var message = Encoding.UTF8.GetString(messageStream.GetBuffer(), 0, (int)messageStream.Length);
+                if (string.IsNullOrWhiteSpace(message))
+                    continue;
+
+                await ProcessMessageAsync(context, webSocket, message, subscriptions);
             }
-            while (!result.EndOfMessage);
-
-            if (messageStream.Length == 0)
-                continue;
-
-            var message = Encoding.UTF8.GetString(messageStream.GetBuffer(), 0, (int)messageStream.Length);
-            if (string.IsNullOrWhiteSpace(message))
-                continue;
-
-            await ProcessMessageAsync(context, webSocket, message);
+        }
+        finally
+        {
+            // Auto-Cleanup: alle Subscriptions disposed beim Disconnect.
+            await subscriptions.DisposeAsync();
         }
     }
 
-    private async Task ProcessMessageAsync(HttpContext context, WebSocket webSocket, string message)
+    private async Task ProcessMessageAsync(HttpContext context, WebSocket webSocket, string message, TrameSubscriptionManager subscriptions)
     {
         try
         {
             using var document = JsonDocument.Parse(message);
             var root = document.RootElement;
 
-            object? response;
+            // Phase 3: Subscribe/Unsubscribe-Erkennung (kind-Feld). Ohne kind → Call (v1.0-Verhalten).
+            string? kind = null;
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in root.EnumerateObject())
+                {
+                    if (prop.Name.Equals("kind", StringComparison.OrdinalIgnoreCase))
+                    {
+                        kind = prop.Value.GetString();
+                        break;
+                    }
+                }
+            }
+
+            if (kind == "subscribe")
+            {
+                var request = JsonSerializer.Deserialize<TrameRequest>(message, _jsonOptions);
+                if (request == null) { await SendErrorAsync(webSocket, "Invalid subscribe request."); return; }
+                var response = await subscriptions.HandleSubscribeAsync(request, context, context.RequestAborted);
+                if (response != null)
+                {
+                    if (string.IsNullOrEmpty(response.Id)) response.Id = request.Id ?? string.Empty;
+                    await SendTextAsync(webSocket, JsonSerializer.Serialize(response, _jsonOptions));
+                }
+                return;
+            }
+
+            if (kind == "unsubscribe")
+            {
+                string? subId = null, reqId = null;
+                foreach (var prop in root.EnumerateObject())
+                {
+                    if (prop.Name.Equals("subscriptionId", StringComparison.OrdinalIgnoreCase)) subId = prop.Value.GetString();
+                    else if (prop.Name.Equals("id", StringComparison.OrdinalIgnoreCase)) reqId = prop.Value.GetString();
+                }
+                if (string.IsNullOrEmpty(subId)) { await SendErrorAsync(webSocket, "unsubscribe requires subscriptionId."); return; }
+                var response = await subscriptions.HandleUnsubscribeAsync(subId!, reqId, context.RequestAborted);
+                if (response != null)
+                {
+                    if (string.IsNullOrEmpty(response.Id)) response.Id = reqId ?? string.Empty;
+                    await SendTextAsync(webSocket, JsonSerializer.Serialize(response, _jsonOptions));
+                }
+                return;
+            }
+
+            // Calls (ohne kind-Feld) — bestehendes v1.0-Verhalten.
+            object? response2;
 
             // Multi- vs. Single-Request erkennen. JsonElement.TryGetProperty ist
             // case-sensitiv — ein C#-Client ohne CamelCase-Policy schickt PascalCase
@@ -160,7 +216,7 @@ public class TrameWebSocketMiddleware
                     return;
                 }
 
-                response = await _trameCore.InvokeDi(multiRequest.Requests, context, multiRequest.Mode, context.RequestAborted);
+                response2 = await _trameCore.InvokeDi(multiRequest.Requests, context, multiRequest.Mode, context.RequestAborted);
             }
             else
             {
@@ -171,10 +227,10 @@ public class TrameWebSocketMiddleware
                     return;
                 }
 
-                response = await _trameCore.InvokeDi(request, context, context.RequestAborted);
+                response2 = await _trameCore.InvokeDi(request, context, context.RequestAborted);
             }
 
-            var json = JsonSerializer.Serialize(response, _jsonOptions);
+            var json = JsonSerializer.Serialize(response2, _jsonOptions);
             await SendTextAsync(webSocket, json);
         }
         catch (JsonException ex)

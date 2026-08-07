@@ -1,0 +1,30 @@
+using System;
+
+namespace TrameCommon.Models
+{
+    /// <summary>
+    /// Ergebnis eines Subscribe-Aufrufs (Phase 3, Events). Entweder ein Fehler
+    /// (<see cref="Error"/> != null — Auth/Routing/Binding) oder das Observable
+    /// (<see cref="Observable"/> != null — Erfolg, der Aufrufer subscribt darauf).
+    /// </summary>
+    /// <remarks>
+    /// Phase 3 — siehe <c>docs/design/phase-3-events.md</c>. Das Observable trägt
+    /// <c>object?</c>-Elemente (jedes wird als JSON serialisiert); der konkrete
+    /// Element-Typ steht in der Discovery (<c>kind:"event"</c> + <c>Element</c>).
+    /// </remarks>
+    public sealed class TrameSubscribeResult
+    {
+        /// <summary>Fehler-Response bei Auth/Routing/Binding-Fehler; null bei Erfolg.</summary>
+        public TrameResponse? Error { get; init; }
+
+        /// <summary>
+        /// Das IObservable bei Erfolg (der Server subscribt darauf und pusht jedes
+        /// Element als Event-Frame); null bei Fehler. Elemente sind <c>object?</c>
+        /// (werden als JSON serialisiert).
+        /// </summary>
+        public IObservable<object?>? Observable { get; init; }
+
+        public static TrameSubscribeResult Ok(IObservable<object?> observable) => new() { Observable = observable };
+        public static TrameSubscribeResult Fail(TrameResponse error) => new() { Error = error };
+    }
+}

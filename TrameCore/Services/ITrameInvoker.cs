@@ -1,4 +1,5 @@
 using TrameCore.Model.Messages.Mex;
+using TrameCommon.Models;
 using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
@@ -26,6 +27,19 @@ namespace TrameCore.Services
         /// Nimmt einen einzelnen Request entgegen und führt ihn aus.
         /// </summary>
         Task<TrameResponse?> InvokeDi(
+            TrameRequest request,
+            HttpContext? context,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Phase 3 (Events): Löst eine Subscribe-Methode auf (Auth + Parameter-Binding),
+        /// führt sie aus und gibt das rohe <see cref="IObservable{T}"/> zurück (statt es
+        /// zu serialisieren). Der Aufrufer (i.d.R. der WS-Subscription-Manager) subscribt
+        /// darauf und pusht jedes Element als Event-Frame. Siehe
+        /// <c>docs/design/phase-3-events.md</c>.
+        /// </summary>
+        /// <returns><see cref="TrameSubscribeResult"/> — Error oder Observable.</returns>
+        Task<TrameSubscribeResult> SubscribeAsync(
             TrameRequest request,
             HttpContext? context,
             CancellationToken ct = default);

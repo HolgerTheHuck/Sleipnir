@@ -5,12 +5,24 @@
 > One contract. Multiple transports. **Server-side dependency chaining.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![NuGet](https://img.shields.io/nuget/v/Trame.Server.svg)](https://www.nuget.org/packages/Trame.Server)
 
 Trame is designed for **command-oriented Web APIs**. Unlike resource-oriented frameworks, Trame models **commands** as the primary abstraction and lets dependent commands exchange **typed JSON fragments** within a single request.
 
 Your C# classes are the contract — no `.proto`, no IDL, no code generation. The same call runs over REST, WebSocket, or SignalR, consumable from any language. Runtime discovery generates the contract directly from your code and powers a built-in Developer UI.
 
 > **The name.** *Trame* (French, /tʁam/) — the weft, the cross-threads that hold a fabric together. Trame weaves multiple transports and chained calls into one framework.
+
+### Packages
+
+| Package | NuGet | npm | What |
+|---|---|---|---|
+| **`Trame.Server`** | ✅ | — | All-in-one server meta-package (all transports + DevUI). |
+| `Trame.Client` | ✅ | — | C# client (REST + WebSocket + SignalR, fluent builder, events). |
+| `Trame.Telemetry` | ✅ | — | Optional OpenTelemetry SDK bootstrap. |
+| **`trame-client`** | — | ✅ | TypeScript/JavaScript client (REST + WebSocket, isomorphic). |
+
+> Pick `Trame.Server` for everything; reference a single transport package directly (e.g. `Trame.Rest`) to skip the rest. Full package matrix: [Installation](#installation).
 
 ---
 
@@ -191,9 +203,14 @@ Details: [`README_DETAILS.md#developer-ui`](README_DETAILS.md#developer-ui)
 - REST, WebSocket, SignalR — same contract
 - Batch execution (parallel, serial, topological)
 - Streaming with `IAsyncEnumerable<T>`
+- **Server-push events** with `IObservable<T>` — `[TrameEvent]` + `SubscribeAsync` (1.1.0)
 - Binary support
-- Authorization, rate-limiting, interceptor pipeline
-- Expression-tree invocation (no reflection per call)
+- **Policy-based authorization** — `[TrameAuthorise(Policy=…)]` via `IAuthorizationService`, 403 vs 401 (1.1.0)
+- **Interceptor pipeline** — `ITrameInterceptor` + `TrameInvocationContext` (Auth/Telemetry/Logging built-in) (1.1.0)
+- **Error taxonomy** — `TrameError.Category` (InvalidArgument/Unauthenticated/PermissionDenied/NotFound/...) (1.1.0)
+- **OpenTelemetry metrics** — `Meter "Trame"` (`trame.call.duration/count`, `trame.event.dropped`, ...) (1.1.0)
+- **Client test-doubles** — `TrameInMemoryClient` for unit tests without a server (1.1.0)
+- Rate-limiting, expression-tree invocation (no reflection per call)
 - OpenTelemetry distributed tracing
 - JSON-RPC 2.0 compatibility mode
 

@@ -7,8 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-07
+
+### Added — Interceptor Pipeline (Phase 1)
+- **`ITrameInterceptor` + `TrameInvocationContext`** — unified interceptor pipeline for Auth, Telemetry, Logging, Validation, custom. Context carries `Request`, `HttpContext`, `InvokeInfo`, `Response`, `Activity`, `CancellationToken`. Signature changed from `(TrameRequest, Delegate, CT)` to `(Context, Delegate)` — breaking for custom interceptors (experimental per `STABILITY.md` §2). Built-in interceptors: `TrameAuthorizationInterceptor`, `TrameTelemetryInterceptor`, `TrameLoggingInterceptor` (registered in fixed order Auth → Telemetry → Logging, outer to inner).
+- **`TrameOptions.Interceptors` / `.BatchInterceptors`** — collections for user interceptors; `RegisterBuiltInInterceptors` (default `true`) toggles built-ins.
+- **`ITrameBatchInterceptor`** — batch-level interceptor surface (experimental; no built-in batch interceptor ships yet).
+
+### Added — Policy-based Authorization (Phase 1)
+- **`[TrameAuthorise(Policy = "...")]`** — ASP.NET Core `IAuthorizationService`-based policy evaluation (`resource: null` in v1.1). `IAuthorizationService` optional; Policy without service = 500 (config error).
+- **403 Forbidden vs 401 Unauthorized** — `ForbiddenAccessException` (new) distinguishes "authenticated but role/policy denied" (403, `PermissionDenied`) from "not authenticated" (401, `Unauthenticated`). `TrameResults.Forbidden()` (new). Breaking for callers that treated all auth failures as 401.
+- **`TrameAuthorizationInterceptor`** — built-in Auth interceptor; evaluates `[TrameAuthorise]`/`[TrameAnonymous]`/`RequireAuthentication` + `Policy`.
+
+### Added — Error Taxonomy (Phase 1)
+- **`TrameErrorCodes`** — stable named constants for numeric codes (replaces magic numbers in `TrameResults` + Invoker).
+- **`TrameErrorCategory`** — semantic enum (`InvalidArgument`/`Unauthenticated`/`PermissionDenied`/`NotFound`/`Conflict`/`FailedPrecondition`/`ResourceExhausted`/`Internal`/`Unavailable`/`Cancelled`), gRPC-aligned. Additive field `TrameError.Category` (Key 4, `JsonPropertyName "category"`, default `None`) — existing 1.0.0 clients ignore it.
+- **`TrameResults.Error(code, message, category, details)`** — new category overload; convenience methods set category automatically.
+- **`ERROR_CATALOG.md`** — authoritative catalog of codes + categories.
+- **JSON-RPC mapping on Category** — `JsonRpcAdapter.MapErrorCode` uses `TrameErrorCategory` (primary), falls back to numeric code for `None` (1.0.0 compat). Resolves the string-prefix coupling to Invoker error messages.
+
+### Added — OpenTelemetry Metrics (Phase 1)
+- **`TrameMetrics` (`Meter "Trame"`)** — `trame.call.duration` (Histogram ms), `trame.call.count`, `trame.error.count` (Counter), `trame.batch.fan_out` (Histogram), `trame.batch.count` (Counter). OTel RPC semantic conventions. Cost-neutral without MetricReader.
+- **`TrameTelemetryInterceptor`** — built-in; Tracing (am Context-Activity, no double-count) + Metrics + structured logging with OTel field names.
+- **Batch-path metrics** — `RecordBatch` in `InvokeDi(IEnumerable)`, `RecordCall` in `ExecuteAuthorized`/`TraceCallError`.
+
+### Added — Events / Server-Push (Phase 3, experimental)
+- **`[TrameEvent]`** attribute — marks a subscribe method returning `IObservable<T>`.
+- **Discovery `kind:"event"`** — `IObservable<T>` declared as event (analog to `kind:"stream"` for `IAsyncEnumerable<T>`).
+- **`ITrameCore.SubscribeAsync`** — resolves + auth + binds + invokes the method, returns the raw `IObservable<object?>` (not serialized).
+- **`TrameSubscriptionManager`** (WS) — pro-connection, bounded Channel + drop-oldest, Send-Loop, Auto-Cleanup on disconnect. Event/complete/error frames: `{type:"event",subscriptionId,eventId,data}`.
+- **WS Dispatcher** — `kind:"subscribe"`/`kind:"unsubscribe"` recognition; Calls (without `kind`) unchanged (1.0.0 compat).
+- **`trame.event.dropped`** metric — backpressure (bounded buffer + drop-oldest).
+- **`TrameWebSocketClient.SubscribeAsync<T>`** — client-side subscribe; returns `TrameSubscription<T>` (IObservable). `TrameSubject<T>` (no System.Reactive dependency). Event-frame dispatch in `DispatchResponse`. Reconnect → `ResubscribeAllAsync` (client-side re-subscribe, new subscriptionIds).
+- **`TrameInMemoryClient`** — `ITrameClient` test-double for unit tests without a server. `On`/`On<T>`/`OnError` handler registration.
+- **C# Codegen** — `CsEmitter.EmitMethod` recognizes `kind:"event"` → `SubscribeAsync<T>` instead of `Call`.
+- **WS-only in v1** — SignalR and REST-Long-Polling out of scope. `Last-Event-Id`-resume is v1.x+. See `docs/design/phase-3-events.md` (8 decisions).
+
+### Added — Adoption & Documentation
+- **`STABILITY.md`** — stable vs. experimental surface, compatibility rules, versioning model.
+- **`ROADMAP.md` "Benutzbarkeit-Roadmap"** — phase plan (0–4) with dependency graph.
+- **`docs/design/phase-1-interceptor-pipeline.md`** + **`phase-3-events.md`** — design docs with decisions.
+- **README** — "Trame + REST — not a replacement, a complement" section; package matrix; NuGet badge; 1.1.0 features in "Features at a glance".
+- **`BEST_PRACTICES.md` §1.6** — compression guidance (transport layer, not Trame).
+- **Repository pattern** — `INotificationStore` in `samples/01-notification-chat` (North-Bound Secure Store, Phase 2).
+
 ### Changed
-- **Discovery types are now structured, language-neutral `TypeRef` objects**, not .NET type-name strings. `MethodMeta.ReturnType`, `ParameterMeta.ParameterType`, and `PropertyMeta.PropertyType` are `TypeRef` (`kind` ∈ `scalar | array | set | map | ref | stream | opaque | void`), carrying element/key/value sub-refs, occurrence-level `nullable`, and — for `opaque` — an informational `nativeName`. `Dictionary<K,V>` → `{kind:"map",...}`, `HashSet<T>` → `{kind:"set",...}`, `IAsyncEnumerable<T>` → `{kind:"stream",...}`, `byte[]` → `{kind:"scalar", name:"bytes"}`. This closes the former "known gaps" (collection-kind, nullability, enum members, default values, stream) and unblocks non-C# producers: the wire shape no longer leaks .NET generic syntax. Authoritative spec: [`docs/discovery-schema.md`](docs/discovery-schema.md).
+- **Discovery types are now structured, language-neutral `TypeRef` objects**, not .NET type-name strings. `MethodMeta.ReturnType`, `ParameterMeta.ParameterType`, and `PropertyMeta.PropertyType` are `TypeRef` (`kind` ∈ `scalar | array | set | map | stream | event | ref | opaque | void`), carrying element/key/value sub-refs, occurrence-level `nullable`, and — for `opaque` — an informational `nativeName`. `Dictionary<K,V>` → `{kind:"map",...}`, `HashSet<T>` → `{kind:"set",...}`, `IAsyncEnumerable<T>` → `{kind:"stream",...}`, `IObservable<T>` → `{kind:"event",...}`, `byte[]` → `{kind:"scalar", name:"bytes"}`. This closes the former "known gaps" (collection-kind, nullability, enum members, default values, stream) and unblocks non-C# producers: the wire shape no longer leaks .NET generic syntax. Authoritative spec: [`docs/discovery-schema.md`](docs/discovery-schema.md).
 - **`discoveryVersion` field** atop `DiscoveryInfo` (additive-only compatibility rule; `"1"`). Consumers `assertDiscoveryShape` accepts known versions and rejects unknown ones loudly.
 - **Enums on the wire.** Enum types register in `discovery.types` as `TypeMeta` with `kind:"enum"` + `members:[{name,value}]`; a usage site is `{kind:"ref", ref:"<enumKey>"}`. Trame serializes enums as their underlying **integer**, so an enum ref is wire-numeric — the members are documentation only; codegen does not emit native enum declarations.
 - **`ParameterMeta.defaultValue`** carries a C# compile-time constant for parameters with a default, read from `ParameterInfo.HasDefaultValue`.

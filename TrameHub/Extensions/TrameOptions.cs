@@ -108,5 +108,44 @@ namespace TrameHub.Extensions
         /// <c>JSONRPC_COMPAT.md</c>.
         /// </summary>
         public bool EnableJsonRpcCompat { get; set; } = false;
+
+        // ───────────────────────────────────────────────────────────────────────
+        // Interceptor-Pipeline (Phase 1, siehe docs/design/phase-1-interceptor-pipeline.md)
+        // ───────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Interceptors, die um *jede einzelne* RPC-Invocation (Single-Call und pro
+        /// Element im Batch) laufen. Default leer — die Built-ins (RateLimit/Auth/
+        /// Telemetry/Logging) werden von <c>AddTrame</c> registriert, wenn
+        /// <see cref="RegisterBuiltInInterceptors"/> <c>true</c> ist (Default). User-
+        /// Interceptors werden hier *nach* den Built-ins angehängt, so dass sie
+        /// *innen* (näher an der Method-Invocation) laufen. Siehe auch
+        /// <see cref="BatchInterceptors"/> für Batch-ebene Interceptors.
+        ///
+        /// Reihenfolge: Built-ins zuerst (außen: RateLimit → Auth → Validation →
+        /// Telemetry → Method), dann User-Interceptors (innen). Wer einen Interceptor
+        /// *vor* RateLimit/Auth brauchte, muss <see cref="RegisterBuiltInInterceptors"/>
+        /// auf <c>false</c> setzen und die Built-ins selbst zusammenstellen.
+        /// </summary>
+        public List<TrameCore.Services.ITrameInterceptor> Interceptors { get; } = new();
+
+        /// <summary>
+        /// Interceptors, die um *einen ganzen Batch* (nicht pro Element) laufen —
+        /// für Batch-Metrics (<c>trame.batch.*</c>), Batch-Logging, Batch-Rate-
+        /// Limiting. Default leer; Built-ins analog <see cref="Interceptors"/>.
+        /// </summary>
+        public List<TrameCore.Services.ITrameBatchInterceptor> BatchInterceptors { get; } = new();
+
+        /// <summary>
+        /// Wenn <c>true</c> (Default), registriert <c>AddTrame</c> die Built-in-
+        /// Interceptors (Logging in v1.0; Auth/Telemetry kommen mit Phase 1) in der
+        /// festen Reihenfolge RateLimit → Auth → Validation → Telemetry. Auf
+        /// <c>false</c> setzen, um die Built-ins selbst zusammenzustellen (z. B. um
+        /// einen eigenen RateLimit-Interceptor ganz vorne zu setzen, oder um Auth
+        /// durch eine eigene Implementation zu ersetzen). User-Interceptors aus
+        /// <see cref="Interceptors"/>/ <see cref="BatchInterceptors"/> werden in
+        /// jedem Fall *nach* den Built-ins (innen) angehängt.
+        /// </summary>
+        public bool RegisterBuiltInInterceptors { get; set; } = true;
     }
 }

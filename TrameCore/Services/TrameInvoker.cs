@@ -246,15 +246,16 @@ namespace TrameCore.Services
 
         public async Task<TrameResponse?> InvokeDi(TrameRequest request, HttpContext? context, CancellationToken ct = default)
         {
-            // Build the interceptor pipeline wrapping the actual execution
-            TrameInvocationDelegate pipeline = (req, token) => ExecuteSingleInvocationSimple(req, context, token);
+            // Build the interceptor pipeline wrapping the actual execution.
+            // Phase 1: Pipeline trägt TrameInvocationContext (HttpContext, später InvokeInfo/Activity).
+            TrameInvocationDelegate pipeline = ctx => ExecuteSingleInvocationSimple(ctx.Request, ctx.HttpContext, ctx.CancellationToken);
 
-            // Wrap interceptors in reverse order (last interceptor runs first)
+            // Wrap interceptors in reverse order (last interceptor runs first).
             for (int i = _interceptors.Count - 1; i >= 0; i--)
             {
                 var interceptor = _interceptors[i];
                 var next = pipeline;
-                pipeline = (req, token) => interceptor.InvokeAsync(req, next, token);
+                pipeline = ctx => interceptor.InvokeAsync(ctx, next);
             }
 
             var stopwatch = Stopwatch.StartNew();
@@ -263,10 +264,19 @@ namespace TrameCore.Services
             using var activity = TrameTracing.StartCall(request);
             _logger.LogTrace("Starting RPC call {Controller}.{Method} with request ID {RequestId}", request.Controller, request.Method, request.Id);
 
+            var invocationContext = new TrameInvocationContext
+            {
+                Request = request,
+                HttpContext = context,
+                CancellationToken = ct,
+                Activity = activity,
+            };
+
             TrameResponse? response;
             try
             {
-                response = await pipeline(request, ct);
+                response = await pipeline(invocationContext);
+                invocationContext.Response = response;
                 TrameTracing.SetCallStatus(activity, response);
                 _logger.LogDebug("RPC call {Controller}.{Method} completed. Status Code: {Code}", request.Controller, request.Method, response?.Code);
             }
@@ -274,6 +284,7 @@ namespace TrameCore.Services
             {
                 _logger.LogError(ex, "RPC call {Controller}.{Method} failed.", request.Controller, request.Method);
                 response = InternalServerError("An internal error occurred while processing the request.", ex);
+                invocationContext.Response = response;
                 TrameTracing.RecordException(activity, ex);
                 TrameTracing.SetCallStatus(activity, response);
             }

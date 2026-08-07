@@ -168,11 +168,29 @@ Subscribe-Response ist eine `TrameResponse`, die die `subscriptionId` trägt.
 
 ## Implementierungs-Schritte (Entwurf)
 
-1. `[TrameEvent]`-Attribut + `IObservable<T>`-Erkennung in Discovery (`kind: "event"`).
-2. WS-Transport: Subscribe/Unsubscribe-Handling + Event-Push-Kanal (Text-Frame pro Event).
-3. Server: Subscription-Manager (subscriptionId, pro-Connection, Auto-Cleanup bei Disconnect).
-4. Codegen: typisierte Subscribe-Oberfläche (TS `Observable<T>` / `TrameSubscription<T>`).
-5. Client-Test-Doubles: mockbare `ITrameClient` + In-Memory-Test-Transport.
-6. Reconnect → Resubscribe im WS-Client (auto).
-7. Doku: Events-Lifecycle, Kompositionsregel, at-most-once-Garantie, WS/SignalR-only.
-8. Tests + `STABILITY.md`-Updates.
+1. `[TrameEvent]`-Attribut + `IObservable<T>`-Erkennung in Discovery (`kind: "event"`). ✓
+2. WS-Transport: Subscribe/Unsubscribe-Handling + Event-Push-Kanal (Text-Frame pro Event). ✓
+3. Server: Subscription-Manager (subscriptionId, pro-Connection, Auto-Cleanup bei Disconnect). ✓ (in 2 integriert)
+4. Codegen: typisierte Subscribe-Oberfläche (TS `Observable<T>` / `TrameSubscription<T>`). **post-Phase-3-v1** — Codegen-Baum ist substantial, eigener Schritt.
+5. Client-Test-Doubles: mockbare `ITrameClient` + In-Memory-Test-Transport. **post-Phase-3-v1** — eigener Schritt.
+6. Reconnect → Resubscribe im WS-Client (auto). **post-Phase-3-v1** — braucht Subscribe/Unsubscribe im TrameWebSocketClient + Reconnect-Logik.
+7. Doku: Events-Lifecycle, Kompositionsregel, at-most-once-Garantie, WS/SignalR-only. ✓ (STABILITY §2)
+8. Tests + `STABILITY.md`-Updates. ✓ (3 Integration-Tests: Subscribe/Events/complete, Unsubscribe, NonObservable-400)
+
+## Phase 3 v1 — geliefert (Server-Seite)
+
+- `[TrameEvent]`-Attribut + Discovery `kind:"event"` (Schritt 1)
+- `ITrameCore.SubscribeAsync` + `TrameInvoker.SubscribeAsync` (Resolve + Auth + Bind → IObservable)
+- `TrameSubscriptionManager` (pro-Connection, bounded Channel + drop-oldest, Send-Loop, Auto-Cleanup)
+- WS-Dispatcher: `kind:"subscribe"`/`kind:"unsubscribe"`-Erkennung, Event/complete/error-Frames
+- `trame.event.dropped`-Metrik (Backpressure)
+- 3 Integration-Tests (Subscribe+Events+complete, Unsubscribe, NonObservable-400)
+- STABILITY.md §2: Events als experimental deklariert
+
+## Phase 3 v1 — offen (Client-Seite, post-Phase-3-v1)
+
+- **Codegen typisierte Subscribe-Oberfläche** (Schritt 4) — TS/C#-Emitter-Erweiterung
+- **Client-Test-Doubles** (Schritt 5) — mockbare ITrameClient + In-Memory-Transport
+- **Reconnect → Resubscribe im WS-Client** (Schritt 6) — Subscribe/Unsubscribe im TrameWebSocketClient + Reconnect-Logik
+- **SignalR-Events** (v1.x+) — WS-only in v1
+- **Last-Event-Id-Resume** (v1.x+)

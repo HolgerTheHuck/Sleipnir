@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-08
+
+### Fixed
+- **Thread-safety: konkurrierende WebSocket-Sends (kritisch)** — `SendTextAsync`/`SendErrorAsync`
+  (Middleware) und `SendLoopAsync` (SubscriptionManager) sendeten beide direkt via
+  `webSocket.SendAsync` ohne Lock → korrupte Frames bei gleichzeitigen Calls + Events.
+  Fix: alle Sends durch den gemeinsamen `_sendChannel` des `TrameSubscriptionManager`
+  (`EnqueueSendAsync`). Single-Sender-SendLoop ist jetzt der einzige Sender.
+- **Policy-Auth im Batch-Pfad (kritisch, Security)** — `[TrameAuthorise(Policy=…)]` wurde im
+  Batch-Pre-Pass nicht ausgewertet (nur im Single-Call-Pfad via Interceptor).
+  Fix: `CheckAuthorisation` um Policy-Evaluation ergänzt via `PolicyEvaluator`-Delegate
+  (von `AddTrame` gesetzt, wenn `IAuthorizationService` verfügbar). TrameCore bleibt frei
+  von der Abhängigkeit.
+- **Send-Channel-Kapazität** — war fix 100 (`_subscriptions.Count` ist 0 im Ctor). Fix:
+  `bufferCapacity + 256`.
+- **Magic Numbers in `TrameSubscriptionManager`** — `409`/`404`/`200` → `TrameErrorCodes`.
+
+### Added
+- **TrameAuthorizationInterceptorTests** (8 tests) — Policy-Auth isoliert mit Mock-
+  `IAuthorizationService`: 401/403/Policy-Success/Policy-Fail/NoAuthService-500.
+- **TrameInMemoryClientTests** (6 tests) — On/On<T>/OnError/404/Batch/CallBinary-NSE.
+
+### Changed
+- **`ITrameBatchInterceptor` Dead-Code-Dokumentation** — WARN-Kommentar im Invoker: Batch-
+  Interceptors werden aktuell nicht aufgerufen; Pipeline = v1.2 geplant. API bleibt erhalten.
+
 ## [1.1.0] - 2026-08-07
 
 ### Added — Interceptor Pipeline (Phase 1)

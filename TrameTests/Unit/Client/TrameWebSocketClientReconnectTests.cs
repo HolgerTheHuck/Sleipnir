@@ -324,4 +324,41 @@ public class TrameWebSocketClientReconnectTests
 
         await client.DisposeAsync();
     }
+
+    [Fact]
+    public async Task PendingCall_Cancellation_PropagatesFaithfulToken_AndClientStaysUsable()
+    {
+        // R4: SetCanceled (non-Try) raced the reader thread's TrySetResult and the loser threw
+        // an unobserved InvalidOperationException inside a thread-pool cancellation callback —
+        // potentially process-terminating. TrySetCanceled(token) no-ops on a completed TCS
+        // and keeps OperationCanceledException.CancellationToken faithful. We cancel a pending
+        // call (server does not echo) and assert the OCE carries our token, then that the
+        // client is still usable — the race must not crash the process.
+        await using var server = new ReconnectWsServer { EchoEnabled = false };
+        server.Start();
+
+        await using var client = new TrameWebSocketClient(server.BaseUrl,
+            autoReconnect: false);
+
+        await client.ConnectAsync();
+
+        using var cts = new CancellationTokenSource();
+        // Send the call; the server holds it open (no echo) → call stays pending.
+        var callTask = client.Call(EchoRequest("f1"), cts.Token);
+        await Task.Delay(120); // let the send complete server-side
+
+        cts.Cancel();
+
+        Func<Task> act = () => callTask;
+        var ex = await act.Should().ThrowAsync<OperationCanceledException>();
+        ex.Which.CancellationToken.Should().Be(cts.Token,
+            "TrySetCanceled(token) must keep the OCE's CancellationToken faithful");
+
+        // The client must still serve a follow-up call — the TCS race must not have crashed.
+        server.EchoEnabled = true;
+        var followUp = await client.Call(EchoRequest("f2"));
+        followUp!.Code.Should().Be(200);
+
+        await client.DisposeAsync();
+    }
 }

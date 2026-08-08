@@ -82,7 +82,7 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
     {
         void SetResult(object result);
         void SetException(Exception ex);
-        void SetCanceled();
+        void SetCanceled(CancellationToken cancellationToken);
     }
 
     private sealed class TcsHolder<T> : ITcsHolder
@@ -91,7 +91,12 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
 
         public void SetResult(object result) => Tcs.TrySetResult((T)result!);
         public void SetException(Exception ex) => Tcs.TrySetException(ex);
-        public void SetCanceled() => Tcs.SetCanceled();
+        // R4: TrySetCanceled (not SetCanceled) — the non-Try version races the reader thread's
+        // TrySetResult and the loser throws an unobserved InvalidOperationException inside a
+        // thread-pool cancellation callback, which can terminate the process. Try* mirrors
+        // SetResult/SetException and silently no-ops on a already-completed TCS. Pass the token
+        // so the resulting OperationCanceledException.CancellationToken is faithful.
+        public void SetCanceled(CancellationToken cancellationToken) => Tcs.TrySetCanceled(cancellationToken);
     }
 
     public TrameWebSocketClient(string serverBaseUrl, ClientWebSocket? webSocket = null,
@@ -183,6 +188,10 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         if (request == null)
             return null;
 
+        // Note: requests that arrive without an id are assigned one in place (caller-owned
+        // mutation) before serialization, so the server-echoed id can be correlated back to
+        // the pending call — see SendAndAwaitResponseAsync (R3).
+
         await EnsureConnectedAsync(ct);
         return await SendAndAwaitResponseAsync<List<TrameResponse?>>(request, ct);
     }
@@ -239,6 +248,21 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         }
         else if (payload is TrameMultiRequest mr)
         {
+            // R3: a TrameMultiRequest without ids hung forever — NextId() was generated but
+            // never written into any request, so the server echoed "" and the strict
+            // dispatcher dropped the response (with callTimeout=null → infinite wait). Mirror
+            // the REST client: assign an id to every request that lacks one before serializing.
+            // The server echoes per-request ids; the batch response array is correlated by the
+            // first element's id (see ParseMessage), which now matches the stored requestId.
+            // Note: this mutates the caller-owned request objects — acceptable, documented on Call.
+            if (mr.Requests != null)
+            {
+                foreach (var r in mr.Requests)
+                {
+                    if (string.IsNullOrEmpty(r.Id))
+                        r.Id = NextId();
+                }
+            }
             requestId = mr.Requests?.FirstOrDefault()?.Id ?? NextId();
         }
         else
@@ -281,7 +305,7 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
             }
 
             // Wait for the matching response
-            using var reg = effectiveCt.Register(() => holder.SetCanceled());
+            using var reg = effectiveCt.Register(() => holder.SetCanceled(effectiveCt));
             return await holder.Tcs.Task;
         }
         catch (OperationCanceledException)
@@ -691,6 +715,10 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         {
             using var doc = JsonDocument.Parse(messageBytes);
             var root = doc.RootElement;
+            // A batch response is a JSON array — not an event frame. JsonElement.TryGetProperty
+            // throws InvalidOperationException on a non-object root, so guard the kind first
+            // (R3: the WS multi path was never exercised before and surfaced this latent throw).
+            if (root.ValueKind != JsonValueKind.Object) return false;
             if (!root.TryGetProperty("type", out var typeProp)) return false;
 
             var type = typeProp.GetString();

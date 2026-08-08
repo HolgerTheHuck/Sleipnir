@@ -1,6 +1,7 @@
 using FluentAssertions;
 using TrameClient.Trame;
 using TrameCommon.Models;
+using TrameCore.Services;
 using TrameTests.Fixtures;
 using System.Text;
 using System.Text.Json;
@@ -139,5 +140,40 @@ public class WebSocketTransportTests : IClassFixture<TransportTestFixture>
 
         resp!.Code.Should().Be(200);
         resp.Data.Value.GetRawText().Should().Contain("added Alice");
+    }
+
+    [Fact]
+    public async Task MultiCall_WithoutIds_CompletesInsteadOfHanging()
+    {
+        // R3 regression: a TrameMultiRequest without ids used to hang forever — the client
+        // generated a correlation id but never wrote it into any request, so the server
+        // echoed "" and the strict dispatcher dropped the response (callTimeout=null →
+        // infinite wait). The short callTimeout makes a regression fail loud instead of
+        // hanging the test runner.
+        var client = new TrameWebSocketClient(_fixture.BaseUrl, callTimeout: TimeSpan.FromSeconds(5));
+
+        // Build two requests and strip their ids — TrameCall.Init defaults Id to
+        // "Controller.Method"; the regression requires genuinely id-less requests.
+        var req1 = TrameCall.Init("TestInvoker", "Echo").With("a").ToRequest();
+        var req2 = TrameCall.Init("TestInvoker", "Echo").With("b").ToRequest();
+        req1.Id = null;
+        req2.Id = null;
+        var multi = new TrameMultiRequest
+        {
+            Mode = ExecutionMode.Parallel,
+            Requests = new List<TrameRequest> { req1, req2 },
+        };
+
+        // Preconditions: none of the requests carry an id before the call.
+        multi.Requests.Should().AllSatisfy(r => r.Id.Should().BeNullOrEmpty());
+
+        var responses = await client.Call(multi);
+
+        responses.Should().NotBeNull().And.HaveCount(2);
+        responses!.Select(r => r!.Id).Should().AllSatisfy(id => id.Should().NotBeNullOrEmpty(),
+            "the client must assign ids and the server must echo them so the batch correlates");
+        responses!.Select(r => r!.Code).Should().AllBeEquivalentTo(200);
+
+        await client.DisposeAsync();
     }
 }

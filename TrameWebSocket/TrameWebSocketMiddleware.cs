@@ -70,6 +70,66 @@ public class TrameWebSocketMiddleware
 
     private const int MaxMessageSize = 1_048_576; // 1 MB
 
+    /// <summary>
+    /// Builds a correlated, JSON-RPC-free error frame as a real <see cref="TrameResponse"/>
+    /// (Code + <see cref="TrameError"/> + Id) instead of an anonymous <c>{ code, data }</c>.
+    /// R3: the previous anonymous frames carried the message in <c>data</c> and omitted
+    /// <c>id</c>/<c>error</c>, so a C# client could not correlate them (strict dispatcher
+    /// dropped the response → hang) and never surfaced the message as a <see cref="TrameException"/>.
+    /// The <see cref="TrameResponseJsonConverter"/> serializes this to
+    /// <c>{"code":...,"id":"...","error":{"code":...,"message":"..."}}</c> in one pass.
+    /// </summary>
+    private static TrameResponse BuildErrorFrame(int code, string message, string? id) => new()
+    {
+        Code = code,
+        Id = id ?? string.Empty,
+        Error = new TrameError { Code = code, Message = message, RequestId = id },
+    };
+
+    /// <summary>
+    /// Extracts the correlation id up-front from an already-parsed request document. For a
+    /// single request / subscribe / unsubscribe this is the top-level <c>id</c>; for a multi
+    /// request it is the first element's <c>id</c> (the client correlates the batch response
+    /// array on its first element). Case-insensitive (a C# PascalCase client sends
+    /// <c>Id</c>/<c>Requests</c>, a JS/TS client <c>id</c>/<c>requests</c>). Returns
+    /// <c>null</c> when no id is present (e.g. a malformed/unparseable request).
+    /// </summary>
+    private static string? ExtractCorrelationId(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object) return null;
+
+        string? topId = null;
+        bool hasRequests = false;
+        JsonElement requestsEl = default;
+        foreach (var prop in root.EnumerateObject())
+        {
+            if (prop.Name.Equals("id", StringComparison.OrdinalIgnoreCase) && prop.Value.ValueKind == JsonValueKind.String)
+                topId = prop.Value.GetString();
+            else if (prop.Name.Equals("requests", StringComparison.OrdinalIgnoreCase))
+            {
+                hasRequests = true;
+                requestsEl = prop.Value;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(topId)) return topId;
+
+        // Multi: fall back to the first request's id.
+        if (hasRequests && requestsEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var first in requestsEl.EnumerateArray())
+            {
+                foreach (var prop in first.EnumerateObject())
+                {
+                    if (prop.Name.Equals("id", StringComparison.OrdinalIgnoreCase) && prop.Value.ValueKind == JsonValueKind.String)
+                        return prop.Value.GetString();
+                }
+                break; // only the first element
+            }
+        }
+        return null;
+    }
+
     private async Task HandleConnectionAsync(HttpContext context, WebSocket webSocket)
     {
         // Phase 3: pro-Connection Subscription-Manager für Events.
@@ -101,7 +161,7 @@ public class TrameWebSocketMiddleware
 
                         if (messageStream.Length > MaxMessageSize)
                         {
-                            await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "Message too large." }, _jsonOptions));
+                            await SendErrorAsync(subscriptions, 400, "Message too large.", null);
                             return;
                         }
                     }
@@ -127,10 +187,16 @@ public class TrameWebSocketMiddleware
 
     private async Task ProcessMessageAsync(HttpContext context, WebSocket webSocket, string message, TrameSubscriptionManager subscriptions)
     {
+        // R3: extract the correlation id once, up-front, so every downstream error frame
+        // (validation, batch-cap, catch-all) can carry it back to the awaiting caller.
+        // Stays null when the JSON is unparseable — the catch-all then sends id="" (an
+        // uncorrelated error, unavoidable for a malformed request).
+        string? id = null;
         try
         {
             using var document = JsonDocument.Parse(message);
             var root = document.RootElement;
+            id = ExtractCorrelationId(root);
 
             // Phase 3: Subscribe/Unsubscribe-Erkennung (kind-Feld). Ohne kind → Call (v1.0-Verhalten).
             string? kind = null;
@@ -149,11 +215,11 @@ public class TrameWebSocketMiddleware
             if (kind == "subscribe")
             {
                 var request = JsonSerializer.Deserialize<TrameRequest>(message, _jsonOptions);
-                if (request == null) { await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "Invalid subscribe request." }, _jsonOptions)); return; }
+                if (request == null) { await SendErrorAsync(subscriptions, 400, "Invalid subscribe request.", id); return; }
                 var response = await subscriptions.HandleSubscribeAsync(request, context, context.RequestAborted);
                 if (response != null)
                 {
-                    if (string.IsNullOrEmpty(response.Id)) response.Id = request.Id ?? string.Empty;
+                    if (string.IsNullOrEmpty(response.Id)) response.Id = request.Id ?? id ?? string.Empty;
                     await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(response, _jsonOptions));
                 }
                 return;
@@ -167,7 +233,7 @@ public class TrameWebSocketMiddleware
                     if (prop.Name.Equals("subscriptionId", StringComparison.OrdinalIgnoreCase)) subId = prop.Value.GetString();
                     else if (prop.Name.Equals("id", StringComparison.OrdinalIgnoreCase)) reqId = prop.Value.GetString();
                 }
-                if (string.IsNullOrEmpty(subId)) { await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "unsubscribe requires subscriptionId." }, _jsonOptions)); return; }
+                if (string.IsNullOrEmpty(subId)) { await SendErrorAsync(subscriptions, 400, "unsubscribe requires subscriptionId.", reqId ?? id); return; }
                 var response = await subscriptions.HandleUnsubscribeAsync(subId!, reqId, context.RequestAborted);
                 if (response != null)
                 {
@@ -203,7 +269,7 @@ public class TrameWebSocketMiddleware
                 var multiRequest = JsonSerializer.Deserialize<TrameMultiRequest>(message, _jsonOptions);
                 if (multiRequest?.Requests == null)
                 {
-                    await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "Invalid multi request." }, _jsonOptions));
+                    await SendErrorAsync(subscriptions, 400, "Invalid multi request.", id);
                     return;
                 }
 
@@ -211,7 +277,7 @@ public class TrameWebSocketMiddleware
                 // Quelle ist ITrameCore (TrameOptions → Invoker → Interface → Transporte).
                 if (_trameCore.MaximumBatchSize > 0 && multiRequest.Requests.Count > _trameCore.MaximumBatchSize)
                 {
-                    await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = $"Batch exceeds MaximumBatchSize ({_trameCore.MaximumBatchSize})." }, _jsonOptions));
+                    await SendErrorAsync(subscriptions, 400, $"Batch exceeds MaximumBatchSize ({_trameCore.MaximumBatchSize}).", id);
                     return;
                 }
 
@@ -222,7 +288,7 @@ public class TrameWebSocketMiddleware
                 var request = JsonSerializer.Deserialize<TrameRequest>(message, _jsonOptions);
                 if (request == null)
                 {
-                    await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "Invalid request." }, _jsonOptions));
+                    await SendErrorAsync(subscriptions, 400, "Invalid request.", id);
                     return;
                 }
 
@@ -238,12 +304,23 @@ public class TrameWebSocketMiddleware
         catch (JsonException ex)
         {
             _logger?.LogWarning(ex, "Failed to parse WebSocket message as JSON.");
-            await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "Invalid JSON in request." }, _jsonOptions));
+            // id is null here — a malformed request cannot be correlated. Send the frame so a
+            // non-C# client (which manages its own matching) still gets a structured error.
+            await SendErrorAsync(subscriptions, 400, "Invalid JSON in request.", id);
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Error processing WebSocket message.");
-            await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "Internal server error." }, _jsonOptions));
+            // 500 (was 400): an unexpected/internal failure is a server error per the stable
+            // error catalog, not a client bad-request. Keep the message generic — no leak.
+            await SendErrorAsync(subscriptions, 500, "Internal server error.", id);
         }
     }
+
+    /// <summary>
+    /// Serializes a <see cref="BuildErrorFrame"/> via the shared send channel. Thin wrapper
+    /// so every error site serializes identically (one pass, TrameResponseJsonConverter).
+    /// </summary>
+    private async Task SendErrorAsync(TrameSubscriptionManager subscriptions, int code, string message, string? id)
+        => await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(BuildErrorFrame(code, message, id), _jsonOptions));
 }

@@ -101,17 +101,17 @@ public static class TrameResults
     /// auf Server-Seite und werden dort vom Invoker verwaltet).</param>
     public static TrameResponse Error(int code, string message,
         TrameErrorCategory category = TrameErrorCategory.None, string? details = null) => new()
-    {
-        Code = code,
-        Data = null,
-        Error = new TrameError
         {
             Code = code,
-            Message = message,
-            Details = details,
-            Category = category,
-        },
-    };
+            Data = null,
+            Error = new TrameError
+            {
+                Code = code,
+                Message = message,
+                Details = details,
+                Category = category,
+            },
+        };
 
     /// <summary>400 Bad Request — ungültige Parameter / Validierungsfehler.</summary>
     public static TrameResponse BadRequest(string message, string? details = null)

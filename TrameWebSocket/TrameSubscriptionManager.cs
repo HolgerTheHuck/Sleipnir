@@ -56,7 +56,10 @@ internal sealed class TrameSubscriptionManager : IAsyncDisposable
         _trameCore = trameCore;
         _logger = logger;
         _bufferCapacity = bufferCapacity > 0 ? bufferCapacity : 100;
-        _sendChannel = Channel.CreateBounded<string>(new BoundedChannelOptions(_bufferCapacity * _subscriptions.Count + 100)
+        // Hotfix 1.1.1: Kapazität war _bufferCapacity * _subscriptions.Count + 100, aber
+        // _subscriptions ist im Ctor leer → fix 100. Korrekt: fester Sende-Puffer, der
+        // unabhängig von Subscription-Anzahl skaliert (Events haben eigene per-Subscription-Buffer).
+        _sendChannel = Channel.CreateBounded<string>(new BoundedChannelOptions(_bufferCapacity + 256)
         {
             FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
@@ -79,7 +82,7 @@ internal sealed class TrameSubscriptionManager : IAsyncDisposable
         if (!_subscriptions.TryAdd(subscriptionId, state))
         {
             state.Dispose();
-            return TrameResults.Error(409, "Subscription ID collision — retry.", TrameCommon.Results.TrameErrorCategory.Internal);
+            return TrameResults.Error(TrameErrorCodes.Conflict, "Subscription ID collision — retry.", TrameCommon.Results.TrameErrorCategory.Conflict);
         }
 
         // Auf dem Observable subscribieren; jedes OnNext → Event-Frame in den Send-Channel.
@@ -102,22 +105,36 @@ internal sealed class TrameSubscriptionManager : IAsyncDisposable
         // Subscribe-Response: subscriptionId an den Client.
         return new TrameResponse
         {
-            Code = 200,
+            Code = TrameErrorCodes.Ok,
             Data = JsonSerializer.SerializeToElement(new { subscriptionId }, TrameJsonOptions.Default),
             Id = request.Id,
         };
     }
 
-    /// <summary>Verarbeitet einen Unsubscribe-Request: disposed die Subscription.</summary>
+    /// <summary>
+    /// Verarbeitet einen Unsubscribe-Request: disposed die Subscription.
+    /// </summary>
     public Task<TrameResponse?> HandleUnsubscribeAsync(string subscriptionId, string? requestId, CancellationToken ct)
     {
         if (_subscriptions.TryRemove(subscriptionId, out var state))
         {
             state.Dispose();
-            return Task.FromResult<TrameResponse?>(new TrameResponse { Code = 200, Id = requestId ?? string.Empty });
+            return Task.FromResult<TrameResponse?>(new TrameResponse { Code = TrameErrorCodes.Ok, Id = requestId ?? string.Empty });
         }
-        return Task.FromResult<TrameResponse?>(TrameResults.Error(404, $"Subscription '{subscriptionId}' not found.",
+        return Task.FromResult<TrameResponse?>(TrameResults.Error(TrameErrorCodes.NotFound, $"Subscription '{subscriptionId}' not found.",
             TrameCommon.Results.TrameErrorCategory.NotFound, null));
+    }
+
+    /// <summary>
+    /// Sendet eine Nachricht (Call-Response, Subscribe-Response, Error) über den gemeinsamen
+    /// Send-Channel — NICHT direkt via WebSocket.SendAsync. Das stellt sicher, dass es nur
+    /// einen Sender auf dem Socket gibt (den SendLoop), und verhindert konkurrierende Sends
+    /// zwischen Call-Responses (Middleware-Thread) und Event-Frames (Pump-Tasks).
+    /// Hotfix 1.1.1: Thread-Safety für konkurrierende Sends.
+    /// </summary>
+    public async ValueTask EnqueueSendAsync(string json, CancellationToken ct = default)
+    {
+        await _sendChannel.Writer.WriteAsync(json, ct);
     }
 
     private async Task SendLoopAsync(CancellationToken ct)

@@ -101,7 +101,7 @@ public class TrameWebSocketMiddleware
 
                         if (messageStream.Length > MaxMessageSize)
                         {
-                            await SendErrorAsync(webSocket, "Message too large.");
+                            await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "Message too large." }, _jsonOptions));
                             return;
                         }
                     }
@@ -149,12 +149,12 @@ public class TrameWebSocketMiddleware
             if (kind == "subscribe")
             {
                 var request = JsonSerializer.Deserialize<TrameRequest>(message, _jsonOptions);
-                if (request == null) { await SendErrorAsync(webSocket, "Invalid subscribe request."); return; }
+                if (request == null) { await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "Invalid subscribe request." }, _jsonOptions)); return; }
                 var response = await subscriptions.HandleSubscribeAsync(request, context, context.RequestAborted);
                 if (response != null)
                 {
                     if (string.IsNullOrEmpty(response.Id)) response.Id = request.Id ?? string.Empty;
-                    await SendTextAsync(webSocket, JsonSerializer.Serialize(response, _jsonOptions));
+                    await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(response, _jsonOptions));
                 }
                 return;
             }
@@ -167,12 +167,12 @@ public class TrameWebSocketMiddleware
                     if (prop.Name.Equals("subscriptionId", StringComparison.OrdinalIgnoreCase)) subId = prop.Value.GetString();
                     else if (prop.Name.Equals("id", StringComparison.OrdinalIgnoreCase)) reqId = prop.Value.GetString();
                 }
-                if (string.IsNullOrEmpty(subId)) { await SendErrorAsync(webSocket, "unsubscribe requires subscriptionId."); return; }
+                if (string.IsNullOrEmpty(subId)) { await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "unsubscribe requires subscriptionId." }, _jsonOptions)); return; }
                 var response = await subscriptions.HandleUnsubscribeAsync(subId!, reqId, context.RequestAborted);
                 if (response != null)
                 {
                     if (string.IsNullOrEmpty(response.Id)) response.Id = reqId ?? string.Empty;
-                    await SendTextAsync(webSocket, JsonSerializer.Serialize(response, _jsonOptions));
+                    await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(response, _jsonOptions));
                 }
                 return;
             }
@@ -203,7 +203,7 @@ public class TrameWebSocketMiddleware
                 var multiRequest = JsonSerializer.Deserialize<TrameMultiRequest>(message, _jsonOptions);
                 if (multiRequest?.Requests == null)
                 {
-                    await SendErrorAsync(webSocket, "Invalid multi request.");
+                    await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "Invalid multi request." }, _jsonOptions));
                     return;
                 }
 
@@ -211,8 +211,7 @@ public class TrameWebSocketMiddleware
                 // Quelle ist ITrameCore (TrameOptions → Invoker → Interface → Transporte).
                 if (_trameCore.MaximumBatchSize > 0 && multiRequest.Requests.Count > _trameCore.MaximumBatchSize)
                 {
-                    await SendErrorAsync(webSocket,
-                        $"Batch exceeds MaximumBatchSize ({_trameCore.MaximumBatchSize}).");
+                    await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = $"Batch exceeds MaximumBatchSize ({_trameCore.MaximumBatchSize})." }, _jsonOptions));
                     return;
                 }
 
@@ -223,47 +222,28 @@ public class TrameWebSocketMiddleware
                 var request = JsonSerializer.Deserialize<TrameRequest>(message, _jsonOptions);
                 if (request == null)
                 {
-                    await SendErrorAsync(webSocket, "Invalid request.");
+                    await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "Invalid request." }, _jsonOptions));
                     return;
                 }
 
                 response2 = await _trameCore.InvokeDi(request, context, context.RequestAborted);
             }
 
+            // Hotfix 1.1.1: Alle Sends über den gemeinsamen Send-Channel des SubscriptionManagers
+            // leiten — verhindert konkurrierende WebSocket.SendAsync-Aufrufe zwischen
+            // Call-Responses (Middleware-Thread) und Event-Frames (Pump-Tasks).
             var json = JsonSerializer.Serialize(response2, _jsonOptions);
-            await SendTextAsync(webSocket, json);
+            await subscriptions.EnqueueSendAsync(json);
         }
         catch (JsonException ex)
         {
             _logger?.LogWarning(ex, "Failed to parse WebSocket message as JSON.");
-            await SendErrorAsync(webSocket, "Invalid JSON in request.");
+            await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "Invalid JSON in request." }, _jsonOptions));
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Error processing WebSocket message.");
-            await SendErrorAsync(webSocket, "Internal server error.");
+            await subscriptions.EnqueueSendAsync(JsonSerializer.Serialize(new { code = 400, data = "Internal server error." }, _jsonOptions));
         }
-    }
-
-    private static async Task SendTextAsync(WebSocket webSocket, string message)
-    {
-        var bytes = Encoding.UTF8.GetBytes(message);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        await webSocket.SendAsync(
-            new ArraySegment<byte>(bytes),
-            WebSocketMessageType.Text,
-            endOfMessage: true,
-            cts.Token);
-    }
-
-    private async Task SendErrorAsync(WebSocket webSocket, string errorMessage)
-    {
-        var errorResponse = new
-        {
-            code = 400,
-            data = errorMessage
-        };
-
-        await SendTextAsync(webSocket, JsonSerializer.Serialize(errorResponse, _jsonOptions));
     }
 }

@@ -135,6 +135,22 @@ namespace TrameHub.Extensions
                 invoker.MaximumBatchSize = options.MaximumBatchSize;
                 invoker.MaxDependencyPathLength = options.MaxDependencyPathLength;
                 invoker.AllowRecursiveDescent = options.AllowRecursiveDescent;
+
+                // Hotfix 1.1.1: Policy-Evaluator für den Batch-Pfad setzen, falls
+                // IAuthorizationService verfügbar. Der Delegate kapselt die ASP.NET Core
+                // Authorization-Abhängigkeit, so dass TrameCore frei davon bleibt.
+                // Im Single-Call-Pfad übernimmt der TrameAuthorizationInterceptor die
+                // Policy-Evaluation; im Batch-Pre-Pass nutzt CheckAuthorisation diesen Delegate.
+                var authService = sp.GetService<Microsoft.AspNetCore.Authorization.IAuthorizationService>();
+                if (authService != null)
+                {
+                    invoker.PolicyEvaluator = async (ctx, policy) =>
+                    {
+                        var result = await authService.AuthorizeAsync(ctx.User, resource: null, policyName: policy);
+                        return result.Succeeded;
+                    };
+                }
+
                 return invoker;
             });
 

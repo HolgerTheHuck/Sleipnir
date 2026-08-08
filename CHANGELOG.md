@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-08
+
+### Fixed
+- **R1 — fluent overload routed through canonical `AddTrame` (correctness)** — the fluent
+  `AddTrame(TrameOptions, Action<TrameControllerBuilder>)` overload had drifted into a parallel
+  `AddTrameCore` that skipped the canonical wiring (camelCase wire + `TrameResponseJsonConverter`,
+  SignalR setup, built-in interceptors, north-bound pass-throughs, rate limiter). `AddTrameCore` is
+  deleted; the overload now delegates to `AddTrame` and disables the bulk auto-scan via a new
+  `TrameOptions.AutoDiscoverControllers` flag (default `true`). The fluent contract stays explicit
+  (only `Add<T>()` / `FromAssemblies` controllers register).
+- **R2 — fluent builder applies controller registrations to DI (correctness)** —
+  `TrameControllerBuilder.Add<T>()` / `FromAssemblies` only registered controllers with the invoker
+  and never with `IServiceCollection`, so a controller resolved per-call via
+  `IServiceScopeFactory.CreateScope()` was missing from DI. Each builder call now writes the
+  service descriptor immediately (scoped by default; `Add<T>(lifetime)` / `AddSingleton<T>()` /
+  factory variants honored).
+- **R3 — WebSocket correlation (correctness)** — three client-visible faults on the WebSocket
+  transport. (1) A `TrameMultiRequest` without per-request ids hung forever: the client generated a
+  correlation id but never wrote it into any request, the server echoed `""`, and the strict
+  dispatcher dropped the response. The client now assigns an id to every id-less request before
+  serializing. (2) Error frames were anonymous `{ code, data }` envelopes carrying the message in
+  `data` with no `id`/`error`, so a C# client could not correlate them and never surfaced the
+  message as a `TrameException`. Every error path now builds a real `TrameResponse` (`Code` +
+  `Id` + `TrameError`) and extracts the correlation id up-front (top-level id, or the first
+  request's id for a multi). (3) The catch-all handler returned `400` for internal failures; it is
+  now `500` (server error, generic message — no leak). A latent throw in the client's
+  `TryDispatchEventFrame` on array-root batch responses is also guarded.
+- **R4 — `TcsHolder.SetCanceled` → `TrySetCanceled` (correctness)** — the pending-call
+  cancellation registration called `SetCanceled`, which throws if the TCS was already completed by
+  a racing response. It now uses `TrySetCanceled`, and the cancellation propagates the caller's
+  token faithfully (`OperationCanceledException.CancellationToken` is the caller's, not an internal
+  one), so a cancelled pending call no longer corrupts the client — the connection stays usable for
+  follow-up calls.
+
+### Changed
+- **R5 — interceptor batch-bypass is now loud (docs + startup warning)** — `ITrameInterceptor`
+  runs on the single-call path only in 1.1.x; batch request elements (`/json/multi`, WebSocket
+  multi, JSON-RPC batch) bypass the interceptor seam. Authorization is unaffected (enforced
+  structurally in the serial auth pre-pass), but custom interceptor logic is silently skipped on
+  batches. `UseTrame` now logs a one-time warning when a user registers custom interceptors
+  (`Interceptors`/`BatchInterceptors`), and the interface XML docs + `SECURITY.md` /
+  `SECURITY_GUIDE.md` document the limitation. Routing the batch path through the pipeline is
+  tracked for 1.2 (`ROADMAP.md` R7). `ITrameBatchInterceptor` still has no consumer.
+
+### Tests
+- **R6 — regression coverage for the 1.1.1 "kritisch" fixes and the fluent overload.** The 1.1.1
+  thread-safety (single-sender channel) and batch policy-auth fixes shipped without regression
+  tests; the fluent overload (R1/R2) had none either. Added:
+  `WebSocketConcurrentSendTests` (50 concurrent `EchoAsync` calls + an active event subscription on
+  one connection — asserts every received frame is a complete JSON document, each call correlates
+  to its own echo, and all events survive the concurrent traffic; exercises the single-sender
+  channel that the 1.1.1 fix introduced), `BatchPolicyAuthTests` (parallel + topological batch
+  policy evaluation, the null-evaluator fail-closed branch, and dependent propagation when a
+  policy-denied provider is skipped), `WebSocketCorrelationTests` (malformed JSON returns a
+  structured correlated error frame, not an anonymous data envelope), `WebSocketTransportTests`
+  multi-without-ids completion, `TrameWebSocketClientReconnectTests` faithful cancellation
+  propagation, `TrameInterceptorBypassWarningTests` (startup warning fires/silent), and
+  `FluentRegistrationTests` (only explicitly-added controllers register; DI resolution;
+  camelCase wire + `RequireAuthentication` parity with canonical `AddTrame`). `CONTRIBUTING.md`
+  now requires a regression test for every bug fix.
+
 ## [1.1.1] - 2026-08-08
 
 ### Fixed

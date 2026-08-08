@@ -48,12 +48,13 @@ public class TrameDiscoveryServiceTests
         var controller = discovery.Controllers[0];
 
         // Assert
-        controller.Methods.Should().HaveCount(19); // All methods decorated with [TrameMethod]
+        controller.Methods.Should().HaveCount(20); // All methods decorated with [TrameMethod]
         controller.Methods.Select(m => m.MethodName).Should().Contain(new[]
         {
             "Echo", "Add", "EchoAsync", "AddAsync", "VoidMethod",
             "WithCancellation", "ComplexReturn", "NoParams", "Secured", "SecuredWithRole",
-            "StreamNumbers", "StreamNumbersTask", "ObservableStrings", "UploadBlob", "DownloadBlob", "UploadAndProcess", "DownloadStream",
+            "StreamNumbers", "StreamNumbersTask", "ObservableStrings", "ObservableStringsOverTime",
+            "UploadBlob", "DownloadBlob", "UploadAndProcess", "DownloadStream",
             "GetOr404", "ValidationProblem"
         });
     }

@@ -92,6 +92,34 @@ public class TestInvokerController
             return () => { };
         });
 
+    /// <summary>
+    /// Fires <paramref name="count"/> events on a background task with a delay between each,
+    /// so the event frames (pushed by the subscription pump task) interleave in time with
+    /// concurrent call responses (pushed by the middleware thread). Used by the R6
+    /// single-sender-channel regression: the synchronous <see cref="ObservableStrings"/>
+    /// drains before any call traffic starts, so it cannot exercise the concurrent-send path.
+    /// </summary>
+    [TrameMethod("ObservableStringsOverTime")]
+    public IObservable<string> ObservableStringsOverTime(int count, int delayMs)
+        => new SimpleObservable<string>(observer =>
+        {
+            var cts = new CancellationTokenSource();
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    for (int i = 0; i < count; i++)
+                    {
+                        await System.Threading.Tasks.Task.Delay(delayMs, cts.Token);
+                        observer.OnNext($"evt-{i}");
+                    }
+                    observer.OnCompleted();
+                }
+                catch (System.OperationCanceledException) { /* disposed — stop */ }
+            });
+            return () => cts.Cancel();
+        });
+
     [TrameMethod("UploadBlob")]
     public string UploadBlob(byte[] data, string filename)
         => $"Received {data.Length} bytes for {filename}";
@@ -506,6 +534,35 @@ public class AuthPostureClassLevelController
     [TrameMethod("Opened")]
     [TrameAnonymous]
     public string Opened() { return "opened"; }
+}
+
+/// <summary>
+/// Fixture for the batch-path policy fix (1.1.1): <c>[TrameAuthorise(Policy=...)]</c>
+/// evaluated in the serial auth pre-pass via the invoker's <c>PolicyEvaluator</c> delegate.
+/// Static counters isolate the invocations like <see cref="AuthPropagationController"/>.
+/// </summary>
+[TrameController("PolicyAuth")]
+public class PolicyAuthController
+{
+    [TrameMethod("Open")]
+    public string Open() { Interlocked.Increment(ref OpenCalls); return "open"; }
+
+    [TrameMethod("AllowedPolicy")]
+    [TrameAuthorise(Policy = "allowed")]
+    public string AllowedPolicy() { Interlocked.Increment(ref AllowedCalls); return "allowed"; }
+
+    [TrameMethod("DeniedPolicy")]
+    [TrameAuthorise(Policy = "denied")]
+    public string DeniedPolicy() { Interlocked.Increment(ref DeniedCalls); return "denied"; }
+
+    public static int OpenCalls, AllowedCalls, DeniedCalls;
+
+    public static void ResetCounters()
+    {
+        Interlocked.Exchange(ref OpenCalls, 0);
+        Interlocked.Exchange(ref AllowedCalls, 0);
+        Interlocked.Exchange(ref DeniedCalls, 0);
+    }
 }
 
 // --- Fixtures für die strukturellen TypeRef-Edge-Cases (Discovery-Schema) ----------

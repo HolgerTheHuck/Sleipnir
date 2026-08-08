@@ -100,9 +100,13 @@ preserve.
 2. **Fork & branch** from `main`. Use a descriptive branch name
    (`feature/alias-strict-mode`, `fix/batch-auth-prepass`, …).
 3. **Keep PRs focused** — one logical change per PR. Easier to review, easier to revert.
-4. **Add tests.** New behavior ships with a test in `TrameTests/` (see existing fixtures
-   in `TrameTests/Fixtures/` and the per-area organization under `Unit/Core/`,
-   `Unit/Client/`, `Unit/Telemetry/`, and `Integration/`).
+4. **Add tests — every bug fix ships with a regression test.** New behavior ships with a
+   test in `TrameTests/` (see existing fixtures in `TrameTests/Fixtures/` and the per-area
+   organization under `Unit/Core/`, `Unit/Client/`, `Unit/Telemetry/`, and `Integration/`).
+   A bug fix — especially a hotfix — is not complete without a regression test that fails
+   before the fix and passes after. A security/correctness hotfix merged without a test is
+   a defect of its own: the fix can silently regress on the next refactor and the original
+   fault stays undocumented. If you cannot write a deterministic test, say why in the PR.
 5. **Update docs** if your change is user-visible — `README.md` / `README_DETAILS.md`,
    `PROTOCOL.md`, `DEPENDENCY_BINDING.md`, `CHANGELOG.md`, and any `[TrameDocumentation]`
    / `[TrameExample]` attributes on affected methods.

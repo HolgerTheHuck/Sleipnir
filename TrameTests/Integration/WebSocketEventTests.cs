@@ -37,32 +37,47 @@ public class WebSocketEventTests : IClassFixture<TransportTestFixture>
         };
         await SendAsync(client, JsonSerializer.Serialize(subscribeReq));
 
-        // Assert: Subscribe-Response mit code 200.
-        var subscribeResp = await ReceiveAsync(client);
-        var subDoc = JsonDocument.Parse(subscribeResp);
-        subDoc.RootElement.GetProperty("code").GetInt32().Should().Be(200);
-
-        // Assert: 3 Event-Frames empfangen. subscriptionId aus dem ersten Event extrahieren
-        // (die Subscribe-Response serialisiert data je nach Converter — robust: aus Event-Frame).
+        // Assert: Subscribe-Response mit code 200 + 3 Event-Frames + complete.
+        // Robust: die erste Nachricht kann ein Event-Frame sein (SimpleObservable feuert
+        // synchron, der Send-Loop kann Events vor der Subscribe-Response liefern).
         var events = new List<JsonElement>();
         string? subscriptionId = null;
-        for (int i = 0; i < 3; i++)
+        int eventsReceived = 0;
+        bool completeReceived = false;
+        bool subscribeResponseSeen = false;
+        while (!subscribeResponseSeen || eventsReceived < 3 || !completeReceived)
         {
-            var eventFrame = await ReceiveAsync(client);
-            var evtDoc = JsonDocument.Parse(eventFrame);
-            evtDoc.RootElement.GetProperty("type").GetString().Should().Be("event");
-            subscriptionId ??= evtDoc.RootElement.GetProperty("subscriptionId").GetString();
-            evtDoc.RootElement.GetProperty("subscriptionId").GetString().Should().Be(subscriptionId);
-            evtDoc.RootElement.GetProperty("eventId").GetInt64().Should().Be(i + 1);
-            evtDoc.RootElement.GetProperty("data").GetString().Should().Be($"evt-{i}");
-            events.Add(evtDoc.RootElement);
+            var msg = await ReceiveAsync(client);
+            var doc = JsonDocument.Parse(msg);
+            if (doc.RootElement.TryGetProperty("code", out _))
+            {
+                // Subscribe-Response.
+                doc.RootElement.GetProperty("code").GetInt32().Should().Be(200);
+                subscribeResponseSeen = true;
+            }
+            else if (doc.RootElement.TryGetProperty("type", out var typeProp))
+            {
+                var type = typeProp.GetString();
+                if (type == "event")
+                {
+                    eventsReceived++;
+                    var root = doc.RootElement;
+                    subscriptionId ??= root.GetProperty("subscriptionId").GetString();
+                    root.GetProperty("subscriptionId").GetString().Should().Be(subscriptionId);
+                    root.GetProperty("eventId").GetInt64().Should().Be(eventsReceived);
+                    root.GetProperty("data").GetString().Should().Be($"evt-{eventsReceived - 1}");
+                    events.Add(root);
+                }
+                else if (type == "complete")
+                {
+                    completeReceived = true;
+                    doc.RootElement.GetProperty("subscriptionId").GetString().Should().Be(subscriptionId);
+                }
+            }
         }
-
-        // Assert: complete-Frame.
-        var completeFrame = await ReceiveAsync(client);
-        var completeDoc = JsonDocument.Parse(completeFrame);
-        completeDoc.RootElement.GetProperty("type").GetString().Should().Be("complete");
-        completeDoc.RootElement.GetProperty("subscriptionId").GetString().Should().Be(subscriptionId);
+        subscribeResponseSeen.Should().BeTrue();
+        eventsReceived.Should().Be(3);
+        completeReceived.Should().BeTrue();
 
         // Cleanup: client schließen, Auto-Cleanup auf Server-Seite.
         await client.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
@@ -86,21 +101,41 @@ public class WebSocketEventTests : IClassFixture<TransportTestFixture>
             id = "sub-2",
         };
         await SendAsync(client, JsonSerializer.Serialize(subscribeReq));
-        var subscribeResp = await ReceiveAsync(client);
-        JsonDocument.Parse(subscribeResp).RootElement.GetProperty("code").GetInt32().Should().Be(200);
 
-        // Alle 10 Events + complete ablesen (SimpleObservable feuert synchron). subscriptionId
-        // aus dem ersten Event extrahieren (robust gegen Converter-Serialisierung der Response).
+        // Subscribe-Response + 10 Events + complete ablesen (robust: Frames können in
+        // beliebiger Reihenfolge kommen — SimpleObservable feuert synchron).
         string? subscriptionId = null;
-        for (int i = 0; i < 10; i++)
+        int eventsReceived = 0;
+        bool completeReceived = false;
+        bool subscribeResponseSeen = false;
+        while (!subscribeResponseSeen || eventsReceived < 10 || !completeReceived)
         {
-            var evt = await ReceiveAsync(client);
-            var evtDoc = JsonDocument.Parse(evt);
-            evtDoc.RootElement.GetProperty("type").GetString().Should().Be("event");
-            subscriptionId ??= evtDoc.RootElement.GetProperty("subscriptionId").GetString();
+            var msg = await ReceiveAsync(client);
+            var doc = JsonDocument.Parse(msg);
+            if (doc.RootElement.TryGetProperty("code", out _))
+            {
+                doc.RootElement.GetProperty("code").GetInt32().Should().Be(200);
+                subscribeResponseSeen = true;
+            }
+            else if (doc.RootElement.TryGetProperty("type", out var typeProp))
+            {
+                var type = typeProp.GetString();
+                if (type == "event")
+                {
+                    eventsReceived++;
+                    subscriptionId ??= doc.RootElement.GetProperty("subscriptionId").GetString();
+                }
+                else if (type == "complete")
+                {
+                    completeReceived = true;
+                    subscriptionId ??= doc.RootElement.GetProperty("subscriptionId").GetString();
+                }
+            }
         }
-        var complete = await ReceiveAsync(client);
-        JsonDocument.Parse(complete).RootElement.GetProperty("type").GetString().Should().Be("complete");
+        subscribeResponseSeen.Should().BeTrue();
+        eventsReceived.Should().Be(10);
+        completeReceived.Should().BeTrue();
+        subscriptionId.Should().NotBeNullOrEmpty();
 
         // Unsubscribe (nach complete — beweist, dass der Dispatcher Unsubscribe annimmt).
         var unsubReq = new

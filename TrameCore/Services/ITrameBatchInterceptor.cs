@@ -9,8 +9,14 @@ namespace TrameCore.Services;
 /// <see cref="ITrameInterceptor"/> für pro-Element-Interceptors.
 /// </summary>
 /// <remarks>
-/// Phase 1 — siehe <c>docs/design/phase-1-interceptor-pipeline.md</c>. Experimental bis die
-/// Pipeline gelandet ist (siehe <c>STABILITY.md</c> §2).
+/// <para><b>Where this runs today (1.1.x).</b> <see cref="ITrameBatchInterceptor"/> has <b>no
+/// consumer yet</b> — the batch path (<c>InvokeDi(IEnumerable&lt;TrameRequest&gt;)</c>) goes
+/// straight into parallel/serial/topological execution without a batch-level interceptor
+/// pipeline, so instances registered via <c>TrameOptions.BatchInterceptors</c> are never
+/// invoked. Do not rely on this seam in 1.1.x; wiring a consumer (or removing the interface)
+/// is tracked for 1.2 (<c>ROADMAP.md</c> R7).</para>
+/// <para>Phase 1 — siehe <c>docs/design/phase-1-interceptor-pipeline.md</c>. Experimental bis die
+/// Pipeline gelandet ist (siehe <c>STABILITY.md</c> §2).</para>
 /// </remarks>
 public interface ITrameBatchInterceptor
 {

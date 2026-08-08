@@ -14,13 +14,26 @@ public delegate Task<TrameResponse?> TrameInvocationDelegate(TrameInvocationCont
 
 /// <summary>
 /// Interface for interceptors that can intercept RPC calls before/after execution.
-/// Use for logging, tracing, caching, validation, metrics, auth, rate-limiting, etc.
 /// </summary>
 /// <remarks>
-/// Phase 1 — siehe <c>docs/design/phase-1-interceptor-pipeline.md</c>. Die Signatur wurde
+/// <para><b>Where this runs today (1.1.x).</b> <see cref="ITrameInterceptor"/> instances are
+/// invoked <b>only on the single-call path</b> (<c>ITrameCore.InvokeDi(TrameRequest)</c>). They
+/// do <b>not</b> run on the per-request elements of a batch — <c>/json/multi</c>, a WebSocket
+/// multi-request, or a JSON-RPC batch — and <see cref="ITrameBatchInterceptor"/> has no consumer
+/// at all yet. A user interceptor registered via <c>TrameOptions.Interceptors</c> therefore sees
+/// single calls but is silently bypassed on every batch call.</para>
+/// <para><b>Security implication.</b> Authorization is <b>not</b> affected — it is enforced
+/// structurally by the invoker's serial auth pre-pass, not by user interceptors. But any
+/// <i>custom</i> logic you place behind this seam (tenant isolation, request validation, rate
+/// limiting, audit logging) is bypassed on batches. Do not build a security control on this
+/// seam in 1.1.x; use <c>[TrameAuthorise]</c>/policies and the framework-level gates instead.
+/// Routing the batch path through the interceptor pipeline is tracked for 1.2
+/// (<c>ROADMAP.md</c> R7); a startup warning is logged once when <c>TrameOptions.Interceptors</c>
+/// is non-empty.</para>
+/// <para>Phase 1 — siehe <c>docs/design/phase-1-interceptor-pipeline.md</c>. Die Signatur wurde
 /// von <c>InvokeAsync(TrameRequest, TrameInvocationDelegate, CancellationToken)</c> auf
 /// <c>InvokeAsync(TrameInvocationContext, TrameInvocationDelegate)</c> umgestellt (breaking,
-/// aber <c>ITrameInterceptor</c> ist in <c>STABILITY.md</c> §2 als experimental markiert).
+/// aber <c>ITrameInterceptor</c> ist in <c>STABILITY.md</c> §2 als experimental markiert).</para>
 /// </remarks>
 public interface ITrameInterceptor
 {
@@ -31,6 +44,10 @@ public interface ITrameInterceptor
     /// Eröffnung belegt — vor <c>next</c> ist <see cref="TrameInvocationContext.InvokeInfo"/>
     /// typischerweise <c>null</c>, danach <see cref="TrameInvocationContext.Response"/> belegt.
     /// </summary>
+    /// <remarks>
+    /// Runs on the single-call path only in 1.1.x — see the type-level remarks for the
+    /// batch-element bypass and its security implication.
+    /// </remarks>
     Task<TrameResponse?> InvokeAsync(
         TrameInvocationContext context,
         TrameInvocationDelegate next);

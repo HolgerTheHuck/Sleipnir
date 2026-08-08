@@ -229,6 +229,25 @@ namespace TrameHub.Extensions
                 return app;
             }
 
+            // R5: ITrameInterceptor/ITrameBatchInterceptor run on the single-call path only in
+            // 1.1.x — batch elements bypass the interceptor seam (authorization is unaffected;
+            // it is enforced structurally). Warn once at startup when a user registered custom
+            // interceptors, so the bypass does not stay silent. The real fix (route the batch path
+            // through the pipeline) is tracked for 1.2 (ROADMAP.md R7).
+            var startupOptions = app.ApplicationServices.GetService<TrameOptions>();
+            if (startupOptions?.Interceptors.Count > 0 || startupOptions?.BatchInterceptors.Count > 0)
+            {
+                var loggerFactory = app.ApplicationServices.GetService<Microsoft.Extensions.Logging.ILoggerFactory>();
+                loggerFactory?.CreateLogger("Trame")
+                    .LogWarning(
+                        "Trame: user interceptors (Interceptors={InterceptorCount}, BatchInterceptors={BatchInterceptorCount}) " +
+                        "currently run on the single-call path only, not on batch request elements " +
+                        "(/json/multi, WebSocket multi, JSON-RPC batch). Authorization is unaffected (enforced structurally), " +
+                        "but any custom interceptor logic is bypassed on batches. Batch-pipeline routing is tracked for 1.2. " +
+                        "See ROADMAP.md R7 and SECURITY_GUIDE.md.",
+                        startupOptions.Interceptors.Count, startupOptions.BatchInterceptors.Count);
+            }
+
             // If a TrameControllerBuilder was registered (fluent API), use it
             var builder = app.ApplicationServices.GetService<TrameControllerBuilder>();
             if (builder != null)

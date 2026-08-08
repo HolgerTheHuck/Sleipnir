@@ -67,6 +67,7 @@ See [`SECURITY_GUIDE.md`](SECURITY_GUIDE.md) for the full posture matrix and dep
 - **No path traversal** — dispatch is by name (`{Controller}_{Method}` dictionary lookup), not by path.
 - **No polymorphic deserialization gadget** — `System.Text.Json` with server-side types from the method signature; no client-controlled `TypeNameHandling`.
 - **Batch / WS / JSON-RPC do not bypass `[TrameAuthorise]`** — all paths run through `ResolveAndAuthorizeAsync`.
+- **User interceptors do not run on batch elements (1.1.x)** — `ITrameInterceptor`/`ITrameBatchInterceptor` instances currently run only on the single-call path, not on batch request elements; authorization is unaffected (enforced structurally), but any custom interceptor logic (tenant isolation, validation, rate limiting) is silently bypassed on batches. Do not build a security control on the interceptor seam in 1.1.x — use `[TrameAuthorise]`/policies and the framework-level gates. Batch-pipeline routing is tracked for 1.2 (`ROADMAP.md` R7); a startup warning fires when `options.Interceptors` is non-empty.
 
 ## North-Bound Deployment Checklist
 

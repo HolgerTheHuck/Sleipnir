@@ -120,6 +120,18 @@ Hardening adds gates; several defenses are already structural and need no config
   unknown name is a routing `404` → `-32601`, never an invoke.
 - **All transports route through authorization.** Batch, WebSocket, and JSON-RPC cannot bypass
   `[TrameAuthorise]` — the serial auth pre-pass covers every path before `ExecuteAuthorized` runs.
+- **User interceptors do not run on batch elements (1.1.x limitation).** `ITrameInterceptor`
+  instances registered via `TrameOptions.Interceptors` (and all `ITrameBatchInterceptor`
+  instances) currently run **only on the single-call path** (`InvokeDi(TrameRequest)`) — they
+  do not run on the per-request elements of a batch (`/json/multi`, WebSocket multi,
+  JSON-RPC batch), and there is no batch-level pipeline consumer yet. Authorization is **not**
+  affected (it is enforced structurally by the pre-pass, not by user interceptors), but any
+  *custom* logic you put behind `ITrameInterceptor` — tenant isolation, request validation,
+  rate limiting, audit logging — is silently bypassed on every batch call. Do not build a
+  security control on the interceptor seam in 1.1.x; use `[TrameAuthorise]`/policies and the
+  framework-level gates instead. Routing the batch path through the interceptor pipeline is
+  tracked for 1.2 (`ROADMAP.md` R7). The single-call-only scope is logged as a warning once at
+  startup when `options.Interceptors` is non-empty.
 - **Parameter binding is `System.Text.Json` with server-fixed types.** Types come from the method
   signature, never from the client. Trame does not use `TypeNameHandling`, so the known
   polymorphic-deserialization gadget vectors do not apply.

@@ -14,22 +14,22 @@ namespace TrameHub.Extensions
     public static class TrameServiceCollectionExtension
     {
         /// <summary>
-        /// Registriert Trame mit Konfigurations-Callback — das ist der empfohlene
-        /// Einstiegspunkt für eine v1.0-Server-Setup. WebSocket ist der primäre
-        /// (Default-)Kanal; SignalR ist über <see cref="TrameOptions.UseSignalR"/>
-        /// optional zuschaltbar. Die Pipeline muss anschließend
+        /// Registers Trame with a configuration callback — this is the recommended
+        /// entry point for a v1.0 server setup. WebSocket is the primary
+        /// (default) channel; SignalR can be optionally enabled via
+        /// <see cref="TrameOptions.UseSignalR"/>. The pipeline must subsequently call
         /// <c>app.UseWebSockets(); app.UseTrameWebSocket(); app.UseTrame();</c>
-        /// (und bei Bedarf <c>app.MapTrameEndpoints()</c>) aufrufen.
+        /// (and <c>app.MapTrameEndpoints()</c> as needed).
         ///
         /// Usage:
         /// <code>
-        /// builder.Services.AddTrame();                       // Defaults (WS primär)
-        /// // oder
+        /// builder.Services.AddTrame();                       // Defaults (WS primary)
+        /// // or
         /// builder.Services.AddTrame(o =&gt;
         /// {
         ///     o.EnableDetailedErrors = builder.Environment.IsDevelopment();
-        ///     o.RateLimitPermitLimit = 50;                  // nur in Prod
-        ///     o.UseSignalR = true;                          // optionaler 2. Kanal
+        ///     o.RateLimitPermitLimit = 50;                  // only in prod
+        ///     o.UseSignalR = true;                          // optional second channel
         /// });
         /// </code>
         /// </summary>
@@ -44,18 +44,18 @@ namespace TrameHub.Extensions
         public static IServiceCollection AddTrame(this IServiceCollection services,
             TrameOptions options)
         {
-            // Options als Singleton in DI ablegen, damit die Pipeline-Extensions
-            // (UseTrameTransports/MapTrame) UseSignalR etc. ohne Parameter lesen können.
+            // Store options as a singleton in DI so that the pipeline extensions
+            // (UseTrameTransports/MapTrame) can read UseSignalR etc. without parameters.
             services.AddSingleton(options);
 
             if (options.UseSignalR)
             {
                 // Add SignalR as the transport-layer.
-                // Die drei HubOptions sind nur dann zu überschreiben, wenn der Caller sie
-                // explizit gesetzt hat — sonst gilt jeweils der SignalR-Default. Insbesondere
-                // MaximumParallelInvocationsPerClient=0 (TrameOptions-int-Default) würde SignalR
-                // beim Build des HubConnectionHandler werfen (must be ≥ 1); wir lassen in dem
-                // Fall den SignalR-Default (1) stehen, statt ihn mit 0 zu überschreiben.
+                // Override the three HubOptions only when the caller has set them explicitly —
+                // otherwise the SignalR default applies. In particular,
+                // MaximumParallelInvocationsPerClient=0 (the TrameOptions int default) would
+                // make SignalR throw when building the HubConnectionHandler (must be ≥ 1); in
+                // that case we leave the SignalR default (1) in place instead of overriding it with 0.
                 var fastHub = services.AddSignalR(
                     o =>
                     {
@@ -70,21 +70,21 @@ namespace TrameHub.Extensions
 
                 if (options.UseMessagePack)
                 {
-                    // Custom Resolver: JsonElement (TrameResponse.Data seit dem Single-Pass-
-                    // Fix) wird als native MessagePack-Tokens serialisiert, nicht als
-                    // escapeter JSON-String — keine Double-Wrapping-Tax auf dem SignalR-Kanal.
+                    // Custom Resolver: JsonElement (TrameResponse.Data since the single-pass
+                    // fix) is serialized as native MessagePack tokens rather than as an
+                    // escaped JSON string — no double-wrapping tax on the SignalR channel.
                     fastHub.AddMessagePackProtocol(o =>
                         o.SerializerOptions = MessagePackSerializerOptions.Standard
                             .WithResolver(JsonElementResolver.Instance));
                 }
             }
 
-            // Minimal-API (REST) JSON-Options host-weit konfigurieren: camelCase +
-            // relaxed Encoder. Wirkt auf ALLE Minimal-API-Endpoints des Hosts (Trame ist
-            // das Framework, das den Host bereitstellt) — Data (JsonElement) wird damit
-            // roh in einem Pass serialisiert, ohne `"`-Escape-Tax.
-            // TrameResponseJsonConverter (Write-only): DataBytes via WriteRawValue roh in
-            // den Wire → kein JsonDocument-Baum auf dem Server (Single-Pass-Optimierung).
+            // Configure Minimal-API (REST) JSON options host-wide: camelCase +
+            // relaxed encoder. Affects ALL Minimal-API endpoints of the host (Trame is
+            // the framework that provides the host) — Data (JsonElement) is then
+            // serialized raw in a single pass, without a `"`-escape tax.
+            // TrameResponseJsonConverter (write-only): writes DataBytes raw to the
+            // wire via WriteRawValue → no JsonDocument tree on the server (single-pass optimization).
             services.ConfigureHttpJsonOptions(o =>
             {
                 o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -119,28 +119,28 @@ namespace TrameHub.Extensions
                         ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<TrameCore.Services.TrameInvoker>.Instance,
                     sp.GetService<IEnumerable<TrameCore.Services.ITrameInterceptor>>());
 
-                // Detailed Errors aktivieren, wenn explizit gewünscht oder in Development.
+                // Enable detailed errors when explicitly requested or in Development.
                 var env = sp.GetService<Microsoft.Extensions.Hosting.IHostEnvironment>();
                 invoker.EnableDetailedErrors = options.EnableDetailedErrors || (env?.IsDevelopment() ?? false);
-                // Kardinalitäts-Caps durchreichen (Default 1000/10000, 0 = unbegrenzt).
+                // Propagate the cardinality caps (default 1000/10000, 0 = unlimited).
                 invoker.MaxParameterArrayLength = options.MaxParameterArrayLength;
                 invoker.MaxResultElementCount = options.MaxResultElementCount;
-                // Alias-Binding-Modus durchreichen (Default Weak; Strict = Fragment muss
-                // den Consumer-Typ vollständig decken, sonst 400 — siehe DEPENDENCY_BINDING.md).
+                // Propagate the alias binding mode (default Weak; Strict = fragment must
+                // fully cover the consumer type, otherwise 400 — see DEPENDENCY_BINDING.md).
                 invoker.AliasBindingMode = options.AliasBindingMode;
-                // North-Bound-Härtung (Default non-breaking, siehe SECURITY.md):
-                // RequireAuthentication = Default-Deny für unbestückte Methoden;
-                // MaximumBatchSize = Fan-Out-DoS-Cap; JsonPath-Limits = client-pfad-DoS-Cap.
+                // North-bound hardening (default non-breaking, see SECURITY.md):
+                // RequireAuthentication = default-deny for unattributed methods;
+                // MaximumBatchSize = fan-out DoS cap; JsonPath limits = client-path DoS cap.
                 invoker.RequireAuthentication = options.RequireAuthentication;
                 invoker.MaximumBatchSize = options.MaximumBatchSize;
                 invoker.MaxDependencyPathLength = options.MaxDependencyPathLength;
                 invoker.AllowRecursiveDescent = options.AllowRecursiveDescent;
 
-                // Hotfix 1.1.1: Policy-Evaluator für den Batch-Pfad setzen, falls
-                // IAuthorizationService verfügbar. Der Delegate kapselt die ASP.NET Core
-                // Authorization-Abhängigkeit, so dass TrameCore frei davon bleibt.
-                // Im Single-Call-Pfad übernimmt der TrameAuthorizationInterceptor die
-                // Policy-Evaluation; im Batch-Pre-Pass nutzt CheckAuthorisation diesen Delegate.
+                // Hotfix 1.1.1: set the policy evaluator for the batch path if
+                // IAuthorizationService is available. The delegate encapsulates the ASP.NET Core
+                // Authorization dependency so that TrameCore stays free of it.
+                // On the single-call path the TrameAuthorizationInterceptor handles
+                // policy evaluation; in the batch pre-pass CheckAuthorisation uses this delegate.
                 var authService = sp.GetService<Microsoft.AspNetCore.Authorization.IAuthorizationService>();
                 if (authService != null)
                 {
@@ -154,39 +154,39 @@ namespace TrameHub.Extensions
                 return invoker;
             });
 
-            // Register built-in interceptors (Phase 1: feste Reihenfolge Auth → Logging).
-            // Auth *vor* Logging → Auth läuft außen, lehnt unautorisierte Calls ab, bevor
-            // der Logging-Interceptor sie misst (sonst loggen wir unautorisierten Traffic).
-            // User-Interceptors aus options.Interceptors kommen *nach* den Built-ins
-            // (innen, näher an der Method-Invocation) — sie können auf gelöste InvokeInfo
-            // und autorisierte Requests aufsetzen.
+            // Register built-in interceptors (Phase 1: fixed order Auth → Logging).
+            // Auth *before* Logging → Auth runs on the outside, rejects unauthorized calls
+            // before the logging interceptor measures them (otherwise we log unauthorized traffic).
+            // User interceptors from options.Interceptors come *after* the built-ins
+            // (inside, closer to the method invocation) — they can build on resolved InvokeInfo
+            // and authorized requests.
             if (options.RegisterBuiltInInterceptors)
             {
-                // Auth (außen) — IAuthorizationService ist optional (South-Bound ohne
-                // ASP.NET Core Authorization); Policies werden nur ausgewertet, wenn
-                // registriert. RequireAuthentication wird via Closure durchgereicht.
+                // Auth (outer) — IAuthorizationService is optional (south-bound without
+                // ASP.NET Core Authorization); policies are only evaluated when
+                // registered. RequireAuthentication is propagated via the closure.
                 services.AddSingleton<TrameCore.Services.ITrameInterceptor>(
                     sp => new TrameHub.Interceptors.TrameAuthorizationInterceptor(
                         sp.GetService<Microsoft.AspNetCore.Authorization.IAuthorizationService>(),
                         sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TrameHub.Interceptors.TrameAuthorizationInterceptor>>(),
                         options.RequireAuthentication));
 
-                // Telemetry (Mitte) — Tracing + Metrics + OTel-Logging-Conventions.
-                // Läuft nach Auth (misst nur autorisierten Traffic) und vor Logging
-                // (außen, umschließt die Method-Invocation mit der Pipeline-Span).
+                // Telemetry (middle) — tracing + metrics + OTel logging conventions.
+                // Runs after Auth (measures only authorized traffic) and before Logging
+                // (outer, wraps the method invocation with the pipeline span).
                 services.AddSingleton<TrameCore.Services.ITrameInterceptor>(
                     sp => new TrameHub.Interceptors.TrameTelemetryInterceptor(
                         sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TrameHub.Interceptors.TrameTelemetryInterceptor>>()));
 
-                // Logging (innen, nach Telemetry) — der bestehende Built-in aus v1.0
-                // (Dauer-Logger, bleibt als einfacher Logger erhalten).
+                // Logging (inner, after Telemetry) — the existing built-in from v1.0
+                // (duration logger, kept as a simple logger).
                 services.AddSingleton<TrameCore.Services.ITrameInterceptor, TrameCore.Services.TrameLoggingInterceptor>();
             }
 
-            // User-Interceptors (nach Built-ins → innen). Die Reihenfolge in der
-            // Collection bleibt erhalten; IEnumerable<ITrameInterceptor> liefert sie
-            // in DI-Registrierungsreihenfolge, und die Pipeline baut reversed (letzter
-            // läuft zuerst). Built-ins (oben) sind zuerst registriert → sie laufen außen.
+            // User interceptors (after built-ins → inner). The order in the
+            // collection is preserved; IEnumerable<ITrameInterceptor> yields them
+            // in DI registration order, and the pipeline is built reversed (last
+            // runs first). Built-ins (above) are registered first → they run outer.
             foreach (var userInterceptor in options.Interceptors)
             {
                 services.AddSingleton<TrameCore.Services.ITrameInterceptor>(_ => userInterceptor);
@@ -197,10 +197,10 @@ namespace TrameHub.Extensions
             }
 
             // Register Fast-Controller as Scoped.
-            // AutoDiscover=false-Controller bleiben dem Bulk-Scan bewusst fern — sie
-            // werden nur auf explizite Registrierung (Builder/Add<T> oder Register<T>) hin DI-registriert.
-            // AutoDiscoverControllers=false (fluent Builder-Pfad) schaltet den Bulk-Scan ab; der
-            // Builder registriert seine Controller dann selbst bei DI (siehe TrameControllerBuilder).
+            // AutoDiscover=false controllers deliberately stay out of the bulk scan — they
+            // are DI-registered only on explicit registration (Builder/Add<T> or Register<T>).
+            // AutoDiscoverControllers=false (fluent builder path) disables the bulk scan; the
+            // builder then registers its controllers with DI itself (see TrameControllerBuilder).
             if (options.AutoDiscoverControllers)
             {
                 foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
@@ -257,11 +257,11 @@ namespace TrameHub.Extensions
             }
 
             // Fallback: register all auto-discovered [TrameController] types.
-            // AutoDiscover=false-Controller (z. B. bewusst invalide Test-Fixtures)
-            // werden hier übersprungen — sie registriert man nur explizit.
-            // AutoDiscoverControllers=false ohne fluent Builder wäre ein Setup-Fehler
-            // (keine Controller registriert) — wir respektieren es trotzdem, damit der
-            // Flag in beiden Schichten (DI-Registrierung oben, Invoker-Registrierung hier) konsistent ist.
+            // AutoDiscover=false controllers (e.g. deliberately invalid test fixtures)
+            // are skipped here — they are registered only explicitly.
+            // AutoDiscoverControllers=false without a fluent builder would be a setup error
+            // (no controllers registered) — we still honor it so the
+            // flag stays consistent across both layers (DI registration above, invoker registration here).
             var options = app.ApplicationServices.GetService<TrameOptions>();
             if (options is { AutoDiscoverControllers: false })
                 return app;

@@ -9,21 +9,21 @@ using TrameCommon.Models;
 namespace TrameClient.Trame;
 
 /// <summary>
-/// Trame-Client über reine WebSockets (RFC 6455) mit ID-basierter
-/// Request/Response-Korrelation für parallele Calls.
+/// Trame client over plain WebSockets (RFC 6455) with ID-based
+/// request/response correlation for parallel calls.
 ///
-/// Auto-Reconnect: Droppt die Verbindung unerwartet (Server-Close,
-/// Transportfehler), verbindet der Client im Hintergrund mit exponentiellem
-/// Backoff automatisch wieder (spiegelt SignalRs <c>WithAutomaticReconnect</c>
-/// nach). In-Flight-Calls beim Drop werden abgelehnt (SignalR-Parität); neue
-/// Calls während des Reconnects warten auf dieselbe in-flight Verbindung.
-/// Explizites <see cref="DisposeAsync"/> ist terminal — kein Reconnect.
+/// Auto-Reconnect: when the connection drops unexpectedly (server close,
+/// transport error), the client reconnects automatically in the background
+/// with exponential backoff (mirrors SignalR's <c>WithAutomaticReconnect</c>).
+/// In-flight calls on the drop are rejected (SignalR parity); new
+/// calls during a reconnect wait on the same in-flight connection.
+/// An explicit <see cref="DisposeAsync"/> is terminal — no reconnect.
 /// </summary>
 public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposable
 {
     /// <summary>
-    /// Standard-Backoff-Intervalle (Spiegel von SignalR): 2,2,5,5,10,10,30,30s,
-    /// 1min,1min,5min. Nach dem letzten Interval gibt der Reconnect auf
+    /// Default backoff intervals (SignalR mirror): 2,2,5,5,10,10,30,30s,
+    /// 1min,1min,5min. After the last interval the reconnect gives up
     /// (<see cref="TrameConnectionState.Disconnected"/>).
     /// </summary>
     public static readonly TimeSpan[] DefaultReconnectDelays =
@@ -73,10 +73,10 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
 
     /// <summary>
     /// Non-generic interface to store TaskCompletionSource instances of different types.
-    /// SetResult nimmt ein bereits geparstes Ergebnisobjekt (TrameResponse bzw.
-    /// List&lt;TrameResponse?&gt;) — das Parsing passiert zentral in DispatchResponse via
-    /// TrameResponseParser (ein Pass, DataBytes statt JsonDocument-Baum), nicht mehr
-    /// pro Holder via JsonSerializer.Deserialize(string).
+    /// SetResult takes an already-parsed result object (TrameResponse or
+    /// List&lt;TrameResponse?&gt;) — parsing happens centrally in DispatchResponse via
+    /// TrameResponseParser (a single pass, DataBytes instead of a JsonDocument tree),
+    /// no longer per Holder via JsonSerializer.Deserialize(string).
     /// </summary>
     private interface ITcsHolder
     {
@@ -108,7 +108,7 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         : base()
     {
         if (string.IsNullOrWhiteSpace(serverBaseUrl))
-            throw new ArgumentException("Server-URL darf nicht leer sein.", nameof(serverBaseUrl));
+            throw new ArgumentException("Server URL must not be empty.", nameof(serverBaseUrl));
 
         var baseUrl = serverBaseUrl.TrimEnd('/');
         var wsScheme = baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? "wss" : "ws";
@@ -124,17 +124,17 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         _autoReconnect = autoReconnect;
         _reconnectDelays = reconnectDelays ?? DefaultReconnectDelays;
         if (_reconnectDelays.Length == 0)
-            _autoReconnect = false; // leeres Array schaltet Reconnect explizit aus
+            _autoReconnect = false; // empty array explicitly disables reconnect
         _onStateChanged = onStateChanged;
     }
 
-    /// <summary>Aktueller Verbindungs-Zustand (Observer-Oberfläche für UI/Logs).</summary>
+    /// <summary>Current connection state (observer surface for UI/logs).</summary>
     public TrameConnectionState State => _state;
 
     /// <summary>
-    /// Stellt die WebSocket-Verbindung her und startet den Hintergrund-Reader.
-    /// Ein geschlossener/abgebrochener Socket wird zuvor durch einen frischen
-    /// ersetzt (geschlossene Sockets sind nicht reusing-fähig).
+    /// Establishes the WebSocket connection and starts the background reader.
+    /// A closed/aborted socket is replaced with a fresh one first (closed
+    /// sockets are not reusable).
     /// </summary>
     public async Task ConnectAsync(CancellationToken ct = default)
     {
@@ -144,7 +144,7 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         if (_webSocket.State == WebSocketState.Open)
             return;
 
-        // Geschlossener/abgebrochener Socket kann nicht wiederverwendet werden → frisch erzeugen.
+        // A closed/aborted socket cannot be reused → create a fresh one.
         if (_webSocket.State is WebSocketState.Closed or WebSocketState.Aborted)
         {
             var dead = _webSocket;
@@ -203,13 +203,13 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         if (_webSocket.State == WebSocketState.Open)
             return;
 
-        // Läuft ein Hintergrund-Reconnect? Darauf warten (nicht selbst verbinden),
-        // damit parallele Calls denselben in-flight Reconnect teilen.
+        // Is a background reconnect running? Wait on it (do not connect ourselves)
+        // so parallel calls share the same in-flight reconnect.
         var reconnect = _reconnectTask;
         if (reconnect != null && _state == TrameConnectionState.Reconnecting)
         {
             try { await reconnect.WaitAsync(ct); }
-            catch (OperationCanceledException) { /* ct abgebrochen — unten neu bewerten */ }
+            catch (OperationCanceledException) { /* ct canceled — re-evaluate below */ }
             if (_webSocket.State == WebSocketState.Open)
                 return;
         }
@@ -217,7 +217,7 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         if (_webSocket.State == WebSocketState.Open)
             return;
 
-        // Connect-Race (B2): nur ein Caller darf verbinden, Rest wartet und sieht Open.
+        // Connect race (B2): only one caller may connect, the rest wait and see Open.
         await _connectLock.WaitAsync(ct);
         try
         {
@@ -273,7 +273,7 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         var holder = new TcsHolder<T>();
         _pendingRequests[requestId] = holder;
 
-        // Call-Timeout: verknüpftes CTS, das sowohl das Senden als auch das Warten abbricht.
+        // Call timeout: a linked CTS that cancels both the send and the wait.
         CancellationTokenSource? timeoutCts = null;
         CancellationTokenSource? linkedCts = null;
         try
@@ -314,7 +314,7 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         }
         catch (Exception ex)
         {
-            // Einheitliche Fehleroberfläche (C1): Transportfehler als TrameException.
+            // Unified error surface (C1): transport errors surface as TrameException.
             throw new TrameException("WebSocket transport error.", ex);
         }
         finally
@@ -328,8 +328,8 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
     /// <summary>
     /// Background loop that reads all WebSocket messages and dispatches
     /// them to the correct pending request by matching the response ID.
-    /// Beim Ende (Close/Fehler) werden alle pending Calls abgelehnt und ein
-    /// Hintergrund-Reconnect angestoßen (außer bei Dispose).
+    /// On termination (close/error) all pending calls are rejected and a
+    /// background reconnect is triggered (except on dispose).
     /// </summary>
     private async Task ReadLoopAsync(CancellationToken ct)
     {
@@ -340,8 +340,8 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         {
             while (_webSocket.State == WebSocketState.Open && !ct.IsCancellationRequested)
             {
-                // Bytes sammeln (nicht pro Chunk dekodieren) — sonst korruptieren
-                // Multi-Byte-Zeichen an Chunk-Grenzen (A2).
+                // Accumulate bytes (do not decode per chunk) — otherwise multi-byte
+                // characters at chunk boundaries get corrupted (A2).
                 using var messageBuffer = new MemoryStream();
 
                 WebSocketReceiveResult result;
@@ -369,10 +369,10 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
                 if (messageBuffer.Length == 0)
                     continue;
 
-                // Roh-Bytes über den Live-MemoryStream-Puffer (kein String-Intermediat,
-                // keine Kopie — der Parser kopiert nur den DataBytes-Slice, den er behält).
-                // Der MemoryStream lebt bis zum Iterationsende (using var), also über den
-                // synchronen Dispatch-Aufruf hinaus.
+                // Raw bytes via the live MemoryStream buffer (no string intermediate,
+                // no copy — the parser only copies the DataBytes slice it keeps).
+                // The MemoryStream lives until the end of the iteration (using var),
+                // i.e. beyond the synchronous dispatch call.
                 var messageBytes = messageBuffer.GetBuffer().AsMemory(0, (int)messageBuffer.Length);
 
                 DispatchResponse(messageBytes);
@@ -380,7 +380,7 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
         }
         catch (OperationCanceledException)
         {
-            // Normal shutdown (Dispose) — kein Reconnect.
+            // Normal shutdown (Dispose) — no reconnect.
         }
         catch (Exception ex)
         {
@@ -391,24 +391,24 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        // Alle pending Calls ablehnen (Spiegel SignalR: in-flight wirft beim Drop).
+        // Reject all pending calls (SignalR mirror: in-flight throws on drop).
         CancelAllPending(terminalError ?? new WebSocketException("WebSocket connection closed."));
 
-        // Unerwartetes Ende (nicht Dispose) → Hintergrund-Reconnect.
+        // Unexpected termination (not dispose) → background reconnect.
         StartReconnect();
     }
 
     /// <summary>
-    /// Parst die Response-Bytes EINMAL via <see cref="TrameResponseParser"/> (erfasst
-    /// ID, Envelope und DataBytes in einem Pass — kein JsonDocument-Baum), extrahiert
-    /// die Korrelations-Id und löst den passenden pending Call auf. Single-Responses
-    /// korrelieren per <c>id</c>; Batch-Antworten (JSON-Array) über die Id des ersten
-    /// Elements (Server sendet pro-Request-Ids seit v1).
+    /// Parses the response bytes ONCE via <see cref="TrameResponseParser"/> (captures
+    /// ID, envelope and DataBytes in a single pass — no JsonDocument tree), extracts
+    /// the correlation ID and resolves the matching pending call. Single responses
+    /// correlate by <c>id</c>; batch responses (JSON array) by the ID of the first
+    /// element (the server sends per-request IDs since v1).
     /// </summary>
     private void DispatchResponse(ReadOnlyMemory<byte> messageBytes)
     {
-        // Phase 3: Event-Frames ({type:"event"/"complete"/"error",...}) zuerst erkennen.
-        // Sie haben kein "code"-Feld und korrelieren per subscriptionId, nicht per Call-id.
+        // Phase 3: detect event frames ({type:"event"/"complete"/"error",...}) first.
+        // They have no "code" field and correlate by subscriptionId, not by call ID.
         if (TryDispatchEventFrame(messageBytes))
             return;
 
@@ -422,8 +422,8 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
                 return;
             }
 
-            // Kein Match -> NICHT raten (B3: stille Fehlzuordnung). Verwerfen + loggen;
-            // der wartende Caller bricht über sein CancellationToken ab.
+            // No match -> do NOT guess (B3: silent misattribution). Drop + log;
+            // the waiting caller aborts via its CancellationToken.
             _logger?.LogWarning("Received WebSocket response with no matching pending request (id={Id}). Dropping.", responseId);
         }
         catch (JsonException ex)
@@ -433,16 +433,16 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
     }
 
     /// <summary>
-    /// Parst die Wire-Bytes in eine einzelne <see cref="TrameResponse"/> (Object-Wurzel)
-    /// oder eine Batch-Liste (Array-Wurzel) und liefert die Korrelations-Id (bei Batch
-    /// die Id des ersten Elements). Ein Pass, DataBytes statt JsonElement-Baum.
+    /// Parses the wire bytes into a single <see cref="TrameResponse"/> (object root)
+    /// or a batch list (array root) and returns the correlation ID (for batches,
+    /// the ID of the first element). A single pass, DataBytes instead of a JsonElement tree.
     /// </summary>
     private static (object Result, string? Id) ParseMessage(ReadOnlyMemory<byte> messageBytes)
     {
         var span = messageBytes.Span;
         var reader = new Utf8JsonReader(span, new JsonReaderOptions());
         if (!reader.Read())
-            throw new JsonException("Leere WebSocket-Nachricht.");
+            throw new JsonException("Empty WebSocket message.");
 
         if (reader.TokenType == JsonTokenType.StartArray)
         {
@@ -472,12 +472,12 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
     }
 
     /// <summary>
-    /// Startet (sofern aktiv und nicht bereits laufend) einen Hintergrund-Reader
-    /// auf dem aktuellen Socket und ersetzt einen zuvor laufenden Reader.
+    /// Starts (if active and not already running) a background reader
+    /// on the current socket and replaces a previously running reader.
     /// </summary>
     private void StartReader()
     {
-        // Vorherigen Reader aufräumen (beim Reconnect ist er ohnehin beendet).
+        // Clean up the previous reader (on reconnect it has already ended anyway).
         var oldCts = _readerCts;
         _readerCts = new CancellationTokenSource();
         _readerTask = Task.Run(() => ReadLoopAsync(_readerCts.Token), CancellationToken.None);
@@ -489,8 +489,8 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
     }
 
     /// <summary>
-    /// Stößt den Hintergrund-Reconnect an (idempotent). No-op bei Dispose,
-    /// deaktiviertem Reconnect oder bereits laufendem Reconnect.
+    /// Triggers the background reconnect (idempotent). No-op on dispose,
+    /// disabled reconnect, or an already-running reconnect.
     /// </summary>
     private void StartReconnect()
     {
@@ -532,11 +532,11 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
                 {
                     if (_disposed)
                         return;
-                    // Jemand anderem (lazy Connect) hat bereits verbunden.
+                    // Someone else (lazy connect) already connected.
                     if (_webSocket.State == WebSocketState.Open)
                         return;
 
-                    // Frischen Socket erzeugen (der alte ist Closed/Aborted).
+                    // Create a fresh socket (the old one is Closed/Aborted).
                     var socket = CreateSocket();
                     try
                     {
@@ -548,21 +548,21 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
                         SetState(TrameConnectionState.Connected);
                         _logger?.LogInformation("WebSocket reconnected after {Attempt} attempt(s).", i + 1);
 
-                        // Phase 3: alle aktiven Subscriptions re-subscriben (Entscheidung 6).
+                        // Phase 3: re-subscribe all active subscriptions (decision 6).
                         _ = Task.Run(() => ResubscribeAllAsync(ct), ct);
 
-                        return; // Erfolg
+                        return; // success
                     }
                     catch (OperationCanceledException)
                     {
                         try { socket.Dispose(); } catch { /* ignore */ }
-                        throw; // Abbruch → Schleife verlassen
+                        throw; // cancel → leave the loop
                     }
                     catch (Exception ex)
                     {
                         _logger?.LogWarning("WebSocket reconnect attempt {Attempt} failed: {Message}", i + 1, ex.Message);
                         try { socket.Dispose(); } catch { /* ignore */ }
-                        // weiter zum nächsten Backoff-Intervall
+                        // continue to the next backoff interval
                     }
                     finally
                     {
@@ -579,20 +579,20 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
                 }
             }
 
-            // Backoff erschöpft → aufgeben.
+            // Backoff exhausted → give up.
             SetState(TrameConnectionState.Disconnected);
             _logger?.LogWarning("WebSocket reconnect exhausted — connection stays offline.");
         }
         catch (OperationCanceledException)
         {
-            // Dispose — kein State-Update (DisposeAsync setzt Disconnected).
+            // Dispose — no state update (DisposeAsync sets Disconnected).
         }
     }
 
     private void SetState(TrameConnectionState state)
     {
         _state = state;
-        try { _onStateChanged?.Invoke(state); } catch { /* Observer-Fehler nicht fatal */ }
+        try { _onStateChanged?.Invoke(state); } catch { /* observer errors are not fatal */ }
     }
 
     public async ValueTask DisposeAsync()
@@ -601,11 +601,11 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
             return;
         _disposed = true;
 
-        // Reconnect stoppen (terminal — kein weiterer Reconnect).
+        // Stop the reconnect (terminal — no further reconnect).
         _reconnectCts?.Cancel();
-        // Ein in-flight ConnectAsync, das seinen Cancellation-Token nicht zügig honoriert
-        // (z. B. ein hängendes WS-Upgrade), würde das await _reconnectTask blockieren lassen.
-        // Den Connecting-Socket abbrechen, damit ConnectAsync sofort beendet wird.
+        // An in-flight ConnectAsync that does not promptly honor its CancellationToken
+        // (e.g. a hung WS upgrade) would block the await _reconnectTask.
+        // Abort the connecting socket so ConnectAsync returns immediately.
         ClientWebSocket? inflight;
         lock (_connectGate)
             inflight = _connectingSocket;
@@ -647,10 +647,10 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
     // ─── Phase 3: Subscribe / Unsubscribe / Event-Dispatch ────────────────
 
     /// <summary>
-    /// Subscribiert auf ein Server-Event (Phase 3). Sendet <c>{kind:"subscribe",...}</c>,
-    /// empfängt die Subscribe-Response mit <c>subscriptionId</c> und gibt ein
-    /// <see cref="TrameSubscription{T}"/> zurück, das die Server-Events pusht. Bei Reconnect
-    /// (Auto-Reconnect an) re-subscribed der Client automatisch mit denselben Parametern.
+    /// Subscribes to a server event (Phase 3). Sends <c>{kind:"subscribe",...}</c>,
+    /// receives the subscribe response with <c>subscriptionId</c> and returns a
+    /// <see cref="TrameSubscription{T}"/> that pushes server events. On reconnect
+    /// (auto-reconnect on) the client re-subscribes automatically with the same parameters.
     /// </summary>
     public async Task<TrameSubscription<T>> SubscribeAsync<T>(
         string controller, string method, object?[]? args = null, CancellationToken ct = default)
@@ -706,8 +706,8 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
     }
 
     /// <summary>
-    /// Erkennt Event-Frames in der Read-Loop und leitet sie an die passende Subscription.
-    /// Gibt true zurück, wenn es ein Event-Frame war (bereits dispatched).
+    /// Detects event frames in the read loop and routes them to the matching subscription.
+    /// Returns true if it was an event frame (already dispatched).
     /// </summary>
     private bool TryDispatchEventFrame(ReadOnlyMemory<byte> messageBytes)
     {
@@ -756,8 +756,8 @@ public class TrameWebSocketClient : TrameClientBase, ITrameClient, IAsyncDisposa
     }
 
     /// <summary>
-    /// Re-subscribed alle aktiven Subscriptions nach Reconnect (Entscheidung 6:
-    /// client-side Re-Subscribe mit neuen subscriptionIds, da die Connection neu ist).
+    /// Re-subscribes all active subscriptions after a reconnect (decision 6:
+    /// client-side re-subscribe with new subscriptionIds, since the connection is new).
     /// </summary>
     private async Task ResubscribeAllAsync(CancellationToken ct)
     {

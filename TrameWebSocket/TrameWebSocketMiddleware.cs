@@ -10,9 +10,9 @@ using Microsoft.Extensions.Logging;
 namespace TrameWebSocket;
 
 /// <summary>
-/// Middleware für einen schlanken, eigenen WebSocket-Transport für Trame.
-/// Nutzt ausschließlich Standard-WebSockets (RFC 6455) und JSON, damit Clients in
-/// Java, JavaScript, Python oder anderen Sprachen einfach integrierbar sind.
+/// Middleware for a lightweight, custom WebSocket transport for Trame.
+/// Uses only standard WebSockets (RFC 6455) and JSON, so clients in
+/// Java, JavaScript, Python or other languages can integrate easily.
 /// </summary>
 public class TrameWebSocketMiddleware
 {
@@ -33,12 +33,12 @@ public class TrameWebSocketMiddleware
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             PropertyNameCaseInsensitive = true,
-            // Relaxed Encoder: Data (JsonElement) wird roh serialisiert — kein
-            // Double-Wrapping; UnsafeRelaxed verhindert zusätzlich `"`-Escaping
-            // im Mantel (ExposedDependencies-Strings, Fehlermeldungen).
+            // Relaxed encoder: Data (JsonElement) is serialized raw — no
+            // double-wrapping; UnsafeRelaxed also prevents `"`-escaping
+            // in the envelope (ExposedDependencies strings, error messages).
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            // Write-Only-Converter: DataBytes via WriteRawValue roh in den Wire →
-            // kein JsonDocument-Baum auf dem Server (Single-Pass-Optimierung).
+            // Write-only converter: DataBytes written raw to the wire via WriteRawValue →
+            // no JsonDocument tree on the server (single-pass optimization).
             Converters = { new TrameResponseJsonConverter() }
         };
     }
@@ -51,11 +51,12 @@ public class TrameWebSocketMiddleware
             return;
         }
 
-        // North-Bound-Default-Deny (Security-Audit F9.1): Upgrade ablehnen, bevor der
-        // Socket entsteht, wenn RequireAuthentication an und der Caller unauthentifiziert
-        // ist. WS hat keinen pro-Method-Opt-out ([TrameAnonymous] wirkt nur im Invoker-
-        // Gate auf REST); hier ist die Verbindung die Vertrauensgrenze. Authentifizierung
-        // muss upstream (Reverse-Proxy/Token-Middleware) HttpContext.User belegt haben.
+        // North-bound default-deny (security audit F9.1): reject the upgrade before the
+        // socket is created when RequireAuthentication is on and the caller is
+        // unauthenticated. WS has no per-method opt-out ([TrameAnonymous] only takes effect
+        // in the invoker gate on REST); here the connection is the trust boundary.
+        // Authentication must have populated HttpContext.User upstream
+        // (reverse proxy / token middleware).
         if (_trameCore.RequireAuthentication && !(context.User?.Identity?.IsAuthenticated ?? false))
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -132,7 +133,7 @@ public class TrameWebSocketMiddleware
 
     private async Task HandleConnectionAsync(HttpContext context, WebSocket webSocket)
     {
-        // Phase 3: pro-Connection Subscription-Manager für Events.
+        // Phase 3: per-connection subscription manager for events.
         var subscriptions = new TrameSubscriptionManager(webSocket, _trameCore, _logger);
         try
         {
@@ -140,8 +141,8 @@ public class TrameWebSocketMiddleware
 
             while (webSocket.State == WebSocketState.Open)
             {
-                // Bytes sammeln (nicht pro Chunk dekodieren) — sonst korruptieren
-                // Multi-Byte-Zeichen an Chunk-Grenzen (A2).
+                // Accumulate bytes (do not decode per chunk) — otherwise multi-byte
+                // characters get corrupted at chunk boundaries (A2).
                 using var messageStream = new MemoryStream();
                 WebSocketReceiveResult result;
 
@@ -180,7 +181,7 @@ public class TrameWebSocketMiddleware
         }
         finally
         {
-            // Auto-Cleanup: alle Subscriptions disposed beim Disconnect.
+            // Auto-cleanup: dispose all subscriptions on disconnect.
             await subscriptions.DisposeAsync();
         }
     }
@@ -198,7 +199,7 @@ public class TrameWebSocketMiddleware
             var root = document.RootElement;
             id = ExtractCorrelationId(root);
 
-            // Phase 3: Subscribe/Unsubscribe-Erkennung (kind-Feld). Ohne kind → Call (v1.0-Verhalten).
+            // Phase 3: subscribe/unsubscribe detection (kind field). Without kind → call (v1.0 behavior).
             string? kind = null;
             if (root.ValueKind == JsonValueKind.Object)
             {
@@ -243,15 +244,15 @@ public class TrameWebSocketMiddleware
                 return;
             }
 
-            // Calls (ohne kind-Feld) — bestehendes v1.0-Verhalten.
+            // Calls (without kind field) — existing v1.0 behavior.
             object? response2;
 
-            // Multi- vs. Single-Request erkennen. JsonElement.TryGetProperty ist
-            // case-sensitiv — ein C#-Client ohne CamelCase-Policy schickt PascalCase
-            // ("Requests"/"Mode"), ein JS/TS-Client camelCase ("requests"/"mode").
-            // Case-insensitiv erkennen, sonst wird jeder Batch als Single (Controller
-            // null → 404 mit leerer Id) behandelt und der Client kann die Antwort nicht
-            // korrelieren (→ Endlos-Warte, s. TrameWebSocketClient-Timeout).
+            // Detect multi- vs. single-request. JsonElement.TryGetProperty is
+            // case-sensitive — a C# client without a camelCase policy sends PascalCase
+            // ("Requests"/"Mode"), a JS/TS client camelCase ("requests"/"mode").
+            // Detect case-insensitively, otherwise every batch is treated as a single
+            // request (Controller null → 404 with empty Id) and the client cannot
+            // correlate the response (→ endless wait, see TrameWebSocketClient timeout).
             bool hasRequests = false, hasMode = false;
             if (root.ValueKind == JsonValueKind.Object)
             {
@@ -273,8 +274,8 @@ public class TrameWebSocketMiddleware
                     return;
                 }
 
-                // Batch-Cap-Gate (North-Bound-Härtung F4.1): frühes 400 statt Fan-Out-DoS.
-                // Quelle ist ITrameCore (TrameOptions → Invoker → Interface → Transporte).
+                // Batch-cap gate (north-bound hardening F4.1): early 400 instead of fan-out DoS.
+                // Source is ITrameCore (TrameOptions → Invoker → Interface → transports).
                 if (_trameCore.MaximumBatchSize > 0 && multiRequest.Requests.Count > _trameCore.MaximumBatchSize)
                 {
                     await SendErrorAsync(subscriptions, 400, $"Batch exceeds MaximumBatchSize ({_trameCore.MaximumBatchSize}).", id);
@@ -295,9 +296,9 @@ public class TrameWebSocketMiddleware
                 response2 = await _trameCore.InvokeDi(request, context, context.RequestAborted);
             }
 
-            // Hotfix 1.1.1: Alle Sends über den gemeinsamen Send-Channel des SubscriptionManagers
-            // leiten — verhindert konkurrierende WebSocket.SendAsync-Aufrufe zwischen
-            // Call-Responses (Middleware-Thread) und Event-Frames (Pump-Tasks).
+            // Hotfix 1.1.1: route all sends through the subscription manager's shared send
+            // channel — prevents concurrent WebSocket.SendAsync calls between
+            // call responses (middleware thread) and event frames (pump tasks).
             var json = JsonSerializer.Serialize(response2, _jsonOptions);
             await subscriptions.EnqueueSendAsync(json);
         }

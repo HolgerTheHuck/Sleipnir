@@ -4,11 +4,11 @@ using Microsoft.AspNetCore.Http;
 namespace TrameCore.Services;
 
 /// <summary>
-/// Delegate that invokes the next interceptor or the actual RPC method. Nimmt den
-/// <see cref="TrameInvocationContext"/> (statt der rohen <see cref="TrameRequest"/>) — so
-/// können Interceptors <see cref="TrameInvocationContext.HttpContext"/>,
+/// Delegate that invokes the next interceptor or the actual RPC method. Takes the
+/// <see cref="TrameInvocationContext"/> (instead of the raw <see cref="TrameRequest"/>) — so
+/// interceptors can read/write <see cref="TrameInvocationContext.HttpContext"/>,
 /// <see cref="TrameInvocationContext.InvokeInfo"/>, <see cref="TrameInvocationContext.Response"/>
-/// und <see cref="TrameInvocationContext.Activity"/> lesen/schreiben.
+/// and <see cref="TrameInvocationContext.Activity"/>.
 /// </summary>
 public delegate Task<TrameResponse?> TrameInvocationDelegate(TrameInvocationContext context);
 
@@ -30,19 +30,19 @@ public delegate Task<TrameResponse?> TrameInvocationDelegate(TrameInvocationCont
 /// Routing the batch path through the interceptor pipeline is tracked for 1.2
 /// (<c>ROADMAP.md</c> R7); a startup warning is logged once when <c>TrameOptions.Interceptors</c>
 /// is non-empty.</para>
-/// <para>Phase 1 — siehe <c>docs/design/phase-1-interceptor-pipeline.md</c>. Die Signatur wurde
-/// von <c>InvokeAsync(TrameRequest, TrameInvocationDelegate, CancellationToken)</c> auf
-/// <c>InvokeAsync(TrameInvocationContext, TrameInvocationDelegate)</c> umgestellt (breaking,
-/// aber <c>ITrameInterceptor</c> ist in <c>STABILITY.md</c> §2 als experimental markiert).</para>
+/// <para>Phase 1 — see <c>docs/design/phase-1-interceptor-pipeline.md</c>. The signature changed
+/// from <c>InvokeAsync(TrameRequest, TrameInvocationDelegate, CancellationToken)</c> to
+/// <c>InvokeAsync(TrameInvocationContext, TrameInvocationDelegate)</c> (breaking, but
+/// <c>ITrameInterceptor</c> is marked experimental in <c>STABILITY.md</c> §2).</para>
 /// </remarks>
 public interface ITrameInterceptor
 {
     /// <summary>
     /// Intercepts an RPC call. Call <paramref name="next"/> to continue the pipeline.
     /// <see cref="TrameInvocationContext.HttpContext"/>, <see cref="TrameInvocationContext.InvokeInfo"/>
-    /// und <see cref="TrameInvocationContext.Activity"/> sind u. U. erst nach Resolver-/Span-
-    /// Eröffnung belegt — vor <c>next</c> ist <see cref="TrameInvocationContext.InvokeInfo"/>
-    /// typischerweise <c>null</c>, danach <see cref="TrameInvocationContext.Response"/> belegt.
+    /// and <see cref="TrameInvocationContext.Activity"/> may only be populated after resolver/span
+    /// setup — before <c>next</c>, <see cref="TrameInvocationContext.InvokeInfo"/> is typically
+    /// <c>null</c>; after <c>next</c>, <see cref="TrameInvocationContext.Response"/> is populated.
     /// </summary>
     /// <remarks>
     /// Runs on the single-call path only in 1.1.x — see the type-level remarks for the
@@ -54,9 +54,9 @@ public interface ITrameInterceptor
 }
 
 /// <summary>
-/// Context information passed to interceptors — pro-Invocation (Single-Call oder pro
-/// Element im Batch). Ersetzt das vage bisherige <c>TrameInvocationContext</c>, das nirgends
-/// verwendet wurde, und reicht <c>HttpContext</c> durch (die Schlüssellücke in v1.0).
+/// Context information passed to interceptors — per invocation (a single call, or one element
+/// in a batch). Replaces the previous vague <c>TrameInvocationContext</c> that was never used,
+/// and threads <c>HttpContext</c> through (the key gap in v1.0).
 /// </summary>
 public sealed class TrameInvocationContext
 {
@@ -67,22 +67,22 @@ public sealed class TrameInvocationContext
     public string RequestId => Request.Id ?? string.Empty;
 
     /// <summary>
-    /// Wird vom Invoker nach Controller/Method-Resolve belegt (vor dem Methoden-Aufruf).
-    /// Ein Auth-Interceptor liest <see cref="InvokeInfo.AnonymousAttribute"/> /
-    /// <see cref="InvokeInfo.AuthoriseAttribute"/> daraus. Vor dem Resolve <c>null</c>.
+    /// Populated by the invoker after controller/method resolution (before the method call).
+    /// An auth interceptor reads <see cref="InvokeInfo.AnonymousAttribute"/> /
+    /// <see cref="InvokeInfo.AuthoriseAttribute"/> from it. <c>null</c> before resolution.
     /// </summary>
     public TrameInvoker.InvokeInfo? InvokeInfo { get; set; }
 
     /// <summary>
-    /// Wird vom Invoker nach der Method-Execution belegt — die resultierende Response.
-    /// Ein Tracing/Logging-Interceptor liest sie *nach* <c>next</c>. Vor <c>next</c> <c>null</c>.
+    /// Populated by the invoker after method execution — the resulting response.
+    /// A tracing/logging interceptor reads it *after* <c>next</c>. <c>null</c> before <c>next</c>.
     /// </summary>
     public TrameResponse? Response { get; set; }
 
     /// <summary>
-    /// Der <c>TrameCall</c>-Span (aus <c>TrameTracing.StartCall</c>), falls ein Listener
-    /// abonniert hat; sonst <c>null</c>. Ein Telemetry-Interceptor nutzt ihn statt einen
-    /// eigenen Span aufzumachen (kein Double-Count).
+    /// The <c>TrameCall</c> span (from <c>TrameTracing.StartCall</c>), if a listener is
+    /// subscribed; otherwise <c>null</c>. A telemetry interceptor uses it instead of opening
+    /// its own span (no double-counting).
     /// </summary>
     public System.Diagnostics.Activity? Activity { get; set; }
 

@@ -33,8 +33,8 @@ public class TrameControllerBuilder
             {
                 var attr = type.GetCustomAttributes(typeof(TrameControllerAttribute), true)
                     .OfType<TrameControllerAttribute>().FirstOrDefault();
-                // AutoDiscover=false-Controller werden auch vom Bulk-FromAssemblies-Skan ausgeschlossen;
-                // sie sind nur über Add<T>() / Register<T>() explizit zu registrieren.
+                // AutoDiscover=false controllers are also excluded from the bulk FromAssemblies scan;
+                // they can only be registered explicitly via Add<T>() / Register<T>().
                 if (attr != null && attr.AutoDiscover)
                 {
                     _services.AddScoped(type);

@@ -45,9 +45,9 @@ public class TestInvokerController
     [TrameMethod("NoParams")]
     public string NoParams() => "Hello World";
 
-    // Controller-Methoden, die direkt ein TrameResponse-Objekt zurückgeben (Weg A:
-    // strukturierte Domain-Fehler statt werfen). Der Invoker gibt die Response
-    // unverändert durch (TrameInvoker.ReturnResponse: result is TrameResponse).
+    // Controller methods that return a TrameResponse object directly (Weg A:
+    // structured domain errors instead of throwing). The invoker passes the
+    // response through unchanged (TrameInvoker.ReturnResponse: result is TrameResponse).
     [TrameMethod("GetOr404")]
     public TrameResponse GetOr404(int id)
         => id == 99
@@ -151,8 +151,8 @@ public class TestDto
 }
 
 /// <summary>
-/// Controller mit gepunktetem Namespace, um beliebig tiefe Routing-Pfade
-/// (Customer.Address.Contact) über das Controller-Feld abzubilden.
+/// Controller with a dotted namespace, to map arbitrarily deep routing paths
+/// (Customer.Address.Contact) via the Controller field.
 /// </summary>
 [TrameController("Customer.Address.Contact")]
 public class NestedContactController
@@ -162,15 +162,15 @@ public class NestedContactController
 }
 
 /// <summary>
-/// Deterministischer Controller für Dependency-Chain-Tests. Jede Methode ist
-/// ein reiner Roundtrip/Producer ohne externe Zustände, sodass das @alias-Walking
-/// pro Datentyp isoliert und deterministisch geprüft werden kann — unabhängig
-/// vom zustandsbehafteten, langsamem CustomerService des Sample-Apps.
+/// Deterministic controller for dependency-chain tests. Each method is a pure
+/// roundtrip/producer with no external state, so the @alias walking can be
+/// tested in isolation and deterministically per data type — independent of
+/// the stateful, slow CustomerService of the sample app.
 /// </summary>
 [TrameController("DepChain")]
 public class DependencyChainController
 {
-    // --- Skalare Roundtrips (Producer + Consumer in einer Methode) ---
+    // --- Scalar roundtrips (producer + consumer in a single method) ---
 
     [TrameMethod("EchoBool")]
     public bool EchoBool(bool value) => value;
@@ -184,16 +184,16 @@ public class DependencyChainController
     [TrameMethod("EchoString")]
     public string EchoString(string value) => value;
 
-    // --- Objekt (TestDto) ---
+    // --- Object (TestDto) ---
 
     [TrameMethod("MakeDto")]
     public TestDto MakeDto(int id, string name) => new() { Id = id, Name = name };
 
-    /// <summary>Nimmt ein ganzes TestDto als @alias und gibt es unverändert zurück.</summary>
+    /// <summary>Takes a whole TestDto as @alias and returns it unchanged.</summary>
     [TrameMethod("EchoDto")]
     public TestDto EchoDto(TestDto dto) => dto;
 
-    /// <summary>Nimmt ein ganzes TestDto als @alias und extrahiert dessen Id.</summary>
+    /// <summary>Takes a whole TestDto as @alias and extracts its Id.</summary>
     [TrameMethod("GetDtoId")]
     public int GetDtoId(TestDto dto) => dto.Id;
 
@@ -207,19 +207,19 @@ public class DependencyChainController
         new() { Id = 3, Name = "Three" }
     };
 
-    /// <summary>Nimmt eine ganze List&lt;TestDto&gt; als @alias und gibt sie unverändert zurück.</summary>
+    /// <summary>Takes a whole List&lt;TestDto&gt; as @alias and returns it unchanged.</summary>
     [TrameMethod("EchoDtoList")]
     public List<TestDto> EchoDtoList(List<TestDto> dtos) => dtos;
 
-    /// <summary>Nimmt eine ganze List&lt;TestDto&gt; als @alias und liefert deren Länge.</summary>
+    /// <summary>Takes a whole List&lt;TestDto&gt; as @alias and returns its length.</summary>
     [TrameMethod("CountDtoList")]
     public int CountDtoList(List<TestDto> dtos) => dtos.Count;
 
-    /// <summary>Liefert eine feste int-Liste [10,20,30] als Quelle für Array-Element-Pfade ($[1]).</summary>
+    /// <summary>Returns a fixed int list [10,20,30] as the source for array-element paths ($[1]).</summary>
     [TrameMethod("MakeIntList")]
     public List<int> MakeIntList() => new() { 10, 20, 30 };
 
-    // --- Weitere Primitives (Roundtrip) ---
+    // --- Further primitives (roundtrip) ---
 
     [TrameMethod("EchoDouble")]
     public double EchoDouble(double value) => value;
@@ -236,13 +236,13 @@ public class DependencyChainController
     [TrameMethod("EchoPriority")]
     public ChainPriority EchoPriority(ChainPriority value) => value;
 
-    // --- Ganze primitive Liste als Dependency (nicht nur Element-Extraktion) ---
+    // --- Whole primitive list as a dependency (not just element extraction) ---
 
-    /// <summary>Nimmt eine ganze List&lt;int&gt; als @alias und gibt sie unverändert zurück.</summary>
+    /// <summary>Takes a whole List&lt;int&gt; as @alias and returns it unchanged.</summary>
     [TrameMethod("EchoIntList")]
     public List<int> EchoIntList(List<int> values) => values;
 
-    // --- Geschachtelter Pfad ($.Inner.Id) ---
+    // --- Nested path ($.Inner.Id) ---
 
     [TrameMethod("MakeNestedDto")]
     public NestedDto MakeNestedDto(int outerId, int innerId) => new()
@@ -251,23 +251,23 @@ public class DependencyChainController
         Inner = new() { Id = innerId, Name = "Inner" }
     };
 
-    // --- Nullable-Result (FindDto liefert null für id <= 0) ---
+    // --- Nullable result (FindDto returns null for id <= 0) ---
 
     [TrameMethod("FindDto")]
     public TestDto? FindDto(int id) => id > 0 ? new TestDto { Id = id, Name = "Found" } : null;
 
-    // --- Fehler-Producer: non-2xx mit non-null Data (ProblemDetails) ---------------
-    // Dokumentiert den Status-Gate der Exposes-Extraktion: ein Expose auf $.title darf
-    // bei einem Fehler-Response KEINEN Wert aus dem ProblemDetails-Payload liefern.
+    // --- Error producer: non-2xx with non-null Data (ProblemDetails) ---------------
+    // Documents the status gate on exposes extraction: an expose on $.title must
+    // NOT yield a value from the ProblemDetails payload on an error response.
 
-    /// <summary>Liefert einen non-2xx-Fehler im ProblemDetails-Stil mit non-null Data
-    ///  (title/status/detail). Ein Expose auf $.title darf trotz treffendem Pfad nichts
-    ///  exposen, weil die Extraktion auf Erfolg (2xx) gate-et ist.</summary>
+    /// <summary>Returns a non-2xx error in ProblemDetails style with non-null Data
+    ///  (title/status/detail). An expose on $.title must not expose anything despite
+    ///  the path matching, because extraction is gated on success (2xx).</summary>
     [TrameMethod("FailWithProblem")]
     public TrameResponse FailWithProblem(int status)
         => TrameResults.Error(new ProblemDetails { Status = status, Title = "Invalid", Detail = "bad input" });
 
-    // --- Binär (byte[]) — dokumentiert die Chain-Grenze ---
+    // --- Binary (byte[]) — documents the chain boundary ---
 
     [TrameMethod("DownloadBytes")]
     public byte[] DownloadBytes() => System.Text.Encoding.UTF8.GetBytes("chain-bytes");
@@ -275,7 +275,7 @@ public class DependencyChainController
     [TrameMethod("EchoBytes")]
     public byte[] EchoBytes(byte[] data) => data;
 
-    // --- Dictionary als Dependency ---
+    // --- Dictionary as a dependency ---
 
     [TrameMethod("MakeDict")]
     public Dictionary<string, int> MakeDict() => new() { { "a", 1 }, { "b", 2 }, { "c", 3 } };
@@ -283,44 +283,44 @@ public class DependencyChainController
     [TrameMethod("EchoDict")]
     public Dictionary<string, int> EchoDict(Dictionary<string, int> map) => map;
 
-    // --- Alias-Binding-Matrix (Provider→Consumer per @alias) ---------------------
-    // Diese Methoden treiben die AliasBindingTests: sie stellen die Producer- und
-    // Consumer-Enden für die vier Runtime-Ergebnisse (kompatibel, cross-kind 400,
-    // object→object-Duck-Typing, unresolved) sowie das Subset-Fan-out-Muster.
+    // --- Alias binding matrix (provider→consumer via @alias) ---------------------
+    // These methods drive the AliasBindingTests: they provide the producer and
+    // consumer ends for the four runtime outcomes (compatible, cross-kind 400,
+    // object→object duck-typing, unresolved) and the subset fan-out pattern.
 
-    /// <summary>Nackter Skalar-Consumer (int) — ganzes Objekt als @alias → cross-kind 400.</summary>
+    /// <summary>Bare scalar consumer (int) — whole object as @alias → cross-kind 400.</summary>
     [TrameMethod("EchoInt")]
     public int EchoInt(int value) => value;
 
-    /// <summary>Producer eines schmalen Nur-Id-Objekts (für missing-Property-Fälle).</summary>
+    /// <summary>Producer of a narrow Id-only object (for missing-property cases).</summary>
     [TrameMethod("MakeIdOnly")]
     public IdOnlyDto MakeIdOnly(int id) => new() { Id = id };
 
-    /// <summary>Producer eines Objekts, dessen Id ein String ist (für Kind-Mismatch auf Überlappung).</summary>
+    /// <summary>Producer of an object whose Id is a string (for kind mismatch on an overlapping property).</summary>
     [TrameMethod("MakeStringIdDto")]
     public StringIdDto MakeStringIdDto(string id) => new() { Id = id };
 
-    /// <summary>Consumer: Nur-Id-DTO — duck-typet Id aus einem breiteren Provider-Objekt.</summary>
+    /// <summary>Consumer: Id-only DTO — duck-types Id from a wider provider object.</summary>
     [TrameMethod("TakeIdOnly")]
     public int TakeIdOnly(IdOnlyDto d) => d.Id;
 
-    /// <summary>Consumer: Nur-Name-DTO — duck-typet Name aus einem breiteren Provider-Objekt.</summary>
+    /// <summary>Consumer: Name-only DTO — duck-types Name from a wider provider object.</summary>
     [TrameMethod("TakeNameOnly")]
     public string TakeNameOnly(NameOnlyDto d) => d.Name;
 
-    /// <summary>Consumer: Id+Active-DTO — beobachtbar für silent-default (Active=false bei Fehlen).</summary>
+    /// <summary>Consumer: Id+Active DTO — observable for the silent-default case (Active=false when missing).</summary>
     [TrameMethod("TakeIdActive")]
     public string TakeIdActive(IdActiveDto d) => $"{d.Id}/{d.Active}";
 
-    /// <summary>Consumer: ganzes TestDto als String beschrieben — macht null bei fehlendem Name sichtbar.</summary>
+    /// <summary>Consumer: whole TestDto described as a string — surfaces null when Name is missing.</summary>
     [TrameMethod("DescribeDto")]
     public string DescribeDto(TestDto d) => $"{d.Id}/{d.Name}";
 
-    // --- Paranoid-Binding: verschachtelte Objekte + Array-Elemente -----------------
-    // Diese Methoden treiben die AliasBindingParanoidTests: sie stellen die verschachtelten
-    // Consumer-Enden für die rekursive Tiefe (Strict ist flach) und die Array-Element-Deckung.
+    // --- Paranoid binding: nested objects + array elements -----------------
+    // These methods drive the AliasBindingParanoidTests: they provide the nested
+    // consumer ends for the recursive depth (Strict is shallow) and array-element coverage.
 
-    /// <summary>Producer eines vollständigen OrderDto (Id + Address{Street,Zip}).</summary>
+    /// <summary>Producer of a complete OrderDto (Id + Address{Street,Zip}).</summary>
     [TrameMethod("MakeOrder")]
     public OrderDto MakeOrder(int id, string street, int zip) => new()
     {
@@ -328,9 +328,9 @@ public class DependencyChainController
         Address = new() { Street = street, Zip = zip }
     };
 
-    /// <summary>Producer eines OrderDto ohne verschachteltes Zip (Dictionary → JSON ohne
-    /// zip-Schlüssel). Dient dem Alias-Pfad-Test: Paranoid muß das fehlende verschachtelte
-    /// Zip erkennen, Strict (flach) nicht.</summary>
+    /// <summary>Producer of an OrderDto without nested Zip (Dictionary → JSON without
+    /// a zip key). Serves the alias path test: Paranoid must detect the missing nested
+    /// Zip, Strict (shallow) must not.</summary>
     [TrameMethod("MakeOrderNoZip")]
     public Dictionary<string, object> MakeOrderNoZip(int id, string street) => new()
     {
@@ -338,68 +338,68 @@ public class DependencyChainController
         ["address"] = new Dictionary<string, object> { ["street"] = street }
     };
 
-    /// <summary>Consumer: ganzes OrderDto als String — macht fehlendes verschachteltes Zip
-    /// als 0 sichtbar (Werttyp, heimtückisch). Paranoid lehnt ab; Strict läßt es durch.</summary>
+    /// <summary>Consumer: whole OrderDto as a string — surfaces missing nested Zip
+    /// as 0 (value type, insidious). Paranoid rejects; Strict lets it through.</summary>
     [TrameMethod("TakeOrder")]
     public string TakeOrder(OrderDto o) => $"{o.Id}/{o.Address.Street}/{o.Address.Zip}";
 
-    /// <summary>Consumer: List&lt;OrderDto&gt; — Paranoid steigt in jedes Element ab und
-    /// deckt dessen verschachtelte Eigenschaften; Strict ignoriert Array-Elemente.</summary>
+    /// <summary>Consumer: List&lt;OrderDto&gt; — Paranoid descends into each element and
+    /// covers its nested properties; Strict ignores array elements.</summary>
     [TrameMethod("TakeOrderList")]
     public int TakeOrderList(List<OrderDto> list) => list.Count;
 }
 
-/// <summary>Schmales Nur-Id-DTO — Own-Assembly (Weg-C-Inferenz expandiert es). Consumer-Shape
-///  für das Subset-Fan-out (Provider TestDto{Id,Name} → IdOnly{Id}, Name fällt weg).</summary>
+/// <summary>Narrow Id-only DTO — own assembly (Weg C inference expands it). Consumer shape
+///  for the subset fan-out (provider TestDto{Id,Name} → IdOnly{Id}, Name is dropped).</summary>
 public class IdOnlyDto
 {
     public int Id { get; set; }
 }
 
-/// <summary>Schmales Nur-Name-DTO — Consumer-Shape für Subset-Fan-out (Name übernommen, Id fällt weg).</summary>
+/// <summary>Narrow Name-only DTO — consumer shape for the subset fan-out (Name taken, Id dropped).</summary>
 public class NameOnlyDto
 {
     public string Name { get; set; } = string.Empty;
 }
 
-/// <summary>Id+Active-DTO — beobachtet den heimtückischen Fall: fehlendes Active (Werttyp)
-///  wird zur Laufzeit still auf false gesetzt, kein 400.</summary>
+/// <summary>Id+Active DTO — observes the insidious case: missing Active (value type)
+///  is silently set to false at runtime, no 400.</summary>
 public class IdActiveDto
 {
     public int Id { get; set; }
     public bool Active { get; set; }
 }
 
-/// <summary>DTO mit String-Id — Provider-Shape für Kind-Mismatch auf einer überlappenden
-///  Eigenschaft (Provider Id:string → Consumer Id:int → 400).</summary>
+/// <summary>DTO with a string Id — provider shape for kind mismatch on an overlapping
+///  property (provider Id:string → consumer Id:int → 400).</summary>
 public class StringIdDto
 {
     public string Id { get; set; } = string.Empty;
 }
 
-/// <summary>Verschachteltes OrderDto für die Paranoid-Tiefenprüfung: Address ist ein
-///  coverable Object mit eigener deckungspflichtigen Eigenschaft Zip (Werttyp). Ein
-///  Fragment, das Address liefert aber ohne Zip, bindet in Weak/Strict still (Zip=0),
-///  wird in Paranoid rekursiv abgelehnt.</summary>
+/// <summary>Nested OrderDto for the Paranoid depth check: Address is a coverable object
+///  with its own coverable property Zip (value type). A fragment that supplies Address
+///  but without Zip binds silently in Weak/Strict (Zip=0), and is rejected recursively
+///  in Paranoid.</summary>
 public class OrderDto
 {
     public int Id { get; set; }
     public AddressDto Address { get; set; } = new();
 }
 
-/// <summary>Adresse mit Street (Referenz) und Zip (Werttyp) — Zip ist der heimtückische
-///  verschachtelte Fall: fehlt es, wird es still auf 0 gesetzt.</summary>
+/// <summary>Address with Street (reference) and Zip (value type) — Zip is the insidious
+///  nested case: when missing, it is silently set to 0.</summary>
 public class AddressDto
 {
     public string Street { get; set; } = string.Empty;
     public int Zip { get; set; }
 }
 
-/// <summary>Enum für den Enum-Roundtrip durch eine Chain (default-Serialisierung als Zahl).</summary>
+/// <summary>Enum for the enum roundtrip through a chain (default serialization as a number).</summary>
 public enum ChainPriority { Low = 0, Medium = 1, High = 2 }
 
 /// <summary>
-/// Verschachtelter DataContract für Multi-Level-JsonPath-Tests ($.Inner.Id) in einer Chain.
+/// Nested DataContract for multi-level JsonPath tests ($.Inner.Id) in a chain.
 /// </summary>
 [TrameDataContract]
 public class NestedDto
@@ -408,55 +408,55 @@ public class NestedDto
     public TestDto Inner { get; set; } = new();
 }
 
-// --- Fixtures für die Signatur-Inferenz-Tests (Weg C) ----------------------------
-// Separate Controller, damit die 18-Methoden-Assertion für TestInvokerController
-// unangetastet bleibt. Diese Controller üben die Expansion-Heuristik:
-//   Regel 4: UnmarkedDto (own Assembly, kein Attribute) → expandiert.
-//   Regel 5: TrameResponse (fremde Assembly, kein Override) → opaque.
-//   Regel 2: ExcludedDto (own Assembly, Exclude=true)     → force-opaque.
+// --- Fixtures for the signature-inference tests (Weg C) ----------------------------
+// Separate controller, so the 18-method assertion for TestInvokerController
+// stays untouched. These controllers exercise the expansion heuristics:
+//   Rule 4: UnmarkedDto (own assembly, no attribute) → expanded.
+//   Rule 5: TrameResponse (foreign assembly, no override) → opaque.
+//   Rule 2: ExcludedDto (own assembly, Exclude=true)    → force-opaque.
 
 /// <summary>
-/// Controller für die Weg-C-Discovery-Inferenz-Tests. Jede Methode zielt auf genau
-/// eine Heuristik-Regel ab.
+/// Controller for the Weg C discovery-inference tests. Each method targets exactly
+/// one heuristic rule.
 /// </summary>
 [TrameController("DiscoveryInference")]
 public class DiscoveryInferenceController
 {
-    /// <summary>Regel 4: unmarkierter Own-Assembly-Typ als Rückgabewert → muss expandieren.</summary>
+    /// <summary>Rule 4: unmarked own-assembly type as a return value → must expand.</summary>
     [TrameMethod("ReturnUnmarked")]
     public UnmarkedDto ReturnUnmarked(int id) => new() { Id = id, Name = "inferred" };
 
-    /// <summary>Regel 5: Framework-Envelope aus TrameCommon (fremde Assembly) → muss opaque bleiben.</summary>
+    /// <summary>Rule 5: framework envelope from TrameCommon (foreign assembly) → must stay opaque.</summary>
     [TrameMethod("ReturnFrameworkType")]
     public TrameResponse ReturnFrameworkType(int id)
         => TrameResults.Ok(new UnmarkedDto { Id = id, Name = "envelope" });
 
-    /// <summary>Regel 2: Own-Assembly-Typ mit [TrameDataContract(Exclude = true)] → force-opaque.</summary>
+    /// <summary>Rule 2: own-assembly type with [TrameDataContract(Exclude = true)] → force-opaque.</summary>
     [TrameMethod("TakeExcluded")]
     public int TakeExcluded(ExcludedDto d) => d.X;
 }
 
-/// <summary>Unmarkierter DTO in der Test-Assembly (Contract-Assembly-Set) — Regel 4.</summary>
+/// <summary>Unmarked DTO in the test assembly (contract-assembly set) — Rule 4.</summary>
 public class UnmarkedDto
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
 }
 
-/// <summary>Own-Assembly-Typ mit Exclude-Override — Regel 2 (force-opaque).</summary>
+/// <summary>Own-assembly type with an Exclude override — Rule 2 (force-opaque).</summary>
 [TrameDataContract(Exclude = true)]
 public class ExcludedDto
 {
     public int X { get; set; }
 }
 
-// --- Fixtures für die Parallel-Auth + Dependent-Propagierung --------------------
-// Deterministischer Controller mit Aufruf-Zählern (static, weil der DI-Container
-// pro Call eine frische Instanz erzeugt — instance-Counter würden pro Call wieder
-// bei 0 stehen). Die Tests serialisieren sich über die xUnit-Collection
-// "auth-propagation" und resetten die Counter im Konstruktor, sodass nebenläufige
-// Klassen-Instanzen sich nicht in die Quere kommen. Andere Test-Klassen greifen
-// nicht auf diesen Controller zu.
+// --- Fixtures for parallel auth + dependent propagation --------------------
+// Deterministic controller with invocation counters (static, because the DI
+// container creates a fresh instance per call — instance counters would reset
+// to 0 on each call). The tests serialize via the xUnit collection
+// "auth-propagation" and reset the counters in the constructor, so concurrent
+// class instances do not interfere with each other. Other test classes do not
+// access this controller.
 [TrameController("AuthProp")]
 public class AuthPropagationController
 {
@@ -486,9 +486,9 @@ public class AuthPropagationController
 }
 
 /// <summary>
-/// Fixture für die Auth-Postur-Matrix (North-Bound-Default-Deny): jede Methode trägt eine
-/// andere Bestückung, damit RequireAuthentication {off,on} × Methode × User durchgespielt
-/// werden kann. Static-Counter isolieren die Aufrufe wie <see cref="AuthPropagationController"/>.
+/// Fixture for the auth-posture matrix (North-Bound-Default-Deny): each method carries a
+/// different configuration, so RequireAuthentication {off,on} × method × user can be played
+/// through. Static counters isolate the invocations like <see cref="AuthPropagationController"/>.
 /// </summary>
 [TrameController("AuthPosture")]
 public class AuthPostureController
@@ -520,8 +520,9 @@ public class AuthPostureController
 }
 
 /// <summary>
-/// Controller mit KLASSEN-LEVEL-[TrameAuthorise] — gilt als Default für alle Methoden
-/// des Controllers (North-Bound nutzt das: ein bestückter Controller schützt alles).
+/// Controller with a CLASS-LEVEL [TrameAuthorise] — applies as the default for all
+/// methods of the controller (North-Bound uses this: an attributed controller
+/// protects everything).
 /// </summary>
 [TrameController("AuthPostureClass")]
 [TrameAuthorise]
@@ -530,7 +531,7 @@ public class AuthPostureClassLevelController
     [TrameMethod("Inherited")]
     public string Inherited() { return "inherited"; }
 
-    // Methoden-Level-Opt-out schlägt den Klassen-Default.
+    // A method-level opt-out overrides the class default.
     [TrameMethod("Opened")]
     [TrameAnonymous]
     public string Opened() { return "opened"; }
@@ -565,17 +566,16 @@ public class PolicyAuthController
     }
 }
 
-// --- Fixtures für die strukturellen TypeRef-Edge-Cases (Discovery-Schema) ----------
-// Ein dedizierter Controller, der jeden TypeRef-Zweig isoliert, der in den
-// Basis-Discovery-Tests nicht getroffen wird: set, scalar "any", Nullable<T>-Unwrap,
-// native Arrays, verschachtelte Collections, Default-Wert vorhanden, Enum mit
-// Byte-Underlying, [TrameExample]-Belegung, selbstreferenzieller Typ (zyklussicher)
-// und bare Task -> void.
+// --- Fixtures for the structural TypeRef edge cases (discovery schema) ----------
+// A dedicated controller that isolates each TypeRef branch not covered by the
+// base discovery tests: set, scalar "any", Nullable<T> unwrap, native arrays,
+// nested collections, default value present, enum with a byte underlying type,
+// [TrameExample] population, self-referencing type (cycle-safe), and bare Task -> void.
 
 [TrameController("DiscoveryEdge")]
 public class DiscoveryEdgeCasesController
 {
-    // --- set-Kinds -----------------------------------------------------------
+    // --- set kinds -----------------------------------------------------------
 
     [TrameMethod("EchoHashSet")]
     public HashSet<string> EchoHashSet(HashSet<string> values) => values;
@@ -597,7 +597,7 @@ public class DiscoveryEdgeCasesController
     [TrameMethod("EchoJsonNode")]
     public System.Text.Json.Nodes.JsonNode EchoJsonNode(System.Text.Json.Nodes.JsonNode node) => node;
 
-    // --- Nullable<T>-Werttyp-Unwrap ------------------------------------------
+    // --- Nullable<T> value-type unwrap ------------------------------------------
 
     [TrameMethod("EchoNullableInt")]
     public int? EchoNullableInt(int? value) => value;
@@ -605,7 +605,7 @@ public class DiscoveryEdgeCasesController
     [TrameMethod("EchoNullableGuid")]
     public Guid? EchoNullableGuid(Guid? value) => value;
 
-    // --- native Arrays -------------------------------------------------------
+    // --- native arrays -------------------------------------------------------
 
     [TrameMethod("EchoLongArray")]
     public long[] EchoLongArray(long[] values) => values;
@@ -613,7 +613,7 @@ public class DiscoveryEdgeCasesController
     [TrameMethod("EchoDtoArray")]
     public TestDto[] EchoDtoArray(TestDto[] values) => values;
 
-    // --- verschachtelte Collections ------------------------------------------
+    // --- nested collections ------------------------------------------
 
     [TrameMethod("MakeNestedList")]
     public List<List<int>> MakeNestedList() => new();
@@ -624,7 +624,7 @@ public class DiscoveryEdgeCasesController
     [TrameMethod("MakeSetOfArrays")]
     public HashSet<string[]> MakeSetOfArrays() => new();
 
-    // --- Default-Wert vorhanden (Gegenstück zum absent-Default-Test) ---------
+    // --- default value present (counterpart to the absent-default test) ---------
 
     [TrameMethod("EchoWithDefault")]
     public int EchoWithDefault(int x = 42) => x;
@@ -632,27 +632,27 @@ public class DiscoveryEdgeCasesController
     [TrameMethod("EchoStringDefault")]
     public string EchoStringDefault(string s = "hi") => s;
 
-    // --- Enum mit Byte-Underlying (Convert.ChangeType-Pfad) ------------------
+    // --- enum with a byte underlying type (Convert.ChangeType path) ------------------
 
     [TrameMethod("EchoByteFlag")]
     public ByteFlag EchoByteFlag(ByteFlag value) => value;
 
-    // --- [TrameExample]-Belegung ---------------------------------------------
+    // --- [TrameExample] population ---------------------------------------------
 
     [TrameMethod("MakeExampled")]
     public ExampledDto MakeExampled() => new();
 
-    // --- selbstreferenzieller Typ (zyklussicherer Placeholder) ---------------
+    // --- self-referencing type (cycle-safe placeholder) ---------------
 
     [TrameMethod("MakeNode")]
     public TreeNode MakeNode(int v) => new() { Value = v };
 
-    // --- bare Task -> void (Task ohne<T>) ------------------------------------
+    // --- bare Task -> void (Task without <T>) ------------------------------------
 
     [TrameMethod("Fire")]
     public async Task Fire() { await Task.Delay(1); }
 
-    // --- weitere Skalar-Namen (direkte Namens-Assertion) ---------------------
+    // --- further scalar names (direct name assertion) ---------------------
 
     [TrameMethod("EchoLong")]
     public long EchoLong(long v) => v;
@@ -679,10 +679,10 @@ public class DiscoveryEdgeCasesController
     public Guid EchoGuid(Guid v) => v;
 }
 
-/// <summary>Enum mit Byte-Underlying — übt den Convert.ChangeType-Pfad in BuildEnumTypeMeta.</summary>
+/// <summary>Enum with a byte underlying type — exercises the Convert.ChangeType path in BuildEnumTypeMeta.</summary>
 public enum ByteFlag : byte { None = 0, A = 1, B = 2 }
 
-/// <summary>Typ mit [TrameExample] — die Discovery belegt Example aus dem JSON-String.</summary>
+/// <summary>Type with [TrameExample] — discovery populates Example from the JSON string.</summary>
 [TrameExample("""{"Id":7,"Name":"sample"}""")]
 public class ExampledDto
 {
@@ -691,9 +691,9 @@ public class ExampledDto
 }
 
 /// <summary>
-/// Selbstreferenzieller Typ: Next verweist auf den eigenen Typ. Dient dem Test,
-/// dass EnsureRegistered einen Placeholder setzt, bevor die Properties aufgelöst
-/// werden (zyklussicher), und dass Next als ref + nullable emitet wird.
+/// Self-referencing type: Next points to its own type. Serves the test that
+/// EnsureRegistered sets a placeholder before the properties are resolved
+/// (cycle-safe), and that Next is emitted as ref + nullable.
 /// </summary>
 public class TreeNode
 {

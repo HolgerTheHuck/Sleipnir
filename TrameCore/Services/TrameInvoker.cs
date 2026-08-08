@@ -32,6 +32,16 @@ namespace TrameCore.Services
         private readonly List<ITrameInterceptor> _interceptors;
 
         /// <summary>
+        /// Hotfix 1.1.1: Optionaler Policy-Evaluator für Batch-Pfad. Wird von AddTrame
+        /// (TrameHub) gesetzt, wenn IAuthorizationService verfügbar ist — erlaubt
+        /// CheckAuthorisation, Policies auch im Batch-Pre-Pass auszuwerten (nicht nur
+        /// im Single-Call-Pfad via TrameAuthorizationInterceptor). TrameCore bleibt frei
+        /// von IAuthorizationService-Abhängigkeit; der Delegate kapselt sie.
+        /// Signatur: (HttpContext, policyName) → true (erlaubt) / false (verweigert).
+        /// </summary>
+        public Func<HttpContext, string, Task<bool>>? PolicyEvaluator { get; set; }
+
+        /// <summary>
         /// Wenn gesetzt, werden in Fehler-Responses die echten Exception-Details
         /// (TrameError.Details) befüllt. In Produktion auf false belassen, um keine
         /// internen Informationen an Clients preiszugeben. Wird durch AddTrame anhand
@@ -209,6 +219,12 @@ namespace TrameCore.Services
 
         #region Haupt-Invoke-Methoden
 
+        // WARN (Hotfix 1.1.1): ITrameBatchInterceptor / TrameOptions.BatchInterceptors werden
+        // aktuell NICHT aufgerufen — der Batch-Pfad geht direkt in ExecuteInParallel/etc.
+        // ohne Batch-Interceptor-Pipeline. User-Interceptors aus TrameOptions.Interceptors
+        // laufen ebenfalls nur im Single-Call-Pfad (InvokeDi(single)). Auth im Batch-Pfad
+        // läuft über ResolveAndAuthorizeAsync → CheckAuthorisation (incl. Policy via
+        // PolicyEvaluator, Hotfix 1.1.1). Batch-Interceptor-Pipeline = v1.2 geplant.
         public async Task<IEnumerable<TrameResponse?>> InvokeDi(
             IEnumerable<TrameRequest> requests,
             HttpContext? context,
@@ -1878,22 +1894,29 @@ namespace TrameCore.Services
             if (invokeInfo.AnonymousAttribute != null) return;
 
             // Explizite [TrameAuthorise] (Method- oder Controller-Level) →
-            // Role/Authentication-Check. Phase 1: 403 (Forbidden) wenn authentifiziert,
-            // aber Rolle verweigert; 401 (Unauthorized) wenn nicht authentifiziert.
-            // Policy-Evaluation läuft hier *nicht* — das übernimmt der
-            // TrameAuthorizationInterceptor via IAuthorizationService (TrameHub), der
-            // zusätzlich zur Pipeline läuft. Hier wird nur Role/IsAuthenticated geprüft.
+            // Role/Authentication-Check + Policy (Hotfix 1.1.1: Policy auch im Batch-Pfad).
             if (invokeInfo.AuthoriseAttribute != null)
             {
                 if (!await invokeInfo.AuthoriseAttribute.OnAuthorization(context))
                 {
-                    // OnAuthorization liefert false bei: context==null, nicht authentifiziert,
-                    // oder Rolle nicht erfüllt. Unterscheide 401 vs 403 (Phase 1):
                     var authenticated = context?.User?.Identity?.IsAuthenticated ?? false;
                     if (!authenticated)
                         throw new UnauthorizedAccessException();
-                    // Authentifiziert, aber Rolle verweigert → 403
                     throw new ForbiddenAccessException();
+                }
+
+                // Hotfix 1.1.1: Policy-Evaluation auch im Batch-Pfad. Im Single-Call-Pfad
+                // übernimmt das der TrameAuthorizationInterceptor; hier (CheckAuthorisation,
+                // gerufen von ResolveAndAuthorizeAsync im Batch-Pre-Pass) nutzen wir den
+                // PolicyEvaluator-Delegate, falls gesetzt (von AddTrame via TrameHub).
+                var policy = invokeInfo.AuthoriseAttribute.Policy;
+                if (!string.IsNullOrEmpty(policy) && context != null)
+                {
+                    if (PolicyEvaluator == null)
+                        throw new ForbiddenAccessException(); // Policy konfiguriert, aber kein Evaluator → verweigern
+                    var allowed = await PolicyEvaluator(context, policy);
+                    if (!allowed)
+                        throw new ForbiddenAccessException();
                 }
                 return;
             }

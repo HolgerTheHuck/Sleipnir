@@ -199,15 +199,20 @@ namespace TrameHub.Extensions
             // Register Fast-Controller as Scoped.
             // AutoDiscover=false-Controller bleiben dem Bulk-Scan bewusst fern — sie
             // werden nur auf explizite Registrierung (Builder/Add<T> oder Register<T>) hin DI-registriert.
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            // AutoDiscoverControllers=false (fluent Builder-Pfad) schaltet den Bulk-Scan ab; der
+            // Builder registriert seine Controller dann selbst bei DI (siehe TrameControllerBuilder).
+            if (options.AutoDiscoverControllers)
             {
-                foreach (Type type in TypeScanning.SafeGetTypes(assembly))
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    var attr = type.GetCustomAttributes(typeof(TrameControllerAttribute), true)
-                        .OfType<TrameControllerAttribute>().FirstOrDefault();
-                    if (attr != null && attr.AutoDiscover)
+                    foreach (Type type in TypeScanning.SafeGetTypes(assembly))
                     {
-                        services.AddScoped(type);
+                        var attr = type.GetCustomAttributes(typeof(TrameControllerAttribute), true)
+                            .OfType<TrameControllerAttribute>().FirstOrDefault();
+                        if (attr != null && attr.AutoDiscover)
+                        {
+                            services.AddScoped(type);
+                        }
                     }
                 }
             }
@@ -235,6 +240,13 @@ namespace TrameHub.Extensions
             // Fallback: register all auto-discovered [TrameController] types.
             // AutoDiscover=false-Controller (z. B. bewusst invalide Test-Fixtures)
             // werden hier übersprungen — sie registriert man nur explizit.
+            // AutoDiscoverControllers=false ohne fluent Builder wäre ein Setup-Fehler
+            // (keine Controller registriert) — wir respektieren es trotzdem, damit der
+            // Flag in beiden Schichten (DI-Registrierung oben, Invoker-Registrierung hier) konsistent ist.
+            var options = app.ApplicationServices.GetService<TrameOptions>();
+            if (options is { AutoDiscoverControllers: false })
+                return app;
+
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 foreach (Type type in TypeScanning.SafeGetTypes(assembly))

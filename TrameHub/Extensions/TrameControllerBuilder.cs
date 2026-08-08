@@ -1,10 +1,8 @@
 using TrameCore.Attributes;
 using TrameCore.Services;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using System.Linq;
 using System.Reflection;
-using System.Threading.RateLimiting;
 
 namespace TrameHub.Extensions;
 
@@ -16,7 +14,6 @@ public class TrameControllerBuilder
 {
     private readonly IServiceCollection _services;
     private readonly List<Action<ITrameCore>> _registrations = new();
-    private readonly List<(Type type, ServiceLifetime lifetime)> _serviceRegistrations = new();
 
     internal TrameControllerBuilder(IServiceCollection services)
     {
@@ -25,6 +22,8 @@ public class TrameControllerBuilder
 
     /// <summary>
     /// Registers all types with [TrameController] from the specified assemblies.
+    /// Controllers are added to <see cref="IServiceCollection"/> (scoped) immediately
+    /// and registered with the invoker at <c>UseTrame</c> time.
     /// </summary>
     public TrameControllerBuilder FromAssemblies(params Assembly[] assemblies)
     {
@@ -38,7 +37,7 @@ public class TrameControllerBuilder
                 // sie sind nur über Add<T>() / Register<T>() explizit zu registrieren.
                 if (attr != null && attr.AutoDiscover)
                 {
-                    _serviceRegistrations.Add((type, ServiceLifetime.Scoped));
+                    _services.AddScoped(type);
                     _registrations.Add(core => core.Register(type));
                 }
             }
@@ -52,7 +51,7 @@ public class TrameControllerBuilder
     /// </summary>
     public TrameControllerBuilder Add<T>() where T : class
     {
-        _serviceRegistrations.Add((typeof(T), ServiceLifetime.Scoped));
+        _services.AddScoped(typeof(T));
         _registrations.Add(core => core.Register<T>());
         return this;
     }
@@ -62,7 +61,7 @@ public class TrameControllerBuilder
     /// </summary>
     public TrameControllerBuilder Add<T>(ServiceLifetime lifetime) where T : class
     {
-        _serviceRegistrations.Add((typeof(T), lifetime));
+        _services.Add(new ServiceDescriptor(typeof(T), typeof(T), lifetime));
         _registrations.Add(core => core.Register<T>());
         return this;
     }
@@ -72,7 +71,7 @@ public class TrameControllerBuilder
     /// </summary>
     public TrameControllerBuilder AddSingleton<T>() where T : class
     {
-        _serviceRegistrations.Add((typeof(T), ServiceLifetime.Singleton));
+        _services.AddSingleton(typeof(T));
         _registrations.Add(core => core.Register<T>());
         return this;
     }
@@ -90,8 +89,9 @@ public class TrameControllerBuilder
 
     internal void Apply(IServiceProvider serviceProvider, ITrameCore core)
     {
-        // Service registrations were already added to IServiceCollection in AddTrame()
-        // Just register controllers with the core
+        // Service registrations were already added to IServiceCollection at builder-call
+        // time (each Add<T>/FromAssemblies writes to _services immediately, R2). Here we
+        // only register the controllers with the invoker core.
         foreach (var registration in _registrations)
         {
             registration(core);
@@ -121,8 +121,17 @@ public static class TrameRegistrationExtensions
         TrameOptions options,
         Action<TrameControllerBuilder> configureControllers)
     {
-        // Call the original AddTrame (without auto-scan)
-        AddTrameCore(services, options);
+        // Route through the canonical AddTrame (single registration implementation, R1) so the
+        // fluent overload is behaviorally identical: ConfigureHttpJsonOptions (camelCase wire +
+        // TrameResponseJsonConverter), the SignalR MaximumParallelInvocationsPerClient>0 guard,
+        // the MessagePack JsonElementResolver, all north-bound pass-throughs, the built-in
+        // interceptor set (Auth/Telemetry/Logging), the TrameOptions DI singleton, and the rate
+        // limiter. The fluent contract is *explicit* registration, so disable the bulk auto-scan
+        // (the canonical path would otherwise AddScoped + invoker-register every [TrameController]
+        // in the AppDomain; registration is idempotent for the same type, but the intent here is
+        // opt-in only).
+        options.AutoDiscoverControllers = false;
+        services.AddTrame(options);
 
         var builder = new TrameControllerBuilder(services);
         configureControllers(builder);
@@ -131,56 +140,6 @@ public static class TrameRegistrationExtensions
         services.AddSingleton(builder);
 
         return services;
-    }
-
-    private static void AddTrameCore(IServiceCollection services, TrameOptions options)
-    {
-        if (options.UseSignalR)
-        {
-            var fastHub = services.AddSignalR(o =>
-            {
-                o.EnableDetailedErrors = options.EnableDetailedErrors;
-                o.MaximumReceiveMessageSize = options.MaximumReceiveMessageSize;
-                o.StreamBufferCapacity = options.StreamBufferCapacity;
-                o.MaximumParallelInvocationsPerClient = options.MaximumParallelInvocationsPerClient;
-            });
-
-            if (options.UseMessagePack)
-                fastHub.AddMessagePackProtocol();
-        }
-
-        services.AddRateLimiter(rateLimiterOptions =>
-        {
-            if (options.RateLimitPermitLimit > 0)
-            {
-                rateLimiterOptions.AddFixedWindowLimiter("trame", opt =>
-                {
-                    opt.PermitLimit = options.RateLimitPermitLimit;
-                    opt.Window = TimeSpan.FromSeconds(options.RateLimitWindowSeconds);
-                    opt.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
-                    opt.QueueLimit = 0;
-                });
-                rateLimiterOptions.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            }
-        });
-
-        services.AddSingleton<ITrameCore>(sp =>
-        {
-            var invoker = new TrameCore.Services.TrameInvoker(
-                sp.GetRequiredService<IServiceScopeFactory>(),
-                sp.GetService<Microsoft.Extensions.Logging.ILogger<TrameCore.Services.TrameInvoker>>()
-                    ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<TrameCore.Services.TrameInvoker>.Instance,
-                sp.GetService<IEnumerable<TrameCore.Services.ITrameInterceptor>>());
-            // Kardinalitäts-Caps durchreichen (Default 1000/10000, 0 = unbegrenzt).
-            // Detailed Errors analog dem Main-Pfad über die Options/Environment.
-            var env = sp.GetService<Microsoft.Extensions.Hosting.IHostEnvironment>();
-            invoker.EnableDetailedErrors = options.EnableDetailedErrors || (env?.IsDevelopment() ?? false);
-            invoker.MaxParameterArrayLength = options.MaxParameterArrayLength;
-            invoker.MaxResultElementCount = options.MaxResultElementCount;
-            invoker.AliasBindingMode = options.AliasBindingMode;
-            return invoker;
-        });
-        services.AddSingleton<TrameCore.Services.ITrameInterceptor, TrameCore.Services.TrameLoggingInterceptor>();
     }
 
     /// <summary>

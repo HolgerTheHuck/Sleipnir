@@ -15,6 +15,18 @@ namespace TrameHub.Extensions
         public bool UseSignalR { get; set; }
 
         /// <summary>
+        /// When <c>true</c> (default), <c>AddTrame</c> auto-discovers all
+        /// <c>[TrameController]</c> types across the loaded assemblies (skipping any
+        /// with <c>AutoDiscover = false</c>) and registers them as scoped services,
+        /// and <c>UseTrame</c> registers them with the invoker. When <c>false</c>,
+        /// auto-discovery is off — controllers are registered only through the
+        /// fluent <c>TrameControllerBuilder</c> (which sets this to <c>false</c> for
+        /// its call) or an explicit <c>Register&lt;T&gt;()</c>. Additive (default
+        /// keeps current behavior). Siehe <c>STABILITY.md</c> §3.2.
+        /// </summary>
+        public bool AutoDiscoverControllers { get; set; } = true;
+
+        /// <summary>
         /// Maximum number of RPC calls per client per second (0 = unlimited).
         /// </summary>
         public int RateLimitPermitLimit { get; set; } = 0;

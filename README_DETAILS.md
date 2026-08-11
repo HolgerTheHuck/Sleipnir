@@ -6,7 +6,7 @@
 
 What sets Sleipnir apart is **dependency chaining**: send several calls in a single roundtrip and let later calls reuse results from earlier ones. One request exposes a value via `Exposes("$", "newId")` (a result-relative JSON path), the next consumes it as `WithAlias("@newId")`, and the server resolves the `@alias` placeholders against prior responses — no client-side glue code, no extra roundtrips. A workflow that needs a customer's new ID to create their order completes in one roundtrip instead of three.
 
-> **The name.** *Sleipnir* (French, /tʁam/) is the weft — the cross-threads in weaving that hold a fabric together. Sleipnir weaves multiple transports (REST, WebSocket, SignalR) and chained calls into one coherent framework.
+> **The name.** *Sleipnir* — Odin's eight-legged horse in Norse mythology, who carries the god across all nine realms in a single stride. A multi-transport metaphor: one framework bearing commands across REST, WebSocket, and SignalR, with chained calls completing in a single roundtrip. (Named to match the sibling projects Walhalla and Heimdall.)
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 

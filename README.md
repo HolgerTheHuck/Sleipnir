@@ -7,11 +7,13 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![NuGet](https://img.shields.io/nuget/v/Sleipnir.Server.svg)](https://www.nuget.org/packages/Sleipnir.Server)
 
+> **⚠ Renamed from Trame.** This project was renamed to avoid a collision with Kitware's Python framework `trame`. The old `Trame.*` NuGet packages are deprecated → use the matching `Sleipnir.*` packages. See [CHANGELOG — 1.0.0](CHANGELOG.md#100---2026-08-11--renamed-from-trame) for the full migration notes (package IDs, namespaces, routes, telemetry, env vars).
+
 Sleipnir is designed for **command-oriented Web APIs**. Unlike resource-oriented frameworks, Sleipnir models **commands** as the primary abstraction and lets dependent commands exchange **typed JSON fragments** within a single request.
 
 Your C# classes are the contract — no `.proto`, no IDL, no code generation. The same call runs over REST, WebSocket, or SignalR, consumable from any language. Runtime discovery generates the contract directly from your code and powers a built-in Developer UI.
 
-> **The name.** *Sleipnir* (French, /tʁam/) — the weft, the cross-threads that hold a fabric together. Sleipnir weaves multiple transports and chained calls into one framework.
+> **The name.** *Sleipnir* — Odin's eight-legged horse in Norse mythology, who carries the god across all nine realms in a single stride. A multi-transport metaphor: one framework bearing commands across REST, WebSocket, and SignalR. (Named to match the sibling projects Walhalla and Heimdall.)
 
 ### Packages
 

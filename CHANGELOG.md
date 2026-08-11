@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-11 — Renamed from Trame
+
+The framework formerly known as **Trame** is now **Sleipnir**. The rename avoids a
+collision with Kitware's established Python framework `trame` (IEEE-published,
+ParaView-integrated). Sleipnir continues the Norse-theme naming of the sibling
+projects Walhalla (SQL) and Heimdall (OTel), and will serve as their internal RPC
+base, including a built-in OTel viewer.
+
+This is a **new package line** — the old `Trame.*` NuGet packages are
+**deprecated with a redirect** to the matching `Sleipnir.*` packages (left
+listed so existing restores keep working; not unlisted).
+
+### Changed (migration-relevant)
+- **NuGet package IDs**: `Trame.*` → `Sleipnir.*` — `Sleipnir.Common`, `.Core`,
+  `.Hub`, `.Rest`, `.WebSocket`, `.Client`, `.DeveloperUi`, `.Server`, `.Telemetry`,
+  `.Generator`, `.Server.Codegen`. Version reset to 1.0.0 for the new line.
+- **Namespaces & types**: `Trame*` → `Sleipnir*` — e.g. `ITrameCore` →
+  `ISleipnirCore`, `TrameOptions` → `SleipnirOptions`, `TrameInvoker` →
+  `SleipnirInvoker`, `TrameResults` → `SleipnirResults`, `TrameException` →
+  `SleipnirException`, `TrameCall` → `SleipnirCall`.
+- **Routes**: `/api/trame/json` → `/api/sleipnir/json`,
+  `/api/trame/json/multi` → `/api/sleipnir/json/multi`,
+  `/api/trame/discovery` → `/api/sleipnir/discovery`,
+  `/tramews` → `/sleipnirws`, `/tramehub` → `/sleipnirhub`, DevUI `/Trame` →
+  `/Sleipnir`.
+- **JSON-RPC capabilities**: `trame.discover` / `trame.capabilities` →
+  `sleipnir.discover` / `sleipnir.capabilities`; `rpc.system="trame"` →
+  `"sleipnir"`.
+- **Telemetry**: `ActivitySource` / `Meter` name `"Trame"` → `"Sleipnir"`,
+  operation names `TrameCall` / `TrameBatch` → `SleipnirCall` / `SleipnirBatch`,
+  rate-limit policy `"trame"` → `"sleipnir"`. (Isolates Sleipnir spans from
+  Heimdall / Walhalla consumer sources.)
+- **Contract file**: `contract.trame.json` → `contract.sleipnir.json`.
+- **Environment variable**: `TRAME_REGEN_GOLDEN` → `SLEIPNIR_REGEN_GOLDEN`.
+- **Roslyn diagnostic IDs**: `TRAME001` / `TRAME002` → `SLEIPNIR001` /
+  `SLEIPNIR002`.
+- **npm packages**: `trame-client` / `trame-codegen` / `trame-devui` →
+  `sleipnir-client` / `sleipnir-codegen` / `sleipnir-devui`; CLI `trame-gen` →
+  `sleipnir-gen`.
+- **Repository**: `github.com/HolgerTheHuck/Trame` →
+  `github.com/HolgerTheHuck/Sleipnir` (old URL auto-redirects; stars, issues,
+  and history preserved).
+
+### Migration
+1. Replace `Trame.*` NuGet `PackageReference` entries with the matching
+   `Sleipnir.*` (version `1.0.0`).
+2. Update namespaces and type names (`Trame*` → `Sleipnir*`).
+3. Update client / transport URLs to the new routes.
+4. If you reference the telemetry source by name, add `AddSource("Sleipnir")`
+   (instead of `"Trame"`) to your OpenTelemetry tracing pipeline.
+
+The old `Trame.*` packages remain on nuget.org (deprecated, listed) so existing
+restores are not broken, but they receive no further updates.
+
 ## [1.1.2] - 2026-08-08
 
 ### Fixed

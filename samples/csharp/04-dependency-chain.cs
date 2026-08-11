@@ -17,32 +17,32 @@
 // ==============================================================================
 
 using System.Text.Json;
-using TrameClient.Trame;
-using TrameCommon.Models;
+using SleipnirClient.Sleipnir;
+using SleipnirCommon.Models;
 
-namespace Trame.Samples.CSharp;
+namespace Sleipnir.Samples.CSharp;
 
 public static class DependencyChainScenario
 {
-    public static async Task RunAsync(TrameRestJsonClient rest, TextWriter w)
+    public static async Task RunAsync(SleipnirRestJsonClient rest, TextWriter w)
     {
         // -----------------------------------------------------------------------------
         // Variante A — Fluent Builder (einfach, 2-Step, Ein-Parameter-@alias)
         // -----------------------------------------------------------------------------
         // AddCustomer → liefert neue Id (int) → weiter als @newId an GetCustomerById.
-        var multi = new TrameMultiRequest
+        var multi = new SleipnirMultiRequest
         {
             Mode = ExecutionMode.Serial,
-            Requests = new List<TrameRequest>
+            Requests = new List<SleipnirRequest>
             {
-                TrameCall.Init("Customer", "AddCustomer")
+                SleipnirCall.Init("Customer", "AddCustomer")
                     .Named("step1")
                     .Param("name", "Carol")
                     .Param("email", "carol@x.com")
                     .Exposes("$", "newId")          // ganzer int-Rückgabewert → Alias "newId"
                     .ToRequest(),
 
-                TrameCall.Init("Customer", "GetCustomerById")
+                SleipnirCall.Init("Customer", "GetCustomerById")
                     .Named("step2")
                     .WithAlias("@newId")            // Data="@newId"; ParameterName="newId"
                     .ToRequest(),
@@ -65,44 +65,44 @@ public static class DependencyChainScenario
         // → GetOrder(@orderId). CreateOrder hat ZWEI Parameter, davon einer @alias —
         // deshalb setzen wir ParameterName auf den echten Parameternamen ("customerId"),
         // damit der Server nach Name bindet (sicherer als positional).
-        var chain = new TrameMultiRequest
+        var chain = new SleipnirMultiRequest
         {
             Mode = ExecutionMode.Serial,
-            Requests = new List<TrameRequest>
+            Requests = new List<SleipnirRequest>
             {
                 // step1: Kunden anlegen, neue Id als "custId" weitergeben.
-                new TrameRequest
+                new SleipnirRequest
                 {
                     Controller = "Customer", Method = "AddCustomer", Id = "step1",
                     StringData = JsonSerializer.Serialize(new[]
                     {
-                        new TrameParameter { Num = 0, ParameterName = "name",  Data = JsonSerializer.Serialize("Dave") },
-                        new TrameParameter { Num = 1, ParameterName = "email", Data = JsonSerializer.Serialize("dave@x.com") },
+                        new SleipnirParameter { Num = 0, ParameterName = "name",  Data = JsonSerializer.Serialize("Dave") },
+                        new SleipnirParameter { Num = 1, ParameterName = "email", Data = JsonSerializer.Serialize("dave@x.com") },
                     }),
                     DependencyMapping = new Dictionary<string, string> { ["custId"] = "$" },
                 },
 
                 // step2: Bestellung für diesen Kunden anlegen; customerId kommt von
                 // @custId, total ist ein Literal. OrderId als "orderId" weitergeben.
-                new TrameRequest
+                new SleipnirRequest
                 {
                     Controller = "Order", Method = "CreateOrder", Id = "step2",
                     StringData = JsonSerializer.Serialize(new[]
                     {
                         // Data="@custId" → Server erkennt @-Präfix und substituiert.
-                        new TrameParameter { Num = 0, ParameterName = "customerId", Data = "@custId" },
-                        new TrameParameter { Num = 1, ParameterName = "total",      Data = JsonSerializer.Serialize(99.90m) },
+                        new SleipnirParameter { Num = 0, ParameterName = "customerId", Data = "@custId" },
+                        new SleipnirParameter { Num = 1, ParameterName = "total",      Data = JsonSerializer.Serialize(99.90m) },
                     }),
                     DependencyMapping = new Dictionary<string, string> { ["orderId"] = "$" },
                 },
 
                 // step3: Bestellung anhand der weitergegebenen OrderId laden.
-                new TrameRequest
+                new SleipnirRequest
                 {
                     Controller = "Order", Method = "GetOrderById", Id = "step3",
                     StringData = JsonSerializer.Serialize(new[]
                     {
-                        new TrameParameter { Num = 0, ParameterName = "id", Data = "@orderId" },
+                        new SleipnirParameter { Num = 0, ParameterName = "id", Data = "@orderId" },
                     }),
                 },
             },

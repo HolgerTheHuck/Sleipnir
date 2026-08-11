@@ -1,9 +1,9 @@
 {
-  "name": "trame-samples-typescript",
+  "name": "sleipnir-samples-typescript",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Runnable TypeScript client samples for the Trame RPC framework.",
+  "description": "Runnable TypeScript client samples for the Sleipnir RPC framework.",
   "scripts": {
     "start": "node --experimental-strip-types run.ts",
     "start:1": "node --experimental-strip-types run.ts 1",
@@ -13,7 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "trame-client": "file:../../clients/ts"
+    "sleipnir-client": "file:../../clients/ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -1,6 +1,6 @@
-using Trame.Samples.NotificationChat.Server.Models;
+using Sleipnir.Samples.NotificationChat.Server.Models;
 
-namespace Trame.Samples.NotificationChat.Server.Data;
+namespace Sleipnir.Samples.NotificationChat.Server.Data;
 
 /// <summary>
 /// Repository-Schnittstelle für die Notification-/Chat-/Message-/MediaItem-Domäne.
@@ -13,7 +13,7 @@ namespace Trame.Samples.NotificationChat.Server.Data;
 /// </summary>
 /// <remarks>
 /// <para>
-/// **Wichtig für North-Bound:** die Controller sind per-call scoped (Trame resolved sie
+/// **Wichtig für North-Bound:** die Controller sind per-call scoped (Sleipnir resolved sie
 /// pro Call via <c>IServiceScopeFactory.CreateScope</c>). Eine EF-basierte Implementation
 /// sollte <c>Scoped</c> sein ( DbContext ist scoped), damit jeder Call einen eigenen
 /// Scope bekommt — parallel-safe. Die in-memory Default bleibt <c>Singleton</c> (keine
@@ -21,7 +21,7 @@ namespace Trame.Samples.NotificationChat.Server.Data;
 /// </para>
 /// <para>
 /// Siehe <c>ROADMAP.md</c> Phase 2 und <c>BEST_PRACTICES.md</c> §1.3 (Controller lifetime
-/// and DI). Das Muster: Design den Service einmal, expose ihn via Trame — der Store ist
+/// and DI). Das Muster: Design den Service einmal, expose ihn via Sleipnir — der Store ist
 /// austauschbar unter derselben Schnittstelle.
 /// </para>
 /// </remarks>

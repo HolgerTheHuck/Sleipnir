@@ -7,17 +7,17 @@
 // ==============================================================================
 
 using System.Text.Json;
-using TrameClient.Trame;
-using TrameCommon.Models;
+using SleipnirClient.Sleipnir;
+using SleipnirCommon.Models;
 
-namespace Trame.Samples.CSharp;
+namespace Sleipnir.Samples.CSharp;
 
 public static class SingleCallScenario
 {
-    public static async Task RunAsync(TrameRestJsonClient rest, TextWriter w)
+    public static async Task RunAsync(SleipnirRestJsonClient rest, TextWriter w)
     {
         // --- REST: Kunden anlegen (skalarer int kommt zurück) ----------------------
-        var addReq = TrameCall.Init("Customer", "AddCustomer")
+        var addReq = SleipnirCall.Init("Customer", "AddCustomer")
             .Param("name", "Alice")          // named parameter — server bindet nach Name
             .Param("email", "alice@x.com")
             .ToRequest();
@@ -26,7 +26,7 @@ public static class SingleCallScenario
         await w.WriteLineAsync($"  [REST]    AddCustomer  -> new id = {newId}");
 
         // --- REST: Kunden laden (Call<T> deserialisiert direkt nach Customer) ------
-        var getReq = TrameCall.Init("Customer", "GetCustomerById")
+        var getReq = SleipnirCall.Init("Customer", "GetCustomerById")
             .Param("id", newId)
             .ToRequest();
 
@@ -34,20 +34,20 @@ public static class SingleCallScenario
         await w.WriteLineAsync($"  [REST]    GetCustomerById({newId}) -> {customer?.Name} <{customer?.Email}>");
 
         // --- REST: alle Kunden (Liste) ---------------------------------------------
-        var allReq = TrameCall.Init("Customer", "GetAllCustomers").ToRequest();
+        var allReq = SleipnirCall.Init("Customer", "GetAllCustomers").ToRequest();
         var all = await rest.Call<List<Customer>>(allReq);
         await w.WriteLineAsync($"  [REST]    GetAllCustomers -> {all?.Count ?? 0} customer(s)");
 
         // --- WebSocket: derselbe Aufruf über den persistenten Kanal ----------------
         // IAsyncDisposable. Der C#-WS-Client nimmt die Basis-URL (https://…) + einen
-        // separaten wsPath (Default "tramews") und hebt intern auf wss://…/tramews ab.
-        await using var ws = new TrameWebSocketClient("https://localhost:5001");
+        // separaten wsPath (Default "sleipnirws") und hebt intern auf wss://…/sleipnirws ab.
+        await using var ws = new SleipnirWebSocketClient("https://localhost:5001");
         await ws.ConnectAsync();
 
         // With(params object?[]) = positionsbasiert (Namen param0, param1, …). Der
         // Server bindet positional, wenn der Name nicht passt — für Ein-Parameter-
         // Methoden ok.
-        var wsReq = TrameCall.Init("Customer", "GetCustomerById")
+        var wsReq = SleipnirCall.Init("Customer", "GetCustomerById")
             .With(newId)
             .ToRequest();
 
@@ -55,9 +55,9 @@ public static class SingleCallScenario
         await w.WriteLineAsync($"  [WebSocket] GetCustomerById({newId}) -> {customer2?.Name} <{customer2?.Email}>");
 
         // --- Raw-Form (ohne Fluent Builder) — gelegentlich nützlich ----------------
-        // StringData = JSON-serialisiertes TrameParameter[]; Data ist jeweils der
+        // StringData = JSON-serialisiertes SleipnirParameter[]; Data ist jeweils der
         // JSON-token des Werts (Zahl 42 → "42", String "A" → "\"A\"").
-        var raw = new TrameRequest
+        var raw = new SleipnirRequest
         {
             Controller = "Customer",
             Method = "GetAllCustomers",

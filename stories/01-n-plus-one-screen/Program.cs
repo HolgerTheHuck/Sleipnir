@@ -2,28 +2,28 @@
 //  Story 01 — The N+1 Screen  (standalone solution, F5 → the N+1 screen)
 //
 //    One Order detail page, six dependent reads, five services.
-//    The Trame thesis: the client declares WHAT depends on WHAT;
+//    The Sleipnir thesis: the client declares WHAT depends on WHAT;
 //    the server resolves the graph in one roundtrip.
 //
 //    In Visual Studio: open Story01.sln, press F5 → browser lands on the N+1
-//    screen at /story01/ (same origin as /api/trame/*, so no CORS). The screen
-//    links to the DevUI at /Trame, where the six Story-01 controllers (Order,
+//    screen at /story01/ (same origin as /api/sleipnir/*, so no CORS). The screen
+//    links to the DevUI at /Sleipnir, where the six Story-01 controllers (Order,
 //    Customer, OrderLine, Article, Address, Stock) are ready to call. The web
 //    bundle (web/dist) is served by this API; build it once with
 //    `npm run build` in the web/ folder. See README.md for the narrative.
 // =============================================================================
 
 using Microsoft.Extensions.FileProviders;
-using TrameHub.Extensions;
-using TrameServer;
+using SleipnirHub.Extensions;
+using SleipnirServer;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// DevUI-Bundles aus dem benachbarten TrameDeveloperUi-Projekt im Dev-Modus ausliefern.
+// DevUI-Bundles aus dem benachbarten SleipnirDeveloperUi-Projekt im Dev-Modus ausliefern.
 // (Production/Publish braucht stattdessen das StaticWebAssets-Manifest + UseStaticFiles.)
 builder.WebHost.UseStaticWebAssets();
 
-builder.Services.AddTrame(new TrameOptions
+builder.Services.AddSleipnir(new SleipnirOptions
 {
     EnableDetailedErrors = builder.Environment.IsDevelopment(),
     RateLimitPermitLimit = 0, // Demo ohne Rate-Limit — South-Bound-Story
@@ -32,12 +32,12 @@ builder.Services.AddTrame(new TrameOptions
 var app = builder.Build();
 
 // Static-Web-Assets (Dev) stellt die DevUI-Bundles aus dem benachbarten
-// TrameDeveloperUi-Projekt bereit; UseStaticFiles dient sie tatsächlich aus.
+// SleipnirDeveloperUi-Projekt bereit; UseStaticFiles dient sie tatsächlich aus.
 app.UseStaticFiles();
 
 // Story-01-Web-Beispiel (der N+1-Screen) aus dem gebauten web/dist ausliefern —
 // same-origin unter /story01, also KEINE CORS-Hürde für den ersten Walkthrough.
-// Das UI nutzt new TrameClient("/") und macht damit relative /api/trame/json-Calls
+// Das UI nutzt new SleipnirClient("/") und macht damit relative /api/sleipnir/json-Calls
 // auf denselben Origin. Dev-Modus liest aus dem Quellbaum (ContentRoot/web/dist);
 // für Publish kopiert die csproj web/dist in die Ausgabe (siehe Story01.csproj).
 var webDist = Path.Combine(builder.Environment.ContentRootPath, "web", "dist");
@@ -55,13 +55,13 @@ app.UseRouting();
 
 // WebSocket (Default-Kanal) + Controller-Registrierung (Auto-Discovery übernimmt
 // die Story-Controller aus Domain.cs) in einem Aufruf.
-app.UseTrameTransports();
+app.UseSleipnirTransports();
 
 // REST + Developer-UI in einem Aufruf. (SignalR ist hier off — Story 03 zeigt den
-// dritten Wire; Story 01 braucht nur REST + WS, beide über UseTrameTransports/MapTrame.)
-app.MapTrame();
+// dritten Wire; Story 01 braucht nur REST + WS, beide über UseSleipnirTransports/MapSleipnir.)
+app.MapSleipnir();
 
-// N+1-Screen als Endpunkt (wie /Trame die DevUI). Dient index.html für /story01 und
+// N+1-Screen als Endpunkt (wie /Sleipnir die DevUI). Dient index.html für /story01 und
 // /story01/ — die Asset-Requests /story01/assets/* bedient die StaticFile-Middleware oben.
 string screenIndex = Path.Combine(webDist, "index.html");
 async Task ServeScreen(HttpContext ctx)
@@ -84,7 +84,7 @@ app.MapGet("/story01", ServeScreen);
 // F5-Komfort: Browser-Start auf / landet direkt im Web-Beispiel (erster Walkthrough,
 // keine Hürden). Direkt auf /story01/ (mit Slash), weil UseDefaultFiles den bare-Pfad
 // sonst mit einem weiteren 301 auf /story01/ weiterleiten würde — so ist es ein Hop.
-// Die DevUI bleibt unter /Trame erreichbar — der Screen verlinkt dorthin.
+// Die DevUI bleibt unter /Sleipnir erreichbar — der Screen verlinkt dorthin.
 app.MapGet("/", ctx => { ctx.Response.Redirect("/story01/"); return Task.CompletedTask; });
 
 app.Run();

@@ -1,9 +1,9 @@
 import { ExecutionMode } from "./types.js";
-import type { TrameMultiRequest, TrameParameter, TrameRequest, TrameResponse } from "./types.js";
+import type { SleipnirMultiRequest, SleipnirParameter, SleipnirRequest, SleipnirResponse } from "./types.js";
 
 /**
- * Baut das `params`-Feld (Array von TrameParameter mit nativen `data`-Werten) aus
- * Aufrufargumenten. Spiegelt den C#-TrameCall-Builder.
+ * Baut das `params`-Feld (Array von SleipnirParameter mit nativen `data`-Werten) aus
+ * Aufrufargumenten. Spiegelt den C#-SleipnirCall-Builder.
  *
  * - **Named** (Object): `{parameterName: key, data: value}`.
  *   Sichere, positionsunabhängige Bindung (Server bindet nach Parametername).
@@ -15,7 +15,7 @@ import type { TrameMultiRequest, TrameParameter, TrameRequest, TrameResponse } f
  */
 export function buildParams(
   params: Record<string, unknown> | unknown[] | undefined,
-): TrameParameter[] {
+): SleipnirParameter[] {
   if (params == null) return [];
 
   if (Array.isArray(params)) {
@@ -40,7 +40,7 @@ function normalizeValue(value: unknown): unknown {
   return value;
 }
 
-/** Baut einen einzelnen TrameRequest. */
+/** Baut einen einzelnen SleipnirRequest. */
 export function buildSingle(opts: {
   controller: string;
   method: string;
@@ -48,9 +48,9 @@ export function buildSingle(opts: {
   id?: string;
   dependencyMapping?: Record<string, string> | null;
   binaryData?: Uint8Array | string | null;
-}): TrameRequest {
+}): SleipnirRequest {
   const id = opts.id ?? `${opts.controller}.${opts.method}`;
-  const request: TrameRequest = {
+  const request: SleipnirRequest = {
     controller: opts.controller,
     method: opts.method,
     params: buildParams(opts.params),
@@ -66,11 +66,11 @@ export function buildSingle(opts: {
   return request;
 }
 
-/** Baut einen TrameMultiRequest (Batch). */
+/** Baut einen SleipnirMultiRequest (Batch). */
 export function buildMulti(
-  requests: TrameRequest[],
+  requests: SleipnirRequest[],
   mode: ExecutionMode = ExecutionMode.Parallel,
-): TrameMultiRequest {
+): SleipnirMultiRequest {
   return { requests, mode };
 }
 
@@ -80,14 +80,14 @@ export function buildMulti(
  * (`Code is >= 200 and <= 299`) — das Wire-Frame enthält es also nie. Der
  * Client spiegelt diese Ableitung, sodass `response.isSuccess` verlässlich ist.
  */
-export function normalizeResponse<T extends TrameResponse>(resp: T): T {
+export function normalizeResponse<T extends SleipnirResponse>(resp: T): T {
   if (typeof resp?.isSuccess === "boolean") return resp;
   const code = typeof resp?.code === "number" ? resp.code : 0;
   return { ...resp, isSuccess: code >= 200 && code <= 299 };
 }
 
 /** `normalizeResponse` für jedes Element eines Batch-Arrays. */
-export function normalizeResponses(arr: TrameResponse[]): TrameResponse[] {
+export function normalizeResponses(arr: SleipnirResponse[]): SleipnirResponse[] {
   return arr.map(normalizeResponse);
 }
 

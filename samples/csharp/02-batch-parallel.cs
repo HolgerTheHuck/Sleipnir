@@ -9,43 +9,43 @@
 // ==============================================================================
 
 using System.Text.Json;
-using TrameClient.Trame;
-using TrameCommon.Models;
+using SleipnirClient.Sleipnir;
+using SleipnirCommon.Models;
 
-namespace Trame.Samples.CSharp;
+namespace Sleipnir.Samples.CSharp;
 
 public static class BatchParallelScenario
 {
-    public static async Task RunAsync(TrameRestJsonClient rest, TextWriter w)
+    public static async Task RunAsync(SleipnirRestJsonClient rest, TextWriter w)
     {
         // Erst einen Kunden garantieren, damit GetCustomerById Treffer hat.
-        await rest.Call<int>(TrameCall.Init("Customer", "AddCustomer")
+        await rest.Call<int>(SleipnirCall.Init("Customer", "AddCustomer")
             .Param("name", "Bob")
             .Param("email", "bob@x.com")
             .ToRequest());
 
-        var multi = new TrameMultiRequest
+        var multi = new SleipnirMultiRequest
         {
             Mode = ExecutionMode.Parallel,        // Task.WhenAll über alle Requests
-            Requests = new List<TrameRequest>
+            Requests = new List<SleipnirRequest>
             {
                 // .Named(id) setzt die Korrelations-Id — wichtig, um Responses
                 // zuzuordnen (insbesondere bei WebSocket, wo Batch-Responses an
                 // requests[0].id korrelieren — eindeutige Ids verhindern Kollisionen).
-                TrameCall.Init("Customer", "GetAllCustomers").Named("all").ToRequest(),
-                TrameCall.Init("Customer", "GetCustomerById").With(1).Named("c1").ToRequest(),
-                TrameCall.Init("Customer", "GetCustomerById").With(2).Named("c2").ToRequest(),
+                SleipnirCall.Init("Customer", "GetAllCustomers").Named("all").ToRequest(),
+                SleipnirCall.Init("Customer", "GetCustomerById").With(1).Named("c1").ToRequest(),
+                SleipnirCall.Init("Customer", "GetCustomerById").With(2).Named("c2").ToRequest(),
             },
         };
 
-        // Call(TrameMultiRequest) liefert die Responses in Request-Reihenfolge.
+        // Call(SleipnirMultiRequest) liefert die Responses in Request-Reihenfolge.
         var responses = (await rest.Call(multi))!.ToList();
 
         var all = responses[0];   // GetAllCustomers → IReadOnlyList<Customer>
         var c1   = responses[1];  // GetCustomerById(1)
         var c2   = responses[2];  // GetCustomerById(2)
 
-        // Bei Call(TrameMultiRequest) bleiben die Ergebnisse als TrameResponse (mit
+        // Bei Call(SleipnirMultiRequest) bleiben die Ergebnisse als SleipnirResponse (mit
         // .Data als JsonElement). Wer Typsicherheit pro Response will, deserialisiert
         // individuell (Single-Pass, kein doppeltes JSON.parse):
         var list = all.Data?.Deserialize<List<Customer>>(SampleJson.Default);

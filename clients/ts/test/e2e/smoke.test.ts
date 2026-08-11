@@ -1,21 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { createClient, TrameCall } from "../../src/index.js";
-import type { TrameRestClient, TrameWebSocketClient } from "../../src/index.js";
+import { createClient, SleipnirCall } from "../../src/index.js";
+import type { SleipnirRestClient, SleipnirWebSocketClient } from "../../src/index.js";
 
 /**
- * End-to-End-Smoke-Test gegen die laufende Sample-App (Trame).
+ * End-to-End-Smoke-Test gegen die laufende Sample-App (Sleipnir).
  *
- * Opt-in: nur aktiv, wenn TRAME_E2E=1 gesetzt ist. Startet nichts selbst —
- * erwartet einen laufenden Server unter TRAME_BASE_URL (Default
+ * Opt-in: nur aktiv, wenn SLEIPNIR_E2E=1 gesetzt ist. Startet nichts selbst —
+ * erwartet einen laufenden Server unter SLEIPNIR_BASE_URL (Default
  * http://localhost:5052, wie launchSettings). Node-seitiges fetch/`ws` lösen
  * CORS nicht aus (im Gegensatz zum Browser).
  *
  * Aufruf:
- *   dotnet run --project Trame   # in einem separaten Terminal
- *   TRAME_E2E=1 npm run test:e2e
+ *   dotnet run --project Sleipnir   # in einem separaten Terminal
+ *   SLEIPNIR_E2E=1 npm run test:e2e
  */
-const ENABLED = process.env.TRAME_E2E === "1";
-const BASE = process.env.TRAME_BASE_URL ?? "http://localhost:5052";
+const ENABLED = process.env.SLEIPNIR_E2E === "1";
+const BASE = process.env.SLEIPNIR_BASE_URL ?? "http://localhost:5052";
 const { rest, ws } = createClient(BASE);
 
 const itIf = ENABLED ? it : it.skip;
@@ -44,7 +44,7 @@ describe("E2E gegen Sample-App", () => {
 
   itIf("REST: Batch mit zwei parallelen Calls", async () => {
     const req = (id: number) =>
-      TrameCall.init("TestService", "GetAdresse")
+      SleipnirCall.init("TestService", "GetAdresse")
         .with({ id, greet: "g" })
         .named(`e2e-${id}`)
         .toRequest();
@@ -54,19 +54,19 @@ describe("E2E gegen Sample-App", () => {
   });
 
   itIf("WebSocket: TestService.GetAdresse über persistente Verbindung", async () => {
-    await (ws as TrameWebSocketClient).connect();
+    await (ws as SleipnirWebSocketClient).connect();
     try {
-      const a = await (ws as TrameWebSocketClient).callJson<AdresseX>(
-        TrameCall.init("TestService", "GetAdresse").with({ id: 2, greet: "ws" }).toRequest(),
+      const a = await (ws as SleipnirWebSocketClient).callJson<AdresseX>(
+        SleipnirCall.init("TestService", "GetAdresse").with({ id: 2, greet: "ws" }).toRequest(),
       );
       expect(a?.Id).toBe(2);
       expect(a?.Greet).toBe("ws");
     } finally {
-      (ws as TrameWebSocketClient).close();
+      (ws as SleipnirWebSocketClient).close();
     }
   });
 });
 
 // Statische Referenz, damit ungenutzte Imports bei Skip kein Lint-Problem werden.
-void (rest as TrameRestClient);
-void (ws as TrameWebSocketClient);
+void (rest as SleipnirRestClient);
+void (ws as SleipnirWebSocketClient);

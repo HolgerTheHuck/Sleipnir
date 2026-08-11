@@ -1,4 +1,4 @@
-namespace Trame.Spike.LinqProvider;
+namespace Sleipnir.Spike.LinqProvider;
 
 /// <summary>
 /// Nicht-generische Sicht auf ein <see cref="Arg{T}"/>-Argument, damit der

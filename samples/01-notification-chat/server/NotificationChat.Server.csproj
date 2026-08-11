@@ -5,11 +5,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>NotificationChat.Server</AssemblyName>
-    <RootNamespace>Trame.Samples.NotificationChat.Server</RootNamespace>
+    <RootNamespace>Sleipnir.Samples.NotificationChat.Server</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Trame.Server" Version="1.0.0" />
+    <PackageReference Include="Sleipnir.Server" Version="1.0.0" />
   </ItemGroup>
 
 </Project>

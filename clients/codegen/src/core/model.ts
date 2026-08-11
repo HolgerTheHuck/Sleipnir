@@ -8,7 +8,7 @@
 // discovery carries PascalCase property names but the wire is camelCase, so
 // every emitted property name runs through toCamelCase here.
 //
-// Enum refs: Trame serializes enums as their underlying integer on the wire
+// Enum refs: Sleipnir serializes enums as their underlying integer on the wire
 // (no global JsonStringEnumConverter), so an enum usage is rendered as its
 // numeric wire type. The enum `TypeMeta` (with members) is still emitted by the
 // producer for documentation/DevUI, but the codegen does not emit language-
@@ -27,7 +27,7 @@ import type {
   PropertyMeta,
   TypeMeta,
   TypeRef,
-} from "trame-client";
+} from "sleipnir-client";
 import { toCamelCase } from "./casing.js";
 import { NamingResolver } from "./naming.js";
 import { csTypeOf, pyTypeOf, tsTypeOf } from "./scalars.js";
@@ -67,7 +67,7 @@ export interface ResolvedMethod {
   controller: string;
   parameters: ResolvedParameter[];
   returnType: ResolvedTypeRef;
-  /** void / Task (no result) → the emitter still returns TrameResponse<unknown>. */
+  /** void / Task (no result) → the emitter still returns SleipnirResponse<unknown>. */
   isVoid: boolean;
   documentation?: string | null;
 }

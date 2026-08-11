@@ -8,25 +8,25 @@
 // Wichtig: Parallel löst KEINE @alias-Abhängigkeiten auf — dafür siehe 03/04.
 // ==============================================================================
 
-import { TrameRestClient, TrameCall, ExecutionMode } from "trame-client";
+import { SleipnirRestClient, SleipnirCall, ExecutionMode } from "sleipnir-client";
 
 type Customer = { id: number; name: string; email: string };
 
-export async function run(rest: TrameRestClient): Promise<void> {
+export async function run(rest: SleipnirRestClient): Promise<void> {
   // Erst einen Kunden garantieren, damit GetCustomerById Treffer hat.
   await rest.callJson<number>("Customer", "AddCustomer", {
     name: "Bob",
     email: "bob@x.com",
   });
 
-  // TrameCall.batch(requests, mode) — Default mode ist Serial; hier explizit Parallel.
-  const batch = TrameCall.batch(
+  // SleipnirCall.batch(requests, mode) — Default mode ist Serial; hier explizit Parallel.
+  const batch = SleipnirCall.batch(
     [
       // .named(id) setzt die Korrelations-Id (wichtig bei konkurrierenden Batches
       // über WebSocket, wo Responses an requests[0].id korrelieren).
-      TrameCall.init("Customer", "GetAllCustomers").named("all").toRequest(),
-      TrameCall.init("Customer", "GetCustomerById").with({ id: 1 }).named("c1").toRequest(),
-      TrameCall.init("Customer", "GetCustomerById").with({ id: 2 }).named("c2").toRequest(),
+      SleipnirCall.init("Customer", "GetAllCustomers").named("all").toRequest(),
+      SleipnirCall.init("Customer", "GetCustomerById").with({ id: 1 }).named("c1").toRequest(),
+      SleipnirCall.init("Customer", "GetCustomerById").with({ id: 2 }).named("c2").toRequest(),
     ],
     ExecutionMode.Parallel,
   );

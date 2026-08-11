@@ -6,14 +6,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
-    <RootNamespace>Trame.Samples.CSharp</RootNamespace>
-    <AssemblyName>Trame.Samples.CSharp</AssemblyName>
+    <RootNamespace>Sleipnir.Samples.CSharp</RootNamespace>
+    <AssemblyName>Sleipnir.Samples.CSharp</AssemblyName>
   </PropertyGroup>
 
-  <!-- Trame.Client zieht transitiv Trame.Core + Trame.Common (REST, WebSocket,
+  <!-- Sleipnir.Client zieht transitiv Sleipnir.Core + Sleipnir.Common (REST, WebSocket,
        SignalR). Ein Paket genügt für alle Client-Szenarien. -->
   <ItemGroup>
-    <PackageReference Include="Trame.Client" Version="1.0.0" />
+    <PackageReference Include="Sleipnir.Client" Version="1.0.0" />
   </ItemGroup>
 
 </Project>

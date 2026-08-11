@@ -1,8 +1,8 @@
-// Regression gate: the generated C# client (TrameGenerated.cs) must compile
-// against the real TrameClient runtime, AND the typed batch must build the
+// Regression gate: the generated C# client (SleipnirGenerated.cs) must compile
+// against the real SleipnirClient runtime, AND the typed batch must build the
 // Story-01 diamond (producer exposes camelCase paths, consumer resolves the
 // alias via Arg<T> + Alias). Spawns `dotnet build` against a temp project under
-// the package root that ProjectReferences TrameClient.csproj. Skipped when
+// the package root that ProjectReferences SleipnirClient.csproj. Skipped when
 // `dotnet` is not on PATH so the suite stays green on non-.NET machines.
 import { describe, it, expect } from "vitest";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
@@ -35,16 +35,16 @@ const testFn = dotnet ? it : it.skip;
 //  - single typed Call<T>
 //  - Arg<T> literal (42) + Arg<T> from Alias (o.Alias("@customerId"))
 //  - array alias (lines.Alias("@articleIds") → Arg<List<int>>)
-//  - TrameMultiCallResponse.Get<T> for scalar, object, and list results
+//  - SleipnirMultiCallResponse.Get<T> for scalar, object, and list results
 const harness = `using System.Collections.Generic;
 using System.Threading.Tasks;
-using Trame.Generated;
+using Sleipnir.Generated;
 
 public static class Program
 {
     public static async Task Main()
     {
-        var client = new TrameGeneratedClient("http://localhost:5001");
+        var client = new SleipnirGeneratedClient("http://localhost:5001");
 
         // Single typed call: Call<T> deserializes into the POCO.
         var order = await client.Call<Order>(client.Order.GetById(42));
@@ -72,19 +72,19 @@ public static class Program
 }
 `;
 
-// net8.0 console app that references the real Trame.Client runtime. Path:
-// .cs-compile → codegen → clients → Trame → TrameClient.
+// net8.0 console app that references the real Sleipnir.Client runtime. Path:
+// .cs-compile → codegen → clients → Sleipnir → SleipnirClient.
 const csproj = `<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <RootNamespace>TrameCompileGate</RootNamespace>
-    <AssemblyName>TrameCompileGate</AssemblyName>
+    <RootNamespace>SleipnirCompileGate</RootNamespace>
+    <AssemblyName>SleipnirCompileGate</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\\..\\..\\TrameClient\\TrameClient.csproj" />
+    <ProjectReference Include="..\\..\\..\\SleipnirClient\\SleipnirClient.csproj" />
   </ItemGroup>
 </Project>
 `;

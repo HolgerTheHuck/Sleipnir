@@ -4,12 +4,12 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>TrameStories.Story04</RootNamespace>
+    <RootNamespace>SleipnirStories.Story04</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\TrameServer\TrameServer.csproj" />
-    <ProjectReference Include="..\..\TrameClient\TrameClient.csproj" />
+    <ProjectReference Include="..\..\SleipnirServer\SleipnirServer.csproj" />
+    <ProjectReference Include="..\..\SleipnirClient\SleipnirClient.csproj" />
   </ItemGroup>
 
 </Project>

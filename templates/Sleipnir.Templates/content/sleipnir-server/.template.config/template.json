@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Sleipnir",
+  "classifications": ["Web", "API", "RPC"],
+  "identity": "Sleipnir.Server",
+  "name": "Sleipnir Server",
+  "shortName": "sleipnir-server",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "sourceName": "SleipnirServerTemplate",
+  "preferNameDirectory": true,
+  "description": "A minimal ASP.NET Core project with Sleipnir.Server, REST + WebSocket + SignalR, and the built-in Developer UI."
+}

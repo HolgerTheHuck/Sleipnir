@@ -1,17 +1,17 @@
-// Story 01 — The N+1 Screen. This UI consumes the trame-codegen-generated typed
+// Story 01 — The N+1 Screen. This UI consumes the sleipnir-codegen-generated typed
 // client (src/api/, produced by scripts/gen.mjs). Two ways to assemble the same
 // order-detail screen:
 //   1. "6 serial roundtrips" — six sequential awaits (order → customer → address
 //      → lines → articles → stock). StoryLatency is 30ms/call → ~180ms.
-//   2. "1 typed Trame batch" — one roundtrip; the client declares the dependency
+//   2. "1 typed Sleipnir batch" — one roundtrip; the client declares the dependency
 //      graph (exposes/alias), the server resolves it topologically → ~30ms.
 //
-// `new TrameClient("/")` issues same-origin relative /api/trame/json calls; Vite
+// `new SleipnirClient("/")` issues same-origin relative /api/sleipnir/json calls; Vite
 // proxies /api → http://localhost:5001 (the Story-01 server). No CORS, no .NET
 // changes.
 import "./style.css";
 import {
-  TrameClient,
+  SleipnirClient,
   Batch,
   type Order,
   type Customer,
@@ -20,9 +20,9 @@ import {
   type Article,
   type StockInfo,
 } from "./api/index.js";
-import type { TrameResponse } from "trame-client";
+import type { SleipnirResponse } from "sleipnir-client";
 
-const client = new TrameClient("/");
+const client = new SleipnirClient("/");
 
 interface LoadedData {
   mode: "serial" | "batch";
@@ -42,13 +42,13 @@ const app = document.getElementById("app")!;
 
 app.innerHTML = `
   <header>
-    <h1>Trame Story 01 — The N+1 Screen</h1>
+    <h1>Sleipnir Story 01 — The N+1 Screen</h1>
     <p class="lede">One order-detail screen, six dependent reads. Load it two ways and compare the roundtrips.</p>
-    <p class="lede"><a href="/Trame">Open the Trame Developer UI ↗</a> to explore the contract and send raw calls.</p>
+    <p class="lede"><a href="/Sleipnir">Open the Sleipnir Developer UI ↗</a> to explore the contract and send raw calls.</p>
   </header>
   <section class="controls">
     <button id="serial-btn" class="primary">Load — 6 serial roundtrips</button>
-    <button id="batch-btn" class="accent">Load — 1 typed Trame batch</button>
+    <button id="batch-btn" class="accent">Load — 1 typed Sleipnir batch</button>
   </section>
   <div id="status" class="status"></div>
   <div id="timing" class="timing"></div>
@@ -87,7 +87,7 @@ async function loadSerial(): Promise<LoadedData> {
   };
 }
 
-// --- Batch: one typed Trame roundtrip (server resolves the graph) -------------
+// --- Batch: one typed Sleipnir roundtrip (server resolves the graph) -------------
 async function loadBatch(): Promise<LoadedData> {
   const t0 = performance.now();
   const batch = new Batch();
@@ -103,7 +103,7 @@ async function loadBatch(): Promise<LoadedData> {
   batch.add(client.stock.getByArticles(lines.alias("@articleIds")));
   batch.add(client.address.getById(order.alias("@addressId")));
 
-  const responses: TrameResponse[] = await client.batch(batch);
+  const responses: SleipnirResponse[] = await client.batch(batch);
   // Responses return in topological order, not request order — match by id.
   const byId = new Map(responses.map((r) => [r.id, r]));
   const ms = performance.now() - t0;

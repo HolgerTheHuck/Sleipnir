@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+
+  <!--
+    Sleipnir.Server.Codegen — server-side contract export + drift-check target.
+
+    Auto-imported when this package is referenced. Runs after Build on server projects that expose
+    a Sleipnir contract (contract.sleipnir.json, or $(SleipnirContractFile)): regenerates the discovery
+    contract in-process from $(TargetPath) via the export tool and fails the build if it drifts
+    from the committed contract. Set SLEIPNIR_REGEN_GOLDEN=1 to regenerate the committed contract
+    instead of failing (the intended-change flow).
+
+    Contract file selection (in priority order):
+      1. $(SleipnirContractFile) — an explicit path (project-relative or absolute).
+      2. contract.sleipnir.json in the project directory (the default convention).
+    Set SleipnirContractEnabled=false to opt out.
+
+    The export tool runs in its own process (invoked via dotnet), isolating the server assembly
+    load from the MSBuild process — no version collisions, no locked files. The tool prints a
+    pass / drift-diff / regen message to stdout (which <Exec> echoes to the build log); this
+    target only translates the tool's exit code into a build <Error>.
+  -->
+
+  <PropertyGroup>
+    <SleipnirContractFile Condition="'$(SleipnirContractFile)' == '' AND Exists('$(MSBuildProjectDirectory)\contract.sleipnir.json')">contract.sleipnir.json</SleipnirContractFile>
+    <!-- Default tool location when consumed as a NuGet PackageReference. For in-repo dev
+         (ProjectReference), set SleipnirExportToolDll to the built tool dll before importing. -->
+    <SleipnirExportToolDll Condition="'$(SleipnirExportToolDll)' == ''">$(MSBuildThisFileDirectory)..\tasks\net8.0\Sleipnir.Server.Codegen.dll</SleipnirExportToolDll>
+    <SleipnirContractEnabled Condition="'$(SleipnirContractEnabled)' == ''">true</SleipnirContractEnabled>
+    <SleipnirRegen Condition="'$(SLEIPNIR_REGEN_GOLDEN)' == '1'">true</SleipnirRegen>
+  </PropertyGroup>
+
+  <!-- Only run on projects that actually expose a Sleipnir contract (a configured contract file).
+       Skips library/transit projects that happen to reference the NuGet but are not servers. -->
+  <Target Name="SleipnirExportDriftCheck" AfterTargets="Build"
+          Condition="'$(SleipnirContractEnabled)' != 'false' AND '$(SleipnirContractFile)' != '' AND '$(SleipnirExportToolDll)' != ''">
+
+    <PropertyGroup>
+      <_SleipnirRegenArg Condition="'$(SleipnirRegen)' == 'true'">--regen</_SleipnirRegenArg>
+    </PropertyGroup>
+
+    <!-- IgnoreExitCode=true so <Exec> never fails the build itself; the exit code is translated
+         into a build <Error> below (a custom message is clearer than the raw Exec failure). The
+         tool's stdout (pass / drift diff / regen confirmation) is echoed to the build log. -->
+    <Exec Command="dotnet &quot;$(SleipnirExportToolDll)&quot; --assembly &quot;$(TargetPath)&quot; --contract &quot;$(SleipnirContractFile)&quot; $(_SleipnirRegenArg)"
+          IgnoreExitCode="true"
+          WorkingDirectory="$(MSBuildProjectDirectory)">
+      <Output TaskParameter="ExitCode" PropertyName="SleipnirExportExitCode" />
+    </Exec>
+
+    <!-- Exit codes from the tool: 0 = ok / regenerated, 1 = drift detected, 2 = tool error. -->
+    <Error Condition="'$(SleipnirExportExitCode)' == '1'"
+           Text="Sleipnir contract drift detected: the committed $(SleipnirContractFile) does not match the server's runtime discovery. See the regenerated-vs-committed diff above. If the change is intentional, regenerate with: SLEIPNIR_REGEN_GOLDEN=1 dotnet build" />
+    <Error Condition="'$(SleipnirExportExitCode)' == '2'"
+           Text="Sleipnir export tool error (not a contract drift). See the tool output above." />
+    <Error Condition="'$(SleipnirExportExitCode)' != '0' AND '$(SleipnirExportExitCode)' != '1' AND '$(SleipnirExportExitCode)' != '2'"
+           Text="Sleipnir export tool returned unexpected exit code '$(SleipnirExportExitCode)'. See the tool output above." />
+  </Target>
+
+</Project>

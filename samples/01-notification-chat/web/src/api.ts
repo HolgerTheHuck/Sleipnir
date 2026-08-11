@@ -1,13 +1,13 @@
-import { TrameRestClient, TrameCall, TrameWebSocketClient } from 'trame-client';
-import type { TrameResponse } from 'trame-client';
+import { SleipnirRestClient, SleipnirCall, SleipnirWebSocketClient } from 'sleipnir-client';
+import type { SleipnirResponse } from 'sleipnir-client';
 
-export const rest = new TrameRestClient('/');
+export const rest = new SleipnirRestClient('/');
 
-let ws: TrameWebSocketClient | null = null;
+let ws: SleipnirWebSocketClient | null = null;
 
-export async function ensureWs(): Promise<TrameWebSocketClient> {
+export async function ensureWs(): Promise<SleipnirWebSocketClient> {
   if (!ws) {
-    ws = new TrameWebSocketClient('/', { wsPath: 'tramews' });
+    ws = new SleipnirWebSocketClient('/', { wsPath: 'sleipnirws' });
     await ws.connect();
   }
   return ws;
@@ -75,8 +75,8 @@ export async function getByType(type: Notification['type']): Promise<Notificatio
   return rest.callJson<Notification[]>('Notification', 'GetByType', { type });
 }
 
-export async function markAsRead(id: number): Promise<TrameResponse> {
-  return rest.call(TrameCall.init('Notification', 'MarkAsRead').with({ id }).toRequest());
+export async function markAsRead(id: number): Promise<SleipnirResponse> {
+  return rest.call(SleipnirCall.init('Notification', 'MarkAsRead').with({ id }).toRequest());
 }
 
 export async function sendMail(to: string, subject: string, body: string): Promise<Notification> {
@@ -125,9 +125,9 @@ export async function loadDashboardBatch(): Promise<{
   gallery: MediaItem[];
 }> {
   const res = await rest.callBatch([
-    TrameCall.init('Notification', 'GetUnreadCount').named('unread').toRequest(),
-    TrameCall.init('Chat', 'GetChats').named('chats').toRequest(),
-    TrameCall.init('Media', 'GetGallery').named('gallery').toRequest()
+    SleipnirCall.init('Notification', 'GetUnreadCount').named('unread').toRequest(),
+    SleipnirCall.init('Chat', 'GetChats').named('chats').toRequest(),
+    SleipnirCall.init('Media', 'GetGallery').named('gallery').toRequest()
   ]);
 
   const byId = new Map(res.map((r) => [r.id, r.data]));

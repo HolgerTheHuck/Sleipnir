@@ -1,14 +1,14 @@
-using TrameCore.Attributes;
+using SleipnirCore.Attributes;
 
-namespace TrameStories.Story04;
+namespace SleipnirStories.Story04;
 
 // === Story 04 Domain — "North-bound Security" =====================================
 // Eine kleine Domain, die jede Bestückungs-Variante der Auth-Postur-Matrix zeigt:
-//   - Health       : [TrameAnonymous]  → auch unauth erreichbar (Health/Ping-Pattern)
+//   - Health       : [SleipnirAnonymous]  → auch unauth erreichbar (Health/Ping-Pattern)
 //   - PublicEcho   : unbestückt         → RequireAuthentication=true ⇒ 401 unauth
-//   - SecretEcho   : [TrameAuthorise]   → verlangt Auth (Rolle egal)
-//   - AdminEcho    : [TrameAuthorise(Role="Admin")] → verlangt Auth + Admin-Rolle
-//   - (Klasse SecuredAll : Klassen-Level-[TrameAuthorise] schützt alle Methoden)
+//   - SecretEcho   : [SleipnirAuthorise]   → verlangt Auth (Rolle egal)
+//   - AdminEcho    : [SleipnirAuthorise(Role="Admin")] → verlangt Auth + Admin-Rolle
+//   - (Klasse SecuredAll : Klassen-Level-[SleipnirAuthorise] schützt alle Methoden)
 
 public sealed class Echo
 {
@@ -16,45 +16,45 @@ public sealed class Echo
     public string Caller { get; set; } = "";
 }
 
-[TrameController("Health")]
+[SleipnirController("Health")]
 public class HealthController
 {
     // Bewusst öffentlich — auch im North-Bound-Default-Deny. Typisches Health/Ping-Pattern:
-    // ein Load-Balancer-Probe ohne Token. [TrameAnonymous] optiert aus RequireAuthentication aus.
-    [TrameMethod("Ping")]
-    [TrameAnonymous]
+    // ein Load-Balancer-Probe ohne Token. [SleipnirAnonymous] optiert aus RequireAuthentication aus.
+    [SleipnirMethod("Ping")]
+    [SleipnirAnonymous]
     public string Ping() => "pong";
 }
 
-[TrameController("Echo")]
+[SleipnirController("Echo")]
 public class EchoController
 {
     // Unbestückt — im South-Bound-Default erlaubt; mit RequireAuthentication=true ⇒ 401 unauth.
-    [TrameMethod("PublicEcho")]
+    [SleipnirMethod("PublicEcho")]
     public Echo PublicEcho(string text) => new() { Text = text, Caller = "public" };
 
-    // Verlangt Auth (Rolle egal). [TrameAuthorise] greift unabhängig vom RequireAuthentication-Toggle.
-    [TrameMethod("SecretEcho")]
-    [TrameAuthorise]
+    // Verlangt Auth (Rolle egal). [SleipnirAuthorise] greift unabhängig vom RequireAuthentication-Toggle.
+    [SleipnirMethod("SecretEcho")]
+    [SleipnirAuthorise]
     public Echo SecretEcho(string text) => new() { Text = text, Caller = "secret" };
 
-    // Verlangt Auth + Admin-Rolle. trame-demo → 401; trame-admin → 200.
-    [TrameMethod("AdminEcho")]
-    [TrameAuthorise(Role = "Admin")]
+    // Verlangt Auth + Admin-Rolle. sleipnir-demo → 401; sleipnir-admin → 200.
+    [SleipnirMethod("AdminEcho")]
+    [SleipnirAuthorise(Role = "Admin")]
     public Echo AdminEcho(string text) => new() { Text = text, Caller = "admin" };
 }
 
-// Klassen-Level-[TrameAuthorise] gilt als Default für alle Methoden des Controllers.
-// North-Bound-Nutzung: ein bestückter Controller schützt alles; [TrameAnonymous] öffnet gezielt.
-[TrameController("SecuredAll")]
-[TrameAuthorise]
+// Klassen-Level-[SleipnirAuthorise] gilt als Default für alle Methoden des Controllers.
+// North-Bound-Nutzung: ein bestückter Controller schützt alles; [SleipnirAnonymous] öffnet gezielt.
+[SleipnirController("SecuredAll")]
+[SleipnirAuthorise]
 public class SecuredAllController
 {
-    [TrameMethod("Locked")]
+    [SleipnirMethod("Locked")]
     public string Locked() => "only-auth";
 
     // Methoden-Level-Opt-out schlägt den Klassen-Default.
-    [TrameMethod("Opened")]
-    [TrameAnonymous]
+    [SleipnirMethod("Opened")]
+    [SleipnirAnonymous]
     public string Opened() => "anyone";
 }

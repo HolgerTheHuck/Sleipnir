@@ -1,9 +1,9 @@
-// Kanonische Wire-Typen des Trame-Protokolls (camelCase, siehe PROTOCOL.md).
-// Port aus TrameDeveloperUi/src/lib/types/discovery.ts; Binary-Felder sind hier
+// Kanonische Wire-Typen des Sleipnir-Protokolls (camelCase, siehe PROTOCOL.md).
+// Port aus SleipnirDeveloperUi/src/lib/types/discovery.ts; Binary-Felder sind hier
 // korrekt als base64-String getypt (System.Text.Json serialisiert byte[] als
 // base64), nicht als number[].
 
-/** Ausführungsmodus für Batch-Requests (TrameMultiRequest.mode). */
+/** Ausführungsmodus für Batch-Requests (SleipnirMultiRequest.mode). */
 export enum ExecutionMode {
   /** 0 — alle Requests parallel (Dependencies werden ignoriert). */
   Parallel = 0,
@@ -11,8 +11,8 @@ export enum ExecutionMode {
   Serial = 1,
 }
 
-/** Lebenszyklus-Zustand des WebSocket-Clients (Spiegel von C# TrameConnectionState). */
-export enum TrameConnectionState {
+/** Lebenszyklus-Zustand des WebSocket-Clients (Spiegel von C# SleipnirConnectionState). */
+export enum SleipnirConnectionState {
   /** 0 — keine aktive Verbindung (vor dem ersten Connect oder nach erschöpftem Reconnect). */
   Disconnected = 0,
   /** 1 — Verbindungsaufbau läuft. */
@@ -23,16 +23,16 @@ export enum TrameConnectionState {
   Reconnecting = 3,
 }
 
-/** Strukturierter Fehler im TrameResponse.error-Feld (code != 2xx). */
-export interface TrameErrorBody {
+/** Strukturierter Fehler im SleipnirResponse.error-Feld (code != 2xx). */
+export interface SleipnirErrorBody {
   code: number;
   message: string;
   details?: string | null;
   requestId?: string | null;
 }
 
-/** Ein einzelner Parameter innerhalb von TrameRequest.params. */
-export interface TrameParameter {
+/** Ein einzelner Parameter innerhalb von SleipnirRequest.params. */
+export interface SleipnirParameter {
   /** Parametername (Server bindet danach). Bei Positionalen leer/ein Platzhalter. */
   parameterName: string;
   /** Nativer JSON-Wert (Zahl, String, Bool, Objekt, Array), kein JSON-String mehr.
@@ -43,11 +43,11 @@ export interface TrameParameter {
 }
 
 /** Einzelner RPC-Request. */
-export interface TrameRequest {
+export interface SleipnirRequest {
   controller: string;
   method: string;
-  /** Parameter als natives Array von TrameParameter (data ist nativer JSON-Wert). */
-  params?: TrameParameter[] | null;
+  /** Parameter als natives Array von SleipnirParameter (data ist nativer JSON-Wert). */
+  params?: SleipnirParameter[] | null;
   id?: string;
   /** alias → JsonPath; Werte aus dieser Response werden für Folgerequests exposed. */
   dependencyMapping?: Record<string, string> | null;
@@ -56,13 +56,13 @@ export interface TrameRequest {
 }
 
 /** Batch-Request (mehrere Calls in einem Roundtrip). */
-export interface TrameMultiRequest {
-  requests: TrameRequest[];
+export interface SleipnirMultiRequest {
+  requests: SleipnirRequest[];
   mode: ExecutionMode;
 }
 
 /** Antwort eines RPC-Calls. */
-export interface TrameResponse {
+export interface SleipnirResponse {
   /** Logischer Status-Code (im Body, nicht HTTP-Status). 200–299 = Erfolg. */
   code: number;
   /** Strukturierter Ergebniswert (roh, null bei 204/void/Fehler). Seit dem
@@ -75,7 +75,7 @@ export interface TrameResponse {
   /** Aufgelöste alias → Wert-Map für Dependency-Chaining. */
   exposedDependencies?: Record<string, string> | null;
   /** Strukturierter Fehler bei non-2xx. */
-  error?: TrameErrorBody | null;
+  error?: SleipnirErrorBody | null;
   /**
    * true, wenn code 200–299. Server-seitig `[JsonIgnore]` und aus `code`
    * abgeleitet — das Wire-Frame enthält dieses Feld NICHT. Der Client füllt
@@ -84,7 +84,7 @@ export interface TrameResponse {
   isSuccess?: boolean;
 }
 
-// --- Discovery (GET /api/trame/discovery) ---
+// --- Discovery (GET /api/sleipnir/discovery) ---
 
 export interface DiscoveryInfo {
   /** Schema version (additive-only). See docs/discovery-schema.md §11. */

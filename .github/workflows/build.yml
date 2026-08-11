@@ -25,19 +25,19 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore Trame.sln
+        run: dotnet restore Sleipnir.sln
 
       - name: Build
-        run: dotnet build Trame.sln --configuration Release --no-restore
+        run: dotnet build Sleipnir.sln --configuration Release --no-restore
 
       - name: Test
-        run: dotnet test TrameTests/TrameTests.csproj --configuration Release --no-build --verbosity normal
+        run: dotnet test SleipnirTests/SleipnirTests.csproj --configuration Release --no-build --verbosity normal
 
       - name: Check formatting
-        run: dotnet format Trame.sln --verify-no-changes --severity warn
+        run: dotnet format Sleipnir.sln --verify-no-changes --severity warn
 
       - name: Check vulnerable packages
-        run: dotnet list Trame.sln package --vulnerable
+        run: dotnet list Sleipnir.sln package --vulnerable
 
   pack:
     runs-on: ubuntu-latest
@@ -57,7 +57,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore Trame.sln
+        run: dotnet restore Sleipnir.sln
 
       - name: Determine version
         id: ver
@@ -66,18 +66,18 @@ jobs:
 
       - name: Pack NuGet packages
         run: |
-          dotnet pack TrameCommon/TrameCommon.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
-          dotnet pack TrameCore/TrameCore.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
-          dotnet pack TrameHub/TrameHub.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
-          dotnet pack TrameRest/TrameRest.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
-          dotnet pack TrameWebSocket/TrameWebSocket.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
-          dotnet pack TrameClient/TrameClient.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
-          dotnet pack TrameDeveloperUi/TrameDeveloperUi.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
-          dotnet pack TrameServer/TrameServer.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
-          dotnet pack TrameTelemetry/TrameTelemetry.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          dotnet pack SleipnirCommon/SleipnirCommon.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          dotnet pack SleipnirCore/SleipnirCore.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          dotnet pack SleipnirHub/SleipnirHub.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          dotnet pack SleipnirRest/SleipnirRest.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          dotnet pack SleipnirWebSocket/SleipnirWebSocket.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          dotnet pack SleipnirClient/SleipnirClient.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          dotnet pack SleipnirDeveloperUi/SleipnirDeveloperUi.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          dotnet pack SleipnirServer/SleipnirServer.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          dotnet pack SleipnirTelemetry/SleipnirTelemetry.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
           # .NET-native codegen trio (discovery JSON = standard contract): Roslyn source generator + server-side export/drift-check.
-          dotnet pack Trame.SourceGenerator/Trame.SourceGenerator.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
-          dotnet pack Trame.Server.Codegen/Trame.Server.Codegen.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          dotnet pack Sleipnir.SourceGenerator/Sleipnir.SourceGenerator.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          dotnet pack Sleipnir.Server.Codegen/Sleipnir.Server.Codegen.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
 
       - name: Publish to NuGet
         run: dotnet nuget push "**/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

@@ -4,12 +4,12 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>TrameStories.Story02</RootNamespace>
+    <RootNamespace>SleipnirStories.Story02</RootNamespace>
   </PropertyGroup>
 
   <!-- ProjectReference in-repo: kein Pack-Schritt, F5 läuft sofort. -->
   <ItemGroup>
-    <ProjectReference Include="..\..\TrameServer\TrameServer.csproj" />
+    <ProjectReference Include="..\..\SleipnirServer\SleipnirServer.csproj" />
   </ItemGroup>
 
 </Project>

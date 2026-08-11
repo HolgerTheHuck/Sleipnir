@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>Sleipnir.Telemetry</PackageId>
+    <Description>Optional OpenTelemetry SDK bootstrap for Sleipnir — wires the Sleipnir ActivitySource to OTLP/Console exporters with AspNetCore + HttpClient instrumentation.</Description>
+    <IsPackable>true</IsPackable>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <!-- Project README as the package README (PackageReadmeFile via Directory.Build.props). -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+  <!-- Zugriff auf den öffentlichen ActivitySource-Namen (SleipnirCore.Tracing.SleipnirTracing.ActivitySourceName).
+       Die eigentliche Instrumentierung lebt im Motor (SleipnirCore), immer-an und ohne SDK-Dependency;
+       dieses Paket bringt nur das OTel-SDK und abonniert den Quellennamen. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SleipnirCore\SleipnirCore.csproj" />
+  </ItemGroup>
+
+  <!-- OTel-SDK + Instrumentierungen + Exporter, alle im gleichen 1.16.0-Lockstep. -->
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
+  </ItemGroup>
+
+</Project>

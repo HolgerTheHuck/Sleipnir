@@ -1,0 +1,17 @@
+{
+  "name": "sleipnir-devui",
+  "version": "1.0.0",
+  "description": "Standalone Sleipnir Developer UI — konfigurierbare SPA, die auf jeden Sleipnir-Server (REST) zeigt. Eingebettet via NuGet Sleipnir.DeveloperUi; dieses Paket liefert die gehostbare Static-Site.",
+  "license": "MIT",
+  "homepage": "https://github.com/HolgerTheHuck/Sleipnir",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HolgerTheHuck/Sleipnir.git"
+  },
+  "files": [
+    "dist-standalone"
+  ],
+  "scripts": {
+    "prepack": "vite build --mode standalone"
+  }
+}

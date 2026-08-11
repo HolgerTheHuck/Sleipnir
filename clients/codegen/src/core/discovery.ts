@@ -9,8 +9,8 @@
 // broken stubs from a structurally-wrong payload.
 
 import { readFile } from "node:fs/promises";
-import { TrameRestClient } from "trame-client";
-import type { DiscoveryInfo, TypeRef } from "trame-client";
+import { SleipnirRestClient } from "sleipnir-client";
+import type { DiscoveryInfo, TypeRef } from "sleipnir-client";
 
 export interface LoadDiscoveryOptions {
   /** Bearer token when loading from a URL. */
@@ -37,13 +37,13 @@ export async function loadDiscovery(
 
 async function loadFromUrl(url: string, opts: LoadDiscoveryOptions): Promise<DiscoveryInfo> {
   // Derive baseUrl + apiPath from a discovery URL of the form
-  // `<origin>/api/trame/discovery` (the trailing `/discovery` is stripped, the
-  // leading path becomes apiPath). The TrameRestClient normalizes both.
+  // `<origin>/api/sleipnir/discovery` (the trailing `/discovery` is stripped, the
+  // leading path becomes apiPath). The SleipnirRestClient normalizes both.
   const withoutDiscovery = url.replace(/\/discovery\/?$/i, "");
   const parsed = new URL(withoutDiscovery);
   const baseUrl = `${parsed.protocol}//${parsed.host}/`;
   const apiPath = parsed.pathname.replace(/^\/+|\/+$/g, "");
-  const client = new TrameRestClient(baseUrl, {
+  const client = new SleipnirRestClient(baseUrl, {
     apiPath: apiPath || undefined,
     bearer: opts.bearer,
     callTimeout: opts.timeout,

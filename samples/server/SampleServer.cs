@@ -1,23 +1,23 @@
 // ==============================================================================
-// Trame Beispiel-Server (Drop-in) — unterstützt alle Szenarien aus samples/.
+// Sleipnir Beispiel-Server (Drop-in) — unterstützt alle Szenarien aus samples/.
 //
-// Zeigt: Controller-Deklaration via [TrameController]/[TrameMethod], DTOs als
-// Plain-POCOs (per Signatur-Inferenz in der Discovery expandiert — kein [TrameDataContract]
-// mehr nötig), Fehlerbehandlung via TrameResults, und Rückgabewerte, die
+// Zeigt: Controller-Deklaration via [SleipnirController]/[SleipnirMethod], DTOs als
+// Plain-POCOs (per Signatur-Inferenz in der Discovery expandiert — kein [SleipnirDataContract]
+// mehr nötig), Fehlerbehandlung via SleipnirResults, und Rückgabewerte, die
 // für Dependency-Chaining (@alias) geeignet sind.
 //
 // In-Memory-Store NUR für Demos — in Produktion DI-Repositories verwenden.
 // ==============================================================================
 
-using TrameCommon.Attribute;   // TrameDocumentation, TrameExample (DataContract entfällt — Inference-Default)
-using TrameCommon.Models;     // TrameResponse
-using TrameCommon.Results;     // TrameResults (Ok/NotFound/BadRequest)
-using TrameCore.Attributes;    // TrameController, TrameMethod
+using SleipnirCommon.Attribute;   // SleipnirDocumentation, SleipnirExample (DataContract entfällt — Inference-Default)
+using SleipnirCommon.Models;     // SleipnirResponse
+using SleipnirCommon.Results;     // SleipnirResults (Ok/NotFound/BadRequest)
+using SleipnirCore.Attributes;    // SleipnirController, SleipnirMethod
 
-namespace Trame.Samples.Server;
+namespace Sleipnir.Samples.Server;
 
 // --- DTOs (der Vertrag) -------------------------------------------------------
-// Plain-POCOs ohne [TrameDataContract] — die Discovery expandiert sie automatisch,
+// Plain-POCOs ohne [SleipnirDataContract] — die Discovery expandiert sie automatisch,
 // weil sie in derselben Assembly wie die Controller liegen (Signatur-Inferenz, Weg C).
 
 public class Customer
@@ -61,9 +61,9 @@ public static class DemoStore
 
     public static Task<int> CreateOrderAsync(int customerId, decimal total, CancellationToken ct)
     {
-        // Business-Validierung → Domänenfehler als TrameResponse (kein Throw).
+        // Business-Validierung → Domänenfehler als SleipnirResponse (kein Throw).
         if (!_customers.Any(c => c.Id == customerId))
-            return Task.FromResult(-1); // siehe Controller: dort → TrameResults.BadRequest
+            return Task.FromResult(-1); // siehe Controller: dort → SleipnirResults.BadRequest
 
         var o = new Order
         {
@@ -82,61 +82,61 @@ public static class DemoStore
 
 // --- Controller ---------------------------------------------------------------
 
-[TrameController("Customer")]
-[TrameDocumentation("Kunden verwalten — AddCustomer liefert die neue Id (int).")]
+[SleipnirController("Customer")]
+[SleipnirDocumentation("Kunden verwalten — AddCustomer liefert die neue Id (int).")]
 public class CustomerController
 {
-    [TrameMethod("AddCustomer")]
-    [TrameDocumentation("Legt einen Kunden an. Rückgabe: neue Id (skalarer int → JsonPath '$').")]
+    [SleipnirMethod("AddCustomer")]
+    [SleipnirDocumentation("Legt einen Kunden an. Rückgabe: neue Id (skalarer int → JsonPath '$').")]
     public Task<int> AddCustomer(string name, string email, CancellationToken ct)
         => DemoStore.AddCustomerAsync(name, email, ct);
 
-    [TrameMethod("GetCustomerById")]
-    [TrameDocumentation("Lädt einen Kunden nach Id. Rückgabe: Customer oder 404.")]
-    public async Task<TrameResponse> GetCustomerById(int id, CancellationToken ct)
+    [SleipnirMethod("GetCustomerById")]
+    [SleipnirDocumentation("Lädt einen Kunden nach Id. Rückgabe: Customer oder 404.")]
+    public async Task<SleipnirResponse> GetCustomerById(int id, CancellationToken ct)
     {
         var c = await DemoStore.GetCustomerByIdAsync(id, ct);
         return c is null
-            ? TrameResults.NotFound($"Kunde {id} nicht gefunden")
-            : TrameResults.Ok(c);
+            ? SleipnirResults.NotFound($"Kunde {id} nicht gefunden")
+            : SleipnirResults.Ok(c);
     }
 
-    [TrameMethod("GetAllCustomers")]
-    [TrameDocumentation("Alle Kunden. Rückgabe: Liste → JsonPath '$[0].Id' für das erste Element.")]
+    [SleipnirMethod("GetAllCustomers")]
+    [SleipnirDocumentation("Alle Kunden. Rückgabe: Liste → JsonPath '$[0].Id' für das erste Element.")]
     public Task<IReadOnlyList<Customer>> GetAllCustomers(CancellationToken ct)
         => DemoStore.GetAllCustomersAsync(ct);
 }
 
-[TrameController("Order")]
-[TrameDocumentation("Bestellungen verwalten — CreateOrder liefert die neue OrderId (int).")]
+[SleipnirController("Order")]
+[SleipnirDocumentation("Bestellungen verwalten — CreateOrder liefert die neue OrderId (int).")]
 public class OrderController
 {
-    [TrameMethod("CreateOrder")]
-    [TrameDocumentation("Legt eine Bestellung an. Parameter: customerId, total. Rückgabe: neue OrderId.")]
-    public async Task<TrameResponse> CreateOrder(int customerId, decimal total, CancellationToken ct)
+    [SleipnirMethod("CreateOrder")]
+    [SleipnirDocumentation("Legt eine Bestellung an. Parameter: customerId, total. Rückgabe: neue OrderId.")]
+    public async Task<SleipnirResponse> CreateOrder(int customerId, decimal total, CancellationToken ct)
     {
         var orderId = await DemoStore.CreateOrderAsync(customerId, total, ct);
-        // Domänenfehler → TrameResponse (Code+Message erreichen den Client unverfälscht).
+        // Domänenfehler → SleipnirResponse (Code+Message erreichen den Client unverfälscht).
         return orderId < 0
-            ? TrameResults.BadRequest($"Kunde {customerId} existiert nicht")
-            : TrameResults.Ok(orderId); // skalarer int → JsonPath "$"
+            ? SleipnirResults.BadRequest($"Kunde {customerId} existiert nicht")
+            : SleipnirResults.Ok(orderId); // skalarer int → JsonPath "$"
     }
 
-    [TrameMethod("GetOrderById")]
-    [TrameDocumentation("Lädt eine Bestellung nach Id. Rückgabe: Order oder 404.")]
-    public async Task<TrameResponse> GetOrderById(int id, CancellationToken ct)
+    [SleipnirMethod("GetOrderById")]
+    [SleipnirDocumentation("Lädt eine Bestellung nach Id. Rückgabe: Order oder 404.")]
+    public async Task<SleipnirResponse> GetOrderById(int id, CancellationToken ct)
     {
         var o = await DemoStore.GetOrderByIdAsync(id, ct);
         return o is null
-            ? TrameResults.NotFound($"Bestellung {id} nicht gefunden")
-            : TrameResults.Ok(o);
+            ? SleipnirResults.NotFound($"Bestellung {id} nicht gefunden")
+            : SleipnirResults.Ok(o);
     }
 }
 
 // --- Server-Setup -------------------------------------------------------------
 // Das ausführbare Setup liegt in Program.cs (dieses Verzeichnis) — drei Zeilen
-// Trame-Wiring (AddTrame → UseTrameTransports → MapTrame). Die [TrameController]-
+// Sleipnir-Wiring (AddSleipnir → UseSleipnirTransports → MapSleipnir). Die [SleipnirController]-
 // Typen dieser Datei werden per Attribut-Scan automatisch gefunden und beim
-// Aufruf von UseTrame() im Invoker registriert — keine manuelle Registrierung.
+// Aufruf von UseSleipnir() im Invoker registriert — keine manuelle Registrierung.
 //
 // Start:  dotnet run --project samples/server/SampleServer.csproj

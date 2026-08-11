@@ -1,21 +1,21 @@
-using TrameCore.Attributes;
-using Trame.Samples.NotificationChat.Server.Data;
-using Trame.Samples.NotificationChat.Server.Models;
+using SleipnirCore.Attributes;
+using Sleipnir.Samples.NotificationChat.Server.Data;
+using Sleipnir.Samples.NotificationChat.Server.Models;
 
-namespace Trame.Samples.NotificationChat.Server.Controllers;
+namespace Sleipnir.Samples.NotificationChat.Server.Controllers;
 
-[TrameController("Media")]
+[SleipnirController("Media")]
 public class MediaController(INotificationStore store)
 {
-    [TrameMethod("GetGallery")]
+    [SleipnirMethod("GetGallery")]
     public IReadOnlyList<MediaItem> GetGallery()
         => store.GetGallery();
 
-    [TrameMethod("GetById")]
+    [SleipnirMethod("GetById")]
     public MediaItem? GetById(int id)
         => store.GetMedia(id);
 
-    [TrameMethod("UploadImage")]
+    [SleipnirMethod("UploadImage")]
     public MediaItem UploadImage(string url, string mimeType, long sizeBytes, string? thumbnailUrl = null)
     {
         var item = new MediaItem
@@ -29,7 +29,7 @@ public class MediaController(INotificationStore store)
         return store.AddMedia(item);
     }
 
-    [TrameMethod("UploadVideo")]
+    [SleipnirMethod("UploadVideo")]
     public MediaItem UploadVideo(string url, string mimeType, long sizeBytes, string? thumbnailUrl = null)
     {
         var item = new MediaItem

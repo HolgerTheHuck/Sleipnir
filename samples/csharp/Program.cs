@@ -1,5 +1,5 @@
 // ==============================================================================
-// Trame C#-Client-Samples — Runner.
+// Sleipnir C#-Client-Samples — Runner.
 //
 // Startet die Szenarien 1–4 gegen den laufenden Sample-Server
 // (samples/server). Aufruf:
@@ -13,9 +13,9 @@
 //   dotnet run --project samples/server/SampleServer.csproj
 // ==============================================================================
 
-using Trame.Samples.CSharp;
-using TrameClient.Trame;
-using TrameCommon.Models;
+using Sleipnir.Samples.CSharp;
+using SleipnirClient.Sleipnir;
+using SleipnirCommon.Models;
 
 const string baseUrl = "https://localhost:5001";
 
@@ -23,7 +23,7 @@ var which = args.Length > 0 ? args[0].Trim() : "all";
 
 // Szenario-Tabelle: Nummer → (Titel, Runner). Runner bekommt einen frischen
 // REST-Client, sodass jedes Szenario isoliert ist.
-var scenarios = new Dictionary<string, (string Titel, Func<TrameRestJsonClient, TextWriter, Task> Run)>
+var scenarios = new Dictionary<string, (string Titel, Func<SleipnirRestJsonClient, TextWriter, Task> Run)>
 {
     ["1"] = ("01 — Single Call",        SingleCallScenario.RunAsync),
     ["2"] = ("02 — Batch Parallel",     BatchParallelScenario.RunAsync),
@@ -48,7 +48,7 @@ foreach (var key in toRun)
     Console.WriteLine($"  {s.Titel}");
     Console.WriteLine(new string('=', 78));
 
-    using var client = new TrameRestJsonClient(baseUrl);
+    using var client = new SleipnirRestJsonClient(baseUrl);
     try
     {
         await s.Run(client, Console.Out);

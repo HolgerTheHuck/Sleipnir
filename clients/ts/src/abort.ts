@@ -38,7 +38,7 @@ export function linkAbortSignal(
   if (timeoutMs && timeoutMs > 0 && !controller.signal.aborted) {
     timer = setTimeout(() => {
       timedOut = true;
-      controller.abort(new Error("Trame call timed out."));
+      controller.abort(new Error("Sleipnir call timed out."));
     }, timeoutMs);
   }
 

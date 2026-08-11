@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -e
-cd D:/Develop/Trame
+cd D:/Own/Sleipnir/Sleipnir
 echo "=== BUILD ==="
-dotnet build TrameBench/TrameBench.csproj -c Release > /dev/null 2>&1
-DLL="D:/Develop/Trame/TrameBench/bin/Release/net8.0/TrameBench.dll"
+dotnet build SleipnirBench/SleipnirBench.csproj -c Release > /dev/null 2>&1
+DLL="D:/Own/Sleipnir/Sleipnir/SleipnirBench/bin/Release/net8.0/SleipnirBench.dll"
 rm -f bench-stable.log
 for i in 1 2 3; do
   echo "=== RUN $i ==="

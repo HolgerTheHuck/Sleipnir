@@ -4,8 +4,8 @@
 // set at the call site by the generated controller method. `exposes` takes
 // `path: keyof TPaths` and the alias type is `TPaths[path]` — so path and alias
 // validity are compile-checked without a (structurally ambiguous) lookup over T.
-import { TrameCall, ExecutionMode } from "trame-client";
-import type { TrameRequest, TrameMultiRequest, TrameResponse } from "trame-client";
+import { SleipnirCall, ExecutionMode } from "sleipnir-client";
+import type { SleipnirRequest, SleipnirMultiRequest, SleipnirResponse } from "sleipnir-client";
 import type { StockInfo, OrderLine, Article, Order, Customer, Address } from "./types.js";
 
 export interface StockInfoPaths {
@@ -172,15 +172,15 @@ export interface _VoidPaths {}
 export type PathTypes = Record<string, unknown>;
 
 /**
- * A typed single call wrapping a trame-client {@link TrameCall}. `TPaths` is
+ * A typed single call wrapping a sleipnir-client {@link SleipnirCall}. `TPaths` is
  * the generated path-type record for this call's return type.
  */
 export class TypedCall<T, TPaths = PathTypes> {
-  constructor(public readonly _call: TrameCall) {}
+  constructor(public readonly _call: SleipnirCall) {}
   /** Set the request id (correlation). */
   named(id: string): this { this._call.named(id); return this; }
   /** Materialize the wire request. */
-  toRequest(): TrameRequest { return this._call.toRequest(); }
+  toRequest(): SleipnirRequest { return this._call.toRequest(); }
 }
 
 /**
@@ -189,13 +189,13 @@ export class TypedCall<T, TPaths = PathTypes> {
  * at compile time so `alias("@x")` returns the producer's exposed type.
  */
 export class TypedRequest<T, TPaths = PathTypes, A extends Record<string, unknown> = {}> {
-  /** @internal */ _call: TrameCall;
+  /** @internal */ _call: SleipnirCall;
   constructor(call: TypedCall<T, TPaths>) { this._call = call._call; }
   /**
    * Declare that this call exposes `path` as `alias`. Compile-time-checked.
    * The wire `dependencyMapping` key is the alias **without** the leading `@`
    * (the server strips `@` from a consumer's `@alias` placeholder before
-   * lookup — see TrameInvoker.ReplaceDependencyByAliasCore), so we strip it
+   * lookup — see SleipnirInvoker.ReplaceDependencyByAliasCore), so we strip it
    * here. The alias type (`TPaths[path]`) is tracked regardless.
    */
   exposes<P extends string & keyof TPaths, Aname extends string>(path: P, alias: Aname): TypedRequest<T, TPaths, A & Record<Aname, TPaths[P]>> {
@@ -208,13 +208,13 @@ export class TypedRequest<T, TPaths = PathTypes, A extends Record<string, unknow
    * Resolve a previously-declared alias to its typed value (for a consumer param).
    * At runtime this returns the literal `@alias` placeholder string — the wire
    * value the server substitutes in Serial/topological mode (mirrors
-   * `TrameCall.withAlias("@x")`, which sets `data: "@x"`). The compile-time type
+   * `SleipnirCall.withAlias("@x")`, which sets `data: "@x"`). The compile-time type
    * is the producer's exposed type, so the consumer param typechecks.
    */
   alias<Aname extends string & keyof A>(name: Aname): A[Aname] {
     return name as unknown as A[Aname];
   }
-  /** @internal */ toRequest(): TrameRequest { return this._call.toRequest(); }
+  /** @internal */ toRequest(): SleipnirRequest { return this._call.toRequest(); }
 }
 
 /**
@@ -230,7 +230,7 @@ export class Batch<A extends Record<string, unknown> = {}> {
     return r;
   }
   /** Build the wire multi-request (Serial). */
-  toMulti(): TrameMultiRequest {
-    return TrameCall.batch(this._requests.map((r) => r.toRequest()), ExecutionMode.Serial);
+  toMulti(): SleipnirMultiRequest {
+    return SleipnirCall.batch(this._requests.map((r) => r.toRequest()), ExecutionMode.Serial);
   }
 }

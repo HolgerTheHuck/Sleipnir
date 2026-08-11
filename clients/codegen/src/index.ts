@@ -1,13 +1,13 @@
-// trame-codegen — typed client stub generator for Trame.
+// sleipnir-codegen — typed client stub generator for Sleipnir.
 //
 // One pure-TS core emits typed clients in TypeScript / JavaScript (C# + Python
 // ship in Increment 2). Consumes the runtime discovery payload
-// (`GET /api/trame/discovery`) as the contract spec. See CLIENT_GENERATION.md
+// (`GET /api/sleipnir/discovery`) as the contract spec. See CLIENT_GENERATION.md
 // for the roadmap and design rationale.
 //
 // This barrel is **browser-safe** (no Node-only imports) so the DevUI and any
-// browser consumer can import `trame-codegen` directly. Node-only entry points
-// — discovery loading (fs, stdin) — live in `trame-codegen/node`.
+// browser consumer can import `sleipnir-codegen` directly. Node-only entry points
+// — discovery loading (fs, stdin) — live in `sleipnir-codegen/node`.
 
 // Casing + scalars — the wire-correctness primitives.
 export { toCamelCase, shortName, pascalCase } from "./core/casing.js";

@@ -1,40 +1,40 @@
-// Trame JavaScript/TypeScript Client — öffentliche API.
+// Sleipnir JavaScript/TypeScript Client — öffentliche API.
 // Siehe PROTOCOL.md für das Wire-Format und clients/ts/README.md für Nutzung.
 
 export * from "./types.js";
-export { TrameError, CancelledError, isCancelled } from "./errors.js";
-export { TrameCall } from "./fluent.js";
+export { SleipnirError, CancelledError, isCancelled } from "./errors.js";
+export { SleipnirCall } from "./fluent.js";
 export {
-  TrameRestClient,
-  type TrameRestClientOptions,
+  SleipnirRestClient,
+  type SleipnirRestClientOptions,
   type CallOptions,
 } from "./rest.js";
 export {
-  TrameWebSocketClient,
-  type TrameWebSocketClientOptions,
+  SleipnirWebSocketClient,
+  type SleipnirWebSocketClientOptions,
   type WsCallOptions,
   type IWebSocket,
   type WsFactory,
 } from "./websocket.js";
 export { buildParams, buildSingle, buildMulti, toBase64, fromBase64 } from "./request.js";
 
-import { TrameRestClient, type TrameRestClientOptions } from "./rest.js";
+import { SleipnirRestClient, type SleipnirRestClientOptions } from "./rest.js";
 import {
-  TrameWebSocketClient,
-  type TrameWebSocketClientOptions,
+  SleipnirWebSocketClient,
+  type SleipnirWebSocketClientOptions,
 } from "./websocket.js";
 
 /** Gemeinsame Bearer/Timeout-Optionen für createClient. */
 export interface CreateClientOptions {
   bearer?: string;
   callTimeout?: number;
-  rest?: Omit<TrameRestClientOptions, "bearer" | "callTimeout">;
-  ws?: Omit<TrameWebSocketClientOptions, "bearer" | "callTimeout">;
+  rest?: Omit<SleipnirRestClientOptions, "bearer" | "callTimeout">;
+  ws?: Omit<SleipnirWebSocketClientOptions, "bearer" | "callTimeout">;
 }
 
-export interface TrameClient {
-  rest: TrameRestClient;
-  ws: TrameWebSocketClient;
+export interface SleipnirClient {
+  rest: SleipnirRestClient;
+  ws: SleipnirWebSocketClient;
 }
 
 /**
@@ -47,10 +47,10 @@ export interface TrameClient {
  * const wsClient = ws; await wsClient.connect();
  * ```
  */
-export function createClient(baseUrl: string, options: CreateClientOptions = {}): TrameClient {
+export function createClient(baseUrl: string, options: CreateClientOptions = {}): SleipnirClient {
   const { bearer, callTimeout, rest, ws } = options;
   return {
-    rest: new TrameRestClient(baseUrl, { ...rest, bearer, callTimeout }),
-    ws: new TrameWebSocketClient(baseUrl, { ...ws, bearer, callTimeout }),
+    rest: new SleipnirRestClient(baseUrl, { ...rest, bearer, callTimeout }),
+    ws: new SleipnirWebSocketClient(baseUrl, { ...ws, bearer, callTimeout }),
   };
 }

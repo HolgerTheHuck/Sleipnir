@@ -34,11 +34,11 @@ describe("NamingResolver", () => {
   it("Story-01 has no collisions, so names stay short", () => {
     const r = new NamingResolver();
     for (const t of [
-      "TrameStories.Story01.Order",
-      "TrameStories.Story01.Customer",
-      "TrameStories.Story01.OrderLine",
+      "SleipnirStories.Story01.Order",
+      "SleipnirStories.Story01.Customer",
+      "SleipnirStories.Story01.OrderLine",
     ]) r.register(t);
-    expect(r.resolve("TrameStories.Story01.Order")).toBe("Order");
-    expect(r.resolve("TrameStories.Story01.Customer")).toBe("Customer");
+    expect(r.resolve("SleipnirStories.Story01.Order")).toBe("Order");
+    expect(r.resolve("SleipnirStories.Story01.Customer")).toBe("Customer");
   });
 });

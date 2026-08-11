@@ -1,17 +1,17 @@
 import { linkAbortSignal } from "./abort.js";
-import { TrameError, CancelledError } from "./errors.js";
+import { SleipnirError, CancelledError } from "./errors.js";
 import { buildSingle, buildMulti, fromBase64, normalizeResponse, normalizeResponses } from "./request.js";
 import { ExecutionMode } from "./types.js";
 import type {
   DiscoveryInfo,
-  TrameMultiRequest,
-  TrameRequest,
-  TrameResponse,
+  SleipnirMultiRequest,
+  SleipnirRequest,
+  SleipnirResponse,
 } from "./types.js";
 
 /** Pro-Call-Optionen für einen REST-Aufruf. */
 export interface CallOptions {
-  /** Abbruch-Signal (Browser/Node); wirft CancelledError, nicht TrameError. */
+  /** Abbruch-Signal (Browser/Node); wirft CancelledError, nicht SleipnirError. */
   signal?: AbortSignal;
   /** Zusätzliche Header (z. B. Trace-Ids). */
   headers?: Record<string, string>;
@@ -26,7 +26,7 @@ export type FetchLike = (
 ) => Promise<Response>;
 
 /** Optionen für den REST-Client. */
-export interface TrameRestClientOptions {
+export interface SleipnirRestClientOptions {
   /** Injizierbares fetch (Tests / älteres Node). Default: globales fetch. */
   fetch?: FetchLike;
   /** Standard-Header für jeden Request. */
@@ -35,20 +35,20 @@ export interface TrameRestClientOptions {
   bearer?: string;
   /** Call-Timeout in ms. */
   callTimeout?: number;
-  /** REST-Basispfad (Default "api/trame"); Slashes werden abgeschnitten. */
+  /** REST-Basispfad (Default "api/sleipnir"); Slashes werden abgeschnitten. */
   apiPath?: string;
 }
 
 /**
- * REST-Client für Trame (HTTP/1.1 + JSON), isomorph via globalem `fetch`.
+ * REST-Client für Sleipnir (HTTP/1.1 + JSON), isomorph via globalem `fetch`.
  *
- * `call`/`callBatch`/`discover` liefern die rohe {@link TrameResponse} bzw. das
+ * `call`/`callBatch`/`discover` liefern die rohe {@link SleipnirResponse} bzw. das
  * Array und werfen nur bei **Transportfehlern** (Netzwerk, non-2xx HTTP) bzw.
  * Abbruch. Logische Nicht-2xx-Codes (im 200-Body) werden zurückgegeben — prüfe
  * `response.isSuccess`/`response.error`. `callJson`/`callBinary` werfen bei
  * logischem Nicht-2xx (Spiegel der C#-Methoden Call<T>/CallBinary).
  */
-export class TrameRestClient {
+export class SleipnirRestClient {
   private readonly _baseUrl: string;
   private readonly _apiPath: string;
   private readonly _fetch: FetchLike;
@@ -56,12 +56,12 @@ export class TrameRestClient {
   private readonly _bearer?: string;
   private readonly _callTimeout?: number;
 
-  constructor(baseUrl: string, options: TrameRestClientOptions = {}) {
+  constructor(baseUrl: string, options: SleipnirRestClientOptions = {}) {
     if (!baseUrl || baseUrl.trim().length === 0) {
-      throw new Error("TrameRestClient: baseUrl darf nicht leer sein.");
+      throw new Error("SleipnirRestClient: baseUrl darf nicht leer sein.");
     }
     this._baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
-    this._apiPath = (options.apiPath ?? "api/trame").replace(/^\/+|\/+$/g, "");
+    this._apiPath = (options.apiPath ?? "api/sleipnir").replace(/^\/+|\/+$/g, "");
     // Globales `fetch` unbinded speichern und später als `this._fetch(...)` rufen
     // würde im Browser "Illegal invocation" werfen — Browser-fetch verlangt
     // `window`/`globalThis` als Receiver. An `globalThis` binden macht den Default
@@ -74,20 +74,20 @@ export class TrameRestClient {
   }
 
   /** Sendet einen einzelnen Request (überlädt: pre-built oder (controller,method,params)). */
-  async call(req: TrameRequest, opts?: CallOptions): Promise<TrameResponse>;
+  async call(req: SleipnirRequest, opts?: CallOptions): Promise<SleipnirResponse>;
   async call(
     controller: string,
     method: string,
     params?: Record<string, unknown> | unknown[],
     opts?: CallOptions,
-  ): Promise<TrameResponse>;
+  ): Promise<SleipnirResponse>;
   async call(
-    reqOrController: TrameRequest | string,
+    reqOrController: SleipnirRequest | string,
     methodOrOpts?: string | CallOptions,
     params?: Record<string, unknown> | unknown[],
     opts?: CallOptions,
-  ): Promise<TrameResponse> {
-    let request: TrameRequest;
+  ): Promise<SleipnirResponse> {
+    let request: SleipnirRequest;
     let callOpts: CallOptions | undefined;
     if (typeof reqOrController === "string") {
       request = buildSingle({
@@ -110,9 +110,9 @@ export class TrameRestClient {
     params?: Record<string, unknown> | unknown[],
     opts?: CallOptions,
   ): Promise<T | null>;
-  async callJson<T>(req: TrameRequest, opts?: CallOptions): Promise<T | null>;
+  async callJson<T>(req: SleipnirRequest, opts?: CallOptions): Promise<T | null>;
   async callJson<T>(
-    reqOrController: TrameRequest | string,
+    reqOrController: SleipnirRequest | string,
     methodOrOpts?: string | CallOptions,
     params?: Record<string, unknown> | unknown[],
     opts?: CallOptions,
@@ -131,9 +131,9 @@ export class TrameRestClient {
     params?: Record<string, unknown> | unknown[],
     opts?: CallOptions,
   ): Promise<Uint8Array | null>;
-  async callBinary(req: TrameRequest, opts?: CallOptions): Promise<Uint8Array | null>;
+  async callBinary(req: SleipnirRequest, opts?: CallOptions): Promise<Uint8Array | null>;
   async callBinary(
-    reqOrController: TrameRequest | string,
+    reqOrController: SleipnirRequest | string,
     methodOrOpts?: string | CallOptions,
     params?: Record<string, unknown> | unknown[],
     opts?: CallOptions,
@@ -142,20 +142,20 @@ export class TrameRestClient {
       typeof reqOrController === "string"
         ? await this.call(reqOrController, methodOrOpts as string, params, opts)
         : await this.call(reqOrController, (methodOrOpts as CallOptions) ?? opts);
-    if (!response.isSuccess) throw TrameError.fromResponse(response);
+    if (!response.isSuccess) throw SleipnirError.fromResponse(response);
     return response.content ? fromBase64(response.content) : null;
   }
 
   /** Sendet einen Batch (Multi-Request). Auto-Setzt leere Ids auf `controller.method`. */
   async callBatch(
-    requests: TrameRequest[],
+    requests: SleipnirRequest[],
     mode: ExecutionMode = ExecutionMode.Parallel,
     opts?: CallOptions,
-  ): Promise<TrameResponse[]> {
+  ): Promise<SleipnirResponse[]> {
     const normalized = requests.map((r) =>
       r.id ? r : { ...r, id: `${r.controller}.${r.method}` },
     );
-    const multi: TrameMultiRequest = buildMulti(normalized, mode);
+    const multi: SleipnirMultiRequest = buildMulti(normalized, mode);
     const result = await this.postJsonArray(
       `${this._baseUrl}${this._apiPath}/json/multi`,
       multi,
@@ -165,7 +165,7 @@ export class TrameRestClient {
     return result;
   }
 
-  /** Ruft die Discovery-Metadaten ab (GET /api/trame/discovery). */
+  /** Ruft die Discovery-Metadaten ab (GET /api/sleipnir/discovery). */
   async discover(opts?: CallOptions): Promise<DiscoveryInfo> {
     const url = `${this._baseUrl}${this._apiPath}/discovery`;
     const { signal, clear, isTimeout } = linkAbortSignal(
@@ -180,7 +180,7 @@ export class TrameRestClient {
       });
       if (!response.ok) {
         const text = await safeReadText(response);
-        throw new TrameError(response.status, `HTTP Error: ${response.status}`, {
+        throw new SleipnirError(response.status, `HTTP Error: ${response.status}`, {
           details: text,
         });
       }
@@ -203,7 +203,7 @@ export class TrameRestClient {
     url: string,
     body: unknown,
     opts?: CallOptions,
-  ): Promise<TrameResponse> {
+  ): Promise<SleipnirResponse> {
     const { signal, clear, isTimeout } = linkAbortSignal(
       opts?.signal,
       opts?.timeout ?? this._callTimeout,
@@ -218,22 +218,22 @@ export class TrameRestClient {
       const text = await safeReadText(response);
       if (!response.ok) {
         // Transport-Level-Fehler (400/429/499 …) -> synthetische Response
-        // (Spiegel C# TrameRestJsonClient non-2xx-Pfad).
+        // (Spiegel C# SleipnirRestJsonClient non-2xx-Pfad).
         return {
           code: response.status,
-          id: (body as TrameRequest)?.id ?? null,
+          id: (body as SleipnirRequest)?.id ?? null,
           content: null,
           exposedDependencies: null,
           error: {
             code: response.status,
             message: `HTTP Error: ${response.status}`,
             details: text,
-            requestId: (body as TrameRequest)?.id ?? null,
+            requestId: (body as SleipnirRequest)?.id ?? null,
           },
           isSuccess: false,
         };
       }
-      return normalizeResponse(JSON.parse(text) as TrameResponse);
+      return normalizeResponse(JSON.parse(text) as SleipnirResponse);
     } catch (err) {
       throw toTransportError(err, isTimeout);
     } finally {
@@ -243,10 +243,10 @@ export class TrameRestClient {
 
   private async postJsonArray(
     url: string,
-    body: TrameMultiRequest,
+    body: SleipnirMultiRequest,
     firstId: string | undefined,
     opts?: CallOptions,
-  ): Promise<TrameResponse[]> {
+  ): Promise<SleipnirResponse[]> {
     const { signal, clear, isTimeout } = linkAbortSignal(
       opts?.signal,
       opts?.timeout ?? this._callTimeout,
@@ -277,7 +277,7 @@ export class TrameRestClient {
         ];
       }
       const parsed = JSON.parse(text);
-      return Array.isArray(parsed) ? normalizeResponses(parsed as TrameResponse[]) : [];
+      return Array.isArray(parsed) ? normalizeResponses(parsed as SleipnirResponse[]) : [];
     } catch (err) {
       throw toTransportError(err, isTimeout);
     } finally {
@@ -295,14 +295,14 @@ export class TrameRestClient {
 
 // --- Shared Helpers ---
 
-/** Gibt response.data als T zurück; wirft bei Nicht-2xx TrameError (Spiegel Call<T>).
+/** Gibt response.data als T zurück; wirft bei Nicht-2xx SleipnirError (Spiegel Call<T>).
  *  Seit dem Single-Pass-Fix ist data bereits ein strukturierter Wert (kein JSON-String
  *  mehr) — kein client-seitiges JSON.parse nötig. */
-function parseData<T>(response: TrameResponse): T | null {
+function parseData<T>(response: SleipnirResponse): T | null {
   if (response.isSuccess && response.data != null) {
     return response.data as T;
   }
-  if (!response.isSuccess) throw TrameError.fromResponse(response);
+  if (!response.isSuccess) throw SleipnirError.fromResponse(response);
   return null; // 204 / void
 }
 
@@ -317,10 +317,10 @@ async function safeReadText(response: Response): Promise<string> {
 /**
  * Mapt einen fetch-Fehler auf die richtige Client-Exception:
  * - Abbruch (AbortError/aborted) → CancelledError (unverpackt; timedOut, wenn Timeout).
- * - sonst → TrameError(0, "Transport error", cause).
+ * - sonst → SleipnirError(0, "Transport error", cause).
  */
 function toTransportError(err: unknown, isTimeout: () => boolean): Error {
-  if (err instanceof TrameError || err instanceof CancelledError) return err;
+  if (err instanceof SleipnirError || err instanceof CancelledError) return err;
   if (err instanceof Error) {
     const aborted =
       err.name === "AbortError" ||
@@ -328,11 +328,11 @@ function toTransportError(err: unknown, isTimeout: () => boolean): Error {
     if (aborted) {
       const timedOut = isTimeout();
       return new CancelledError(
-        timedOut ? "Trame call timed out." : "Trame call was cancelled.",
+        timedOut ? "Sleipnir call timed out." : "Sleipnir call was cancelled.",
         timedOut,
       );
     }
-    return new TrameError(0, `Transport error: ${err.message}`, { cause: err });
+    return new SleipnirError(0, `Transport error: ${err.message}`, { cause: err });
   }
-  return new TrameError(0, "Transport error: unknown failure.", { cause: err });
+  return new SleipnirError(0, "Transport error: unknown failure.", { cause: err });
 }

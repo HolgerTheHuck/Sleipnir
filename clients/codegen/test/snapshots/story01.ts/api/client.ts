@@ -1,6 +1,6 @@
-// Auto-generated root Trame client. Compose with the trame-client runtime.
-import { TrameCall, TrameRestClient, ExecutionMode } from "trame-client";
-import type { TrameRestClientOptions, TrameResponse } from "trame-client";
+// Auto-generated root Sleipnir client. Compose with the sleipnir-client runtime.
+import { SleipnirCall, SleipnirRestClient, ExecutionMode } from "sleipnir-client";
+import type { SleipnirRestClientOptions, SleipnirResponse } from "sleipnir-client";
 import { Batch, TypedCall } from "./typed-call.js";
 import { StockClient } from "./controllers.js";
 import { OrderLineClient } from "./controllers.js";
@@ -9,11 +9,11 @@ import { OrderClient } from "./controllers.js";
 import { CustomerClient } from "./controllers.js";
 import { AddressClient } from "./controllers.js";
 
-/** A TrameResponse whose `data` is narrowed to T (the wire shape is unchanged). */
-export type TypedResponse<T> = TrameResponse & { data: T | null };
+/** A SleipnirResponse whose `data` is narrowed to T (the wire shape is unchanged). */
+export type TypedResponse<T> = SleipnirResponse & { data: T | null };
 
-export class TrameClient {
-  private readonly _rest: TrameRestClient;
+export class SleipnirClient {
+  private readonly _rest: SleipnirRestClient;
   readonly stock: StockClient;
   readonly orderLine: OrderLineClient;
   readonly article: ArticleClient;
@@ -21,9 +21,9 @@ export class TrameClient {
   readonly customer: CustomerClient;
   readonly address: AddressClient;
 
-  constructor(baseUrl: string, options: TrameRestClientOptions = {}) {
-    this._rest = new TrameRestClient(baseUrl, options);
-    const build = (controller: string, method: string) => TrameCall.init(controller, method);
+  constructor(baseUrl: string, options: SleipnirRestClientOptions = {}) {
+    this._rest = new SleipnirRestClient(baseUrl, options);
+    const build = (controller: string, method: string) => SleipnirCall.init(controller, method);
     this.stock = new StockClient(build);
     this.orderLine = new OrderLineClient(build);
     this.article = new ArticleClient(build);
@@ -38,11 +38,11 @@ export class TrameClient {
   }
 
   /** Execute a typed batch (Serial — required for @alias resolution). */
-  async batch<A extends Record<string, unknown>>(b: Batch<A>): Promise<TrameResponse[]> {
+  async batch<A extends Record<string, unknown>>(b: Batch<A>): Promise<SleipnirResponse[]> {
     const multi = b.toMulti();
     return this._rest.callBatch(multi.requests, multi.mode);
   }
 
   /** The underlying REST client (escape hatch for raw calls). */
-  get rest(): TrameRestClient { return this._rest; }
+  get rest(): SleipnirRestClient { return this._rest; }
 }

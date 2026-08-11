@@ -1,11 +1,11 @@
 using System.Linq.Expressions;
 using System.Text;
 
-namespace Trame.Spike.LinqProvider;
+namespace Sleipnir.Spike.LinqProvider;
 
 /// <summary>
 /// Übersetzt einen Selector-Expression-Körper in einen ergebnisrelativen JsonPath
-/// (Konvention des Trame-Dependency-Chaining: Wurzel "$" ist das serialisierte
+/// (Konvention des Sleipnir-Dependency-Chaining: Wurzel "$" ist das serialisierte
 /// Resultat, Eigenschaften sind camelCase — der Server serialisiert Antworten mit
 /// JsonNamingPolicy.CamelCase, und JsonPath ist case-sensitiv gegen das Wire-Dokument,
 /// daher MUSS der Pfad camelCase sein, sonst trifft er nichts). Listen-Elemente über [i].

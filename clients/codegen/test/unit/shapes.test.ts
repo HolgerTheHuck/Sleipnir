@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { TypeRef } from "trame-client";
+import type { TypeRef } from "sleipnir-client";
 import {
   shapeFromRef, returnShape, paramShape, lookupTypeMeta, findProperty,
 } from "../../src/core/shapes.js";
@@ -29,12 +29,12 @@ describe("shapeFromRef", () => {
     expect(s.acceptsAny).toBe(true);
   });
   it("resolves an object ref to object + typeMeta", () => {
-    const s = shapeFromRef(ref("TrameStories.Story01.Order"), discovery);
+    const s = shapeFromRef(ref("SleipnirStories.Story01.Order"), discovery);
     expect(s.kind).toBe("object");
     expect(s.typeMeta).toBeTruthy();
   });
   it("maps opaque to unknown + acceptsAny", () => {
-    const s = shapeFromRef(opaque("TrameResponse"), null);
+    const s = shapeFromRef(opaque("SleipnirResponse"), null);
     expect(s.kind).toBe("unknown");
     expect(s.acceptsAny).toBe(true);
   });
@@ -79,11 +79,11 @@ describe("paramShape", () => {
 
 describe("lookupTypeMeta + findProperty (camelCase wire match)", () => {
   it("finds a registered type by its registry key", () => {
-    const tm = lookupTypeMeta(discovery, "TrameStories.Story01.Order");
+    const tm = lookupTypeMeta(discovery, "SleipnirStories.Story01.Order");
     expect(tm?.properties.length).toBeGreaterThan(0);
   });
   it("finds a property by its camelCase wire name, not PascalCase", () => {
-    const tm = lookupTypeMeta(discovery, "TrameStories.Story01.Order")!;
+    const tm = lookupTypeMeta(discovery, "SleipnirStories.Story01.Order")!;
     expect(findProperty(tm, "customerId")).toBeDefined();   // camelCase wire name → found
     expect(findProperty(tm, "CustomerId")).toBeUndefined(); // PascalCase → not on the wire
   });

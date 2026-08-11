@@ -3,14 +3,14 @@
 > **The client should declare *what depends on what*. The server should resolve it in one roundtrip.**
 
 One order-detail screen. Six dependent reads across five services. The REST way is six
-sequential roundtrips with the client as the workflow engine. The Trame way is one batch —
+sequential roundtrips with the client as the workflow engine. The Sleipnir way is one batch —
 the client declares the dependency graph, the server executes it topologically with
 intra-server parallelism, in a single roundtrip.
 
 ## Run it (F5 → the N+1 screen)
 
 The web example is served **by the API itself** at **`/story01`** — same origin as
-`/api/trame/*`, so there is **no CORS, no separate Vite dev server, no proxy** to configure.
+`/api/sleipnir/*`, so there is **no CORS, no separate Vite dev server, no proxy** to configure.
 The first walkthrough is one `dotnet run` (or F5) away.
 
 1. **One-time:** build the web bundle — `cd web && npm run build` (regenerates the typed
@@ -18,13 +18,13 @@ The first walkthrough is one `dotnet run` (or F5) away.
    `web/dist` is a build artifact (gitignored), so a fresh clone needs this step once.
 2. Open **`Story01.sln`** in Visual Studio (or `dotnet build && dotnet run --project Story01.csproj`).
 3. Press **F5** (or `dotnet run`). The browser opens at **`http://localhost:5001/story01/`** —
-   the N+1 screen. Click **"Load — 1 typed Trame batch"** to see the whole order-detail screen
+   the N+1 screen. Click **"Load — 1 typed Sleipnir batch"** to see the whole order-detail screen
    materialize in a single roundtrip; click **"Load — 6 serial roundtrips"** to compare.
-4. The screen links to the **Trame Developer UI** at **`/Trame`** — six controllers from
+4. The screen links to the **Sleipnir Developer UI** at **`/Sleipnir`** — six controllers from
    `Domain.cs` (`Order`, `Customer`, `OrderLine`, `Article`, `Address`, `Stock`), discovery
    shows the contract (code-first — the C# classes *are* the contract, no IDL, no `.proto`).
 
-> The UI calls `new TrameClient("/")`, so every `/api/trame/json` call is same-origin —
+> The UI calls `new SleipnirClient("/")`, so every `/api/sleipnir/json` call is same-origin —
 > the CORS error you'd hit serving the UI from a different origin does not arise.
 
 ### Layout
@@ -33,8 +33,8 @@ The first walkthrough is one `dotnet run` (or F5) away.
 |---|---|
 | `/` | redirects to `/story01/` |
 | `/story01/` | the N+1 screen (built `web/dist`) |
-| `/Trame` | the Trame Developer UI |
-| `/api/trame/json`, `/api/trame/json/multi`, `/api/trame/discovery` | the API |
+| `/Sleipnir` | the Sleipnir Developer UI |
+| `/api/sleipnir/json`, `/api/sleipnir/json/multi`, `/api/sleipnir/discovery` | the API |
 
 ### If you want the Vite dev server instead (HMR while editing the UI)
 
@@ -45,7 +45,7 @@ integrated `/story01` endpoint for the no-setup walkthrough.
 Call a single endpoint in the DevUI (REST wire):
 
 ```
-POST http://localhost:5001/api/trame/json
+POST http://localhost:5001/api/sleipnir/json
 {
   "controller": "Order",
   "method": "GetById",
@@ -54,9 +54,9 @@ POST http://localhost:5001/api/trame/json
 }
 ```
 
-## The Trame Way — one batch, declared dependencies
+## The Sleipnir Way — one batch, declared dependencies
 
-Paste this into the DevUI batch sender (`POST /api/trame/json/multi`). It is the whole screen
+Paste this into the DevUI batch sender (`POST /api/sleipnir/json/multi`). It is the whole screen
 in **one roundtrip**: the client declares the graph, never extracts an id.
 
 ```jsonc
@@ -115,16 +115,16 @@ in **one roundtrip**: the client declares the graph, never extracts an id.
 Six sequential roundtrips, the client extracting ids between each:
 
 ```csharp
-var order    = await client.Call<Order?>    (TrameCall.Init("Order","GetById").With(42));
-var customer = await client.Call<Customer?> (TrameCall.Init("Customer","GetById").With(order.CustomerId));
-var lines    = await client.Call<List<OrderLine>>(TrameCall.Init("OrderLine","GetByOrder").With(order.Id));
+var order    = await client.Call<Order?>    (SleipnirCall.Init("Order","GetById").With(42));
+var customer = await client.Call<Customer?> (SleipnirCall.Init("Customer","GetById").With(order.CustomerId));
+var lines    = await client.Call<List<OrderLine>>(SleipnirCall.Init("OrderLine","GetByOrder").With(order.Id));
 var articleIds = lines.Select(l => l.ArticleId).Distinct().ToList();          // ← client glue
-var articles = await client.Call<List<Article>>(TrameCall.Init("Article","GetByIds").With(articleIds));
-var address  = await client.Call<Address?>   (TrameCall.Init("Address","GetById").With(order.ShippingAddressId));
-var stock    = await client.Call<List<StockInfo>>(TrameCall.Init("Stock","GetByArticles").With(articleIds)); // recomputed
+var articles = await client.Call<List<Article>>(SleipnirCall.Init("Article","GetByIds").With(articleIds));
+var address  = await client.Call<Address?>   (SleipnirCall.Init("Address","GetById").With(order.ShippingAddressId));
+var stock    = await client.Call<List<StockInfo>>(SleipnirCall.Init("Stock","GetByArticles").With(articleIds)); // recomputed
 ```
 
-|                          | The REST Way      | The Trame Way          |
+|                          | The REST Way      | The Sleipnir Way          |
 |--------------------------|-------------------|------------------------|
 | Roundtrips               | 6 (sequential)    | **1**                  |
 | Client orchestration     | 6 calls + id glue | 1 batch, declared deps |
@@ -135,20 +135,20 @@ var stock    = await client.Call<List<StockInfo>>(TrameCall.Init("Stock","GetByA
 
 The win above is the **cross-service** n+1: the chain Order → Customer → Lines → Articles, where
 each call needs the previous call's output. That chain can't be bulked away, so a REST client
-owns the extract-and-await glue for every link and pays six roundtrips. Trame takes that glue
+owns the extract-and-await glue for every link and pays six roundtrips. Sleipnir takes that glue
 off the client and collapses the chain to one roundtrip with server-side graph resolution.
 
-It is **not** "Trame parallelizes the article fetch." The bulk endpoints here — `GetByIds`,
+It is **not** "Sleipnir parallelizes the article fetch." The bulk endpoints here — `GetByIds`,
 `GetByOrder` — are good API design you'd build for REST too; they kill the *intra-service* n+1
-(n articles in one call vs n+1). Trame doesn't replace them; it replaces the imperative glue
+(n articles in one call vs n+1). Sleipnir doesn't replace them; it replaces the imperative glue
 *between* them. A REST client could `Promise.all` the independent calls — but it would still pay
 the roundtrips and own the fan-out. The framework win is the **roundtrip collapse and the removed
 orchestration**, not raw parallelism. Full reasoning:
-[BEST_PRACTICES.md §4.2](../../BEST_PRACTICES.md#42-when-the-trame-batch-beats-the-rest-loop--and-where-the-win-actually-is).
+[BEST_PRACTICES.md §4.2](../../BEST_PRACTICES.md#42-when-the-sleipnir-batch-beats-the-rest-loop--and-where-the-win-actually-is).
 
-The bulk endpoints here (`GetByIds`, `GetByOrder`, `GetById`) are service methods, not Trame
+The bulk endpoints here (`GetByIds`, `GetByOrder`, `GetById`) are service methods, not Sleipnir
 inventions — the Story's controllers are thin facades over the same in-memory store a REST
-controller would call. That is the seam that lets Trame drop into an existing REST API without
+controller would call. That is the seam that lets Sleipnir drop into an existing REST API without
 rewriting endpoints: the service keeps the bulk logic, the transports are interchangeable facades
 above it. See
 [BEST_PRACTICES.md §4.6](../../BEST_PRACTICES.md#46-the-service-layer-is-the-seam--share-the-bulk-not-the-transport).
@@ -156,15 +156,15 @@ above it. See
 ## Where NOT to use this
 
 - **Replacing an efficient SQL join.** If all reads are in one DB, a single query with joins
-  beats service calls. Trame chains *across services you cannot or will not join in SQL*.
-- **Unbounded graphs.** Chaining is for bounded intermediate results. Trame caps both sides
+  beats service calls. Sleipnir chains *across services you cannot or will not join in SQL*.
+- **Unbounded graphs.** Chaining is for bounded intermediate results. Sleipnir caps both sides
   (`MaxResultElementCount` default 10 000, `MaxParameterArrayLength` default 1 000).
 - **CRUD that is genuinely CRUD.** One resource by id with no dependencies is already one
-  roundtrip. Trame earns its keep when there is a *graph*, not a row.
+  roundtrip. Sleipnir earns its keep when there is a *graph*, not a row.
 
 ## Files
 
-- `Program.cs` — F5 wiring (`UseStaticWebAssets` + `AddTrame` + `UseTrameTransports` + `MapTrame`).
+- `Program.cs` — F5 wiring (`UseStaticWebAssets` + `AddSleipnir` + `UseSleipnirTransports` + `MapSleipnir`).
 - `Domain.cs` — the six code-first controllers + in-memory store (Order #42, 30 ms/call simulated latency).
 - Full narrative: `docs/stories/01-the-n-plus-one-screen.md`.
 

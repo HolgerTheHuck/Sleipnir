@@ -1,7 +1,7 @@
 {
-  "name": "trame-codegen",
+  "name": "sleipnir-codegen",
   "version": "1.0.0",
-  "description": "Typed client stub generator for the Trame RPC framework — turns /api/trame/discovery into typed TS/JS (C#/Python later) clients. CLI: trame-gen.",
+  "description": "Typed client stub generator for the Sleipnir RPC framework — turns /api/sleipnir/discovery into typed TS/JS (C#/Python later) clients. CLI: sleipnir-gen.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,7 +16,7 @@
     }
   },
   "bin": {
-    "trame-gen": "./dist/cli/index.js"
+    "sleipnir-gen": "./dist/cli/index.js"
   },
   "files": [
     "dist",
@@ -30,7 +30,7 @@
     "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "keywords": [
-    "trame",
+    "sleipnir",
     "rpc",
     "codegen",
     "stub-generator",
@@ -39,10 +39,10 @@
     "javascript",
     "client"
   ],
-  "author": "Trame",
+  "author": "Sleipnir",
   "license": "MIT",
   "dependencies": {
-    "trame-client": "file:../ts"
+    "sleipnir-client": "file:../ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

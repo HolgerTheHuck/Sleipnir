@@ -14,7 +14,7 @@
 
 Instead, report vulnerabilities privately:
 
-1. Use [GitHub's private vulnerability reporting](https://github.com/HolgerTheHuck/Trame/security/advisories/new) (preferred), or
+1. Use [GitHub's private vulnerability reporting](https://github.com/HolgerTheHuck/Sleipnir/security/advisories/new) (preferred), or
 2. Email the maintainer directly.
 
 Please include:
@@ -34,15 +34,15 @@ We follow [coordinated disclosure](https://security.github.com/web/best-practice
 
 ## Security Posture
 
-Trame is designed as a **code-first RPC framework** — your C# classes are the contract, and the framework dispatches calls to them. The security model is **defense in depth**, with the trust boundary at the transport layer:
+Sleipnir is designed as a **code-first RPC framework** — your C# classes are the contract, and the framework dispatches calls to them. The security model is **defense in depth**, with the trust boundary at the transport layer:
 
 ### Authentication & Authorization
 
-- **Trame does not run its own identity provider.** It reads `HttpContext.User` — configure your auth scheme (JWT bearer, cookies, mTLS via reverse proxy) *before* the Trame transport, so `HttpContext.User` is populated.
-- **`RequireAuthentication`** (default `false` for south-bound, non-breaking): when `true`, every method requires an authenticated user unless it explicitly opts out with `[TrameAnonymous]`.
-- **`[TrameAuthorise]`** — require authentication; with `Role = "Admin"`, require that role (`IsInRole`).
-- **`[TrameAuthorise(Policy = "...")]`** (1.1.0) — evaluate an ASP.NET Core authorization policy via `IAuthorizationService`.
-- **`[TrameAnonymous]`** — deliberate opt-out for health checks, public handshakes, etc.
+- **Sleipnir does not run its own identity provider.** It reads `HttpContext.User` — configure your auth scheme (JWT bearer, cookies, mTLS via reverse proxy) *before* the Sleipnir transport, so `HttpContext.User` is populated.
+- **`RequireAuthentication`** (default `false` for south-bound, non-breaking): when `true`, every method requires an authenticated user unless it explicitly opts out with `[SleipnirAnonymous]`.
+- **`[SleipnirAuthorise]`** — require authentication; with `Role = "Admin"`, require that role (`IsInRole`).
+- **`[SleipnirAuthorise(Policy = "...")]`** (1.1.0) — evaluate an ASP.NET Core authorization policy via `IAuthorizationService`.
+- **`[SleipnirAnonymous]`** — deliberate opt-out for health checks, public handshakes, etc.
 - **403 vs 401** (1.1.0) — `ForbiddenAccessException` distinguishes "authenticated but not permitted" (403, `PermissionDenied`) from "not authenticated" (401, `Unauthenticated`).
 
 See [`SECURITY_GUIDE.md`](SECURITY_GUIDE.md) for the full posture matrix and deployment checklist.
@@ -59,27 +59,27 @@ See [`SECURITY_GUIDE.md`](SECURITY_GUIDE.md) for the full posture matrix and dep
 
 - **WebSocket upgrade** — rejected with 401 before `AcceptWebSocketAsync` when `RequireAuthentication` and unauthenticated.
 - **SignalR hub** — `.RequireAuthorization()` applied when `RequireAuthentication`.
-- **Discovery** — `GET /api/trame/discovery` and `trame.discover` gated behind auth when `RequireAuthentication` (attack-surface oracle).
+- **Discovery** — `GET /api/sleipnir/discovery` and `sleipnir.discover` gated behind auth when `RequireAuthentication` (attack-surface oracle).
 
 ### Structurally Safe
 
 - **No code injection** — `Expression.Compile` builds delegates from server-controlled `MethodInfo`; client input flows as parameter values, never as code.
 - **No path traversal** — dispatch is by name (`{Controller}_{Method}` dictionary lookup), not by path.
 - **No polymorphic deserialization gadget** — `System.Text.Json` with server-side types from the method signature; no client-controlled `TypeNameHandling`.
-- **Batch / WS / JSON-RPC do not bypass `[TrameAuthorise]`** — all paths run through `ResolveAndAuthorizeAsync`.
-- **User interceptors do not run on batch elements (1.1.x)** — `ITrameInterceptor`/`ITrameBatchInterceptor` instances currently run only on the single-call path, not on batch request elements; authorization is unaffected (enforced structurally), but any custom interceptor logic (tenant isolation, validation, rate limiting) is silently bypassed on batches. Do not build a security control on the interceptor seam in 1.1.x — use `[TrameAuthorise]`/policies and the framework-level gates. Batch-pipeline routing is tracked for 1.2 (`ROADMAP.md` R7); a startup warning fires when `options.Interceptors` is non-empty.
+- **Batch / WS / JSON-RPC do not bypass `[SleipnirAuthorise]`** — all paths run through `ResolveAndAuthorizeAsync`.
+- **User interceptors do not run on batch elements (1.1.x)** — `ISleipnirInterceptor`/`ISleipnirBatchInterceptor` instances currently run only on the single-call path, not on batch request elements; authorization is unaffected (enforced structurally), but any custom interceptor logic (tenant isolation, validation, rate limiting) is silently bypassed on batches. Do not build a security control on the interceptor seam in 1.1.x — use `[SleipnirAuthorise]`/policies and the framework-level gates. Batch-pipeline routing is tracked for 1.2 (`ROADMAP.md` R7); a startup warning fires when `options.Interceptors` is non-empty.
 
 ## North-Bound Deployment Checklist
 
-Before exposing Trame to untrusted clients:
+Before exposing Sleipnir to untrusted clients:
 
 1. **Configure authentication** (JWT/Cookie/mTLS) that populates `HttpContext.User`.
-2. **Set `TrameOptions`**: `RequireAuthentication = true`, `RateLimitPermitLimit > 0`, `MaximumBatchSize > 0`.
+2. **Set `SleipnirOptions`**: `RequireAuthentication = true`, `RateLimitPermitLimit > 0`, `MaximumBatchSize > 0`.
 3. **Set `ASPNETCORE_ENVIRONMENT = Production`** (no stack-trace leaks via `EnableDetailedErrors`).
-4. **Do not ship the DevUI** (`MapTrameDeveloperUi`) to untrusted clients — omit it or put it behind auth.
+4. **Do not ship the DevUI** (`MapSleipnirDeveloperUi`) to untrusted clients — omit it or put it behind auth.
 5. **Set Kestrel limits** (`MaxConcurrentConnections`, `MaxRequestBodySize`).
 6. **Put a reverse proxy in front** — TLS termination, connection-rate limiting (especially for WebSocket), header filtering.
 7. **Discovery is behind auth** (automatic with `RequireAuthentication`).
-8. **Smoke test**: unauthenticated call → rejected; authenticated → 200; `[TrameAnonymous]` method → 200 unauth; `[TrameAuthorise("admin")]` without role → 401; batch > `MaximumBatchSize` → 400.
+8. **Smoke test**: unauthenticated call → rejected; authenticated → 200; `[SleipnirAnonymous]` method → 200 unauth; `[SleipnirAuthorise("admin")]` without role → 401; batch > `MaximumBatchSize` → 400.
 
 Operational guide: [`SECURITY_GUIDE.md`](SECURITY_GUIDE.md).

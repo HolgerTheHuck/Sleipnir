@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Sleipnir.Samples.GeneratedClient</RootNamespace>
+    <!-- This sample is the Slice-2 "in-compilation" proof: the Sleipnir source generator runs
+         during this project's build and emits SleipnirGenerated.cs from contract.sleipnir.json, so a
+         typed SleipnirGeneratedClient + the Story-01 diamond compile against the real SleipnirClient
+         runtime. The sample is compile-time proof only — Main does not execute a live server. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The runtime the generated stubs call into. -->
+    <ProjectReference Include="..\SleipnirClient\SleipnirClient.csproj" />
+    <!-- The generator, wired as an analyzer so it runs during this build. Dev wiring: in a
+         published setup this is <PackageReference Include="Sleipnir.Generator" PrivateAssets="all" />
+         and the build/Sleipnir.Generator.props auto-imports the AdditionalFile. -->
+    <ProjectReference Include="..\Sleipnir.SourceGenerator\Sleipnir.SourceGenerator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- Dev wiring: explicitly mark the contract as an AdditionalFile (the packaged
+       build/Sleipnir.Generator.props does this automatically when referenced as a NuGet). -->
+  <ItemGroup>
+    <AdditionalFiles Include="contract.sleipnir.json" />
+  </ItemGroup>
+
+</Project>

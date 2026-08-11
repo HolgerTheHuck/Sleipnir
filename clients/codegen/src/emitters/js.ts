@@ -19,7 +19,7 @@ export function emitJsClient(input: EmitterInput, _opts: EmitJsOptions = {}): Re
     "api/types.js": emitTypeDefs(input, resolver),
     "api/controllers.js": emitControllers(input, resolver),
     "api/client.js": emitClient(input),
-    "api/index.js": `// Auto-generated barrel.\nexport { TrameClient } from "./client.js";\nexport * from "./controllers.js";\n`,
+    "api/index.js": `// Auto-generated barrel.\nexport { SleipnirClient } from "./client.js";\nexport * from "./controllers.js";\n`,
   };
 }
 
@@ -43,7 +43,7 @@ function emitTypeDefs(input: EmitterInput, resolver: NamingResolver): string {
     blocks.push(`/**\n * @typedef {Object} ${t.emittedName}${props.length ? "\n" + props.join("\n") : ""}\n */`);
   }
   if (blocks.length === 0) return "// No structured types declared in discovery.\n";
-  return `// Auto-generated Trame data types (JSDoc). Properties are camelCase (wire).\n\n${blocks.join("\n\n")}\n`;
+  return `// Auto-generated Sleipnir data types (JSDoc). Properties are camelCase (wire).\n\n${blocks.join("\n\n")}\n`;
 }
 
 /** JSDoc type string for a resolved ref (arrays render as `T[]`). */
@@ -57,8 +57,8 @@ function jsDocTypeOf(ref: ResolvedTypeRef, resolver: NamingResolver): string {
 
 function emitControllers(input: EmitterInput, resolver: NamingResolver): string {
   const classes = input.controllers.map((c) => emitControllerClass(c, resolver));
-  return `// Auto-generated Trame controllers (JSDoc-typed JS).
-import { TrameCall } from "trame-client";
+  return `// Auto-generated Sleipnir controllers (JSDoc-typed JS).
+import { SleipnirCall } from "sleipnir-client";
 ${classes.join("\n\n")}
 `;
 }
@@ -66,7 +66,7 @@ ${classes.join("\n\n")}
 function emitControllerClass(ctrl: ResolvedController, resolver: NamingResolver): string {
   const methods = ctrl.methods.map((m) => emitMethod(ctrl, m, resolver));
   return `export class ${ctrl.className} {
-  /** @param {(controller: string, method: string) => TrameCall} build */
+  /** @param {(controller: string, method: string) => SleipnirCall} build */
   constructor(build) {
     this._build = build;
   }
@@ -84,7 +84,7 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
   const params = m.parameters.map((p) => toCamelCase(p.name));
   const withEntries = m.parameters.map((p) => `${p.name}: ${toCamelCase(p.name)}`);
   const withCall = withEntries.length ? `.with({ ${withEntries.join(", ")} })` : "";
-  const returns = m.isVoid ? "" : `   * @returns {Promise<TrameResponse<${retType} | null>>}\n`;
+  const returns = m.isVoid ? "" : `   * @returns {Promise<SleipnirResponse<${retType} | null>>}\n`;
   const doc = m.documentation ? `   * ${m.documentation}\n` : "";
   return `  /**\n${doc}${paramDocs.join("\n")}\n${returns}   */
   async ${m.emittedName}(${params.join(", ")}) {
@@ -100,27 +100,27 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
 function emitClient(input: EmitterInput): string {
   const imports = input.controllers.map((c) => `import { ${c.className} } from "./controllers.js";`).join("\n");
   const accessors = input.controllers.map((c) => `  this.${c.accessor} = new ${c.className}(build);`);
-  return `// Auto-generated root Trame client (JS).
-import { TrameCall, TrameRestClient } from "trame-client";
+  return `// Auto-generated root Sleipnir client (JS).
+import { SleipnirCall, SleipnirRestClient } from "sleipnir-client";
 ${imports}
 
-export class TrameClient {
+export class SleipnirClient {
   /**
    * @param {string} baseUrl
-   * @param {TrameRestClientOptions} [options]
+   * @param {SleipnirRestClientOptions} [options]
    */
   constructor(baseUrl, options = {}) {
-    this._rest = new TrameRestClient(baseUrl, options);
-    const build = (controller, method) => TrameCall.init(controller, method);
+    this._rest = new SleipnirRestClient(baseUrl, options);
+    const build = (controller, method) => SleipnirCall.init(controller, method);
 ${accessors.join("\n")}
   }
 
-  /** @param {TypedCall<*>} call @returns {Promise<TrameResponse<*|null>>} */
+  /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
   async call(call) {
     return this._rest.call(call.toRequest());
   }
 
-  /** @param {Batch} b @returns {Promise<TrameResponse[]>} */
+  /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
   async batch(b) {
     return this._rest.callBatch(b.toMulti());
   }

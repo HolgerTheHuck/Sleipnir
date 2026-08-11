@@ -1,13 +1,13 @@
-// Auto-generated Trame controllers. Method names are camelCase; parameter
-// names bind case-sensitively on the wire (keys passed verbatim to TrameCall).
-import { TrameCall } from "trame-client";
+// Auto-generated Sleipnir controllers. Method names are camelCase; parameter
+// names bind case-sensitively on the wire (keys passed verbatim to SleipnirCall).
+import { SleipnirCall } from "sleipnir-client";
 import { TypedCall } from "./typed-call.js";
 import type { Address, Article, Customer, Order, OrderLine, StockInfo } from "./types.js";
 import type { AddressPaths, ArticleArrayPaths, CustomerPaths, OrderLineArrayPaths, OrderPaths, StockInfoArrayPaths } from "./typed-call.js";
 
 export class StockClient {
-  /** @internal */ _build: (controller: string, method: string) => TrameCall;
-  constructor(build: (controller: string, method: string) => TrameCall) {
+  /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
+  constructor(build: (controller: string, method: string) => SleipnirCall) {
     this._build = build;
   }
   getByArticles(articleIds: number[]): TypedCall<StockInfo[], StockInfoArrayPaths> {
@@ -16,8 +16,8 @@ export class StockClient {
 }
 
 export class OrderLineClient {
-  /** @internal */ _build: (controller: string, method: string) => TrameCall;
-  constructor(build: (controller: string, method: string) => TrameCall) {
+  /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
+  constructor(build: (controller: string, method: string) => SleipnirCall) {
     this._build = build;
   }
   getByOrder(orderId: number): TypedCall<OrderLine[], OrderLineArrayPaths> {
@@ -26,8 +26,8 @@ export class OrderLineClient {
 }
 
 export class ArticleClient {
-  /** @internal */ _build: (controller: string, method: string) => TrameCall;
-  constructor(build: (controller: string, method: string) => TrameCall) {
+  /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
+  constructor(build: (controller: string, method: string) => SleipnirCall) {
     this._build = build;
   }
   getByIds(articleIds: number[]): TypedCall<Article[], ArticleArrayPaths> {
@@ -36,8 +36,8 @@ export class ArticleClient {
 }
 
 export class OrderClient {
-  /** @internal */ _build: (controller: string, method: string) => TrameCall;
-  constructor(build: (controller: string, method: string) => TrameCall) {
+  /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
+  constructor(build: (controller: string, method: string) => SleipnirCall) {
     this._build = build;
   }
   getById(id: number): TypedCall<Order, OrderPaths> {
@@ -46,8 +46,8 @@ export class OrderClient {
 }
 
 export class CustomerClient {
-  /** @internal */ _build: (controller: string, method: string) => TrameCall;
-  constructor(build: (controller: string, method: string) => TrameCall) {
+  /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
+  constructor(build: (controller: string, method: string) => SleipnirCall) {
     this._build = build;
   }
   getById(customerId: number): TypedCall<Customer, CustomerPaths> {
@@ -56,8 +56,8 @@ export class CustomerClient {
 }
 
 export class AddressClient {
-  /** @internal */ _build: (controller: string, method: string) => TrameCall;
-  constructor(build: (controller: string, method: string) => TrameCall) {
+  /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
+  constructor(build: (controller: string, method: string) => SleipnirCall) {
     this._build = build;
   }
   getById(addressId: number): TypedCall<Address, AddressPaths> {

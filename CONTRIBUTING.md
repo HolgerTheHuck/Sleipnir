@@ -1,11 +1,11 @@
-# Contributing to Trame
+# Contributing to Sleipnir
 
-Thanks for your interest in Trame — pull requests, issues, docs improvements, and new
-transport/codegen ideas are all welcome. Trame is **MIT-licensed** and credited to
-**Trame Contributors**; by contributing you agree your work is published under that same
+Thanks for your interest in Sleipnir — pull requests, issues, docs improvements, and new
+transport/codegen ideas are all welcome. Sleipnir is **MIT-licensed** and credited to
+**Sleipnir Contributors**; by contributing you agree your work is published under that same
 license (see [LICENSE](LICENSE)).
 
-> **Trame** is a code-first, command-oriented RPC framework for .NET 8: one C# contract,
+> **Sleipnir** is a code-first, command-oriented RPC framework for .NET 8: one C# contract,
 > multiple transports (REST / WebSocket / SignalR), with server-side dependency chaining.
 > Start with [README.md](README.md) for the tour, [GETTING_STARTED.md](GETTING_STARTED.md)
 > for the canonical wiring, and [CLAUDE.md](CLAUDE.md) for the full architecture map.
@@ -16,8 +16,8 @@ license (see [LICENSE](LICENSE)).
 
 - **Be kind.** Assume good intent; critique ideas, not people.
 - **English for all new code-facing and user-facing text** — comments, log messages,
-  console output, domain error strings, `[TrameDocumentation]` text, and NuGet package
-  descriptions. Trame targets the international market. (Existing German strings are
+  console output, domain error strings, `[SleipnirDocumentation]` text, and NuGet package
+  descriptions. Sleipnir targets the international market. (Existing German strings are
   legacy; migrate them opportunistically when you touch the surrounding code — not a
   prerequisite for a PR.)
 - **Security issues go private**, not in a public issue. See [SECURITY.md](SECURITY.md)
@@ -30,8 +30,8 @@ license (see [LICENSE](LICENSE)).
 
 - **.NET 8 SDK** — `dotnet --version` reports 8.x.
 - Optional, for HTTPS/WSS local dev: `dotnet dev-certs https --trust`.
-- For UI work in `TrameDeveloperUi/`: Node.js (the dev UI is a Svelte app bundled into the
-  Razor package; see `TrameDeveloperUi/` for its own build steps).
+- For UI work in `SleipnirDeveloperUi/`: Node.js (the dev UI is a Svelte app bundled into the
+  Razor package; see `SleipnirDeveloperUi/` for its own build steps).
 
 ---
 
@@ -39,20 +39,20 @@ license (see [LICENSE](LICENSE)).
 
 ```bash
 # Build the whole solution
-dotnet build Trame.sln
+dotnet build Sleipnir.sln
 
 # Run all tests (xUnit + FluentAssertions + Moq)
-dotnet test TrameTests/TrameTests.csproj
+dotnet test SleipnirTests/SleipnirTests.csproj
 
 # Run a single test class / method
-dotnet test TrameTests/TrameTests.csproj --filter "FullyQualifiedName~TrameInvokerTests"
-dotnet test TrameTests/TrameTests.csproj --filter "FullyQualifiedName~TrameInvokerTests.MyTestMethod"
+dotnet test SleipnirTests/SleipnirTests.csproj --filter "FullyQualifiedName~SleipnirInvokerTests"
+dotnet test SleipnirTests/SleipnirTests.csproj --filter "FullyQualifiedName~SleipnirInvokerTests.MyTestMethod"
 
 # Run the sample app
-dotnet run --project Trame/Trame.csproj
+dotnet run --project Sleipnir/Sleipnir.csproj
 
 # Run benchmarks (Release mode required)
-dotnet run -c Release --project TrameBench/TrameBench.csproj
+dotnet run -c Release --project SleipnirBench/SleipnirBench.csproj
 ```
 
 CI (`.github/workflows/build.yml`) runs `dotnet build`, `dotnet test`, `dotnet format
@@ -60,8 +60,8 @@ CI (`.github/workflows/build.yml`) runs `dotnet build`, `dotnet test`, `dotnet f
 locally before opening a PR so CI is green on the first try:
 
 ```bash
-dotnet format Trame.sln --verify-no-changes --severity warn
-dotnet list Trame.sln package --vulnerable
+dotnet format Sleipnir.sln --verify-no-changes --severity warn
+dotnet list Sleipnir.sln package --vulnerable
 ```
 
 ---
@@ -69,20 +69,20 @@ dotnet list Trame.sln package --vulnerable
 ## 4. Project layout (the short version)
 
 ```
-TrameCommon      shared models, attributes, exceptions          → Trame.Common
-TrameCore        invoker, discovery, dependency resolver        → Trame.Core
-TrameRest        REST transport (minimal APIs)                  → Trame.Rest
-TrameWebSocket   WebSocket transport (RFC 6455 middleware)      → Trame.WebSocket
-TrameHub         SignalR transport + AddTrame/UseTrame          → Trame.Hub
-TrameClient      REST/WS/SignalR clients + fluent TrameCall     → Trame.Client
-TrameServer      unified server integration (all transports)    → Trame.Server
-TrameTelemetry   optional OpenTelemetry SDK bootstrap           → Trame.Telemetry
-TrameDeveloperUi built-in developer web UI                      → Trame.DeveloperUi
-Trame.SourceGenerator   Roslyn codegen → typed C# client        → Trame.Generator
-Trame.Server.Codegen    server-side contract export/drift-check → Trame.Server.Codegen
-Trame            sample app
-TrameTests       tests
-TrameBench       BenchmarkDotNet
+SleipnirCommon      shared models, attributes, exceptions          → Sleipnir.Common
+SleipnirCore        invoker, discovery, dependency resolver        → Sleipnir.Core
+SleipnirRest        REST transport (minimal APIs)                  → Sleipnir.Rest
+SleipnirWebSocket   WebSocket transport (RFC 6455 middleware)      → Sleipnir.WebSocket
+SleipnirHub         SignalR transport + AddSleipnir/UseSleipnir          → Sleipnir.Hub
+SleipnirClient      REST/WS/SignalR clients + fluent SleipnirCall     → Sleipnir.Client
+SleipnirServer      unified server integration (all transports)    → Sleipnir.Server
+SleipnirTelemetry   optional OpenTelemetry SDK bootstrap           → Sleipnir.Telemetry
+SleipnirDeveloperUi built-in developer web UI                      → Sleipnir.DeveloperUi
+Sleipnir.SourceGenerator   Roslyn codegen → typed C# client        → Sleipnir.Generator
+Sleipnir.Server.Codegen    server-side contract export/drift-check → Sleipnir.Server.Codegen
+Sleipnir            sample app
+SleipnirTests       tests
+SleipnirBench       BenchmarkDotNet
 ```
 
 The full dependency graph and the core-engine contract (pre-pass auth, batch execution,
@@ -101,28 +101,28 @@ preserve.
    (`feature/alias-strict-mode`, `fix/batch-auth-prepass`, …).
 3. **Keep PRs focused** — one logical change per PR. Easier to review, easier to revert.
 4. **Add tests — every bug fix ships with a regression test.** New behavior ships with a
-   test in `TrameTests/` (see existing fixtures in `TrameTests/Fixtures/` and the per-area
+   test in `SleipnirTests/` (see existing fixtures in `SleipnirTests/Fixtures/` and the per-area
    organization under `Unit/Core/`, `Unit/Client/`, `Unit/Telemetry/`, and `Integration/`).
    A bug fix — especially a hotfix — is not complete without a regression test that fails
    before the fix and passes after. A security/correctness hotfix merged without a test is
    a defect of its own: the fix can silently regress on the next refactor and the original
    fault stays undocumented. If you cannot write a deterministic test, say why in the PR.
 5. **Update docs** if your change is user-visible — `README.md` / `README_DETAILS.md`,
-   `PROTOCOL.md`, `DEPENDENCY_BINDING.md`, `CHANGELOG.md`, and any `[TrameDocumentation]`
-   / `[TrameExample]` attributes on affected methods.
+   `PROTOCOL.md`, `DEPENDENCY_BINDING.md`, `CHANGELOG.md`, and any `[SleipnirDocumentation]`
+   / `[SleipnirExample]` attributes on affected methods.
 6. **Ensure CI is green locally** (build + test + format + vulnerable check, §3).
 7. **Open the PR** against `main`. Reference the issue (`Closes #123`).
 
 ### Conventions worth knowing
 
-- Controllers are registered by **attribute scanning** (`[TrameController]` /
-  `[TrameMethod]`), not manual registration. Dispatch is by `"{Controller}_{Method}"` —
+- Controllers are registered by **attribute scanning** (`[SleipnirController]` /
+  `[SleipnirMethod]`), not manual registration. Dispatch is by `"{Controller}_{Method}"` —
   **no parameter-based overload resolution**; give overloads distinct method names.
-- The `TrameInvoker` is a singleton; controllers resolve per-call via
+- The `SleipnirInvoker` is a singleton; controllers resolve per-call via
   `IServiceScopeFactory.CreateScope()`. Expression-tree delegates are compiled **once at
   registration**, never per call — don't reintroduce reflection on the hot path.
-- Business/domain errors are **returned** via `TrameResults.*`; only unexpected failures
-  are **thrown** (→ generic 500). Never throw `TrameException` to set a custom code.
+- Business/domain errors are **returned** via `SleipnirResults.*`; only unexpected failures
+  are **thrown** (→ generic 500). Never throw `SleipnirException` to set a custom code.
 - JSON casing contract: parameter **names** bind case-sensitively; object **value**
   properties read case-insensitively / write camelCase; **JsonPath** is case-sensitive
   against the camelCase wire document (`$.Id` matches nothing — use `$.id`).
@@ -132,7 +132,7 @@ preserve.
 ## 6. Releases
 
 Releases are **tag-driven**: pushing a `v*` tag (e.g. `v1.0.0`) triggers
-`.github/workflows/build.yml`, which builds, tests, packs all `Trame.*` packages, pushes
+`.github/workflows/build.yml`, which builds, tests, packs all `Sleipnir.*` packages, pushes
 them to nuget.org, and creates a GitHub Release with generated notes. Version is
 centralized in `Directory.Build.props`. Maintainers cut tags; contributors don't need to
 worry about this.
@@ -142,7 +142,7 @@ worry about this.
 ## 7. Licensing
 
 By submitting a pull request, you agree that your contribution is licensed under the
-[MIT License](LICENSE), copyright **Trame Contributors**. If you add or bring in
+[MIT License](LICENSE), copyright **Sleipnir Contributors**. If you add or bring in
 third-party code, attribute it and confirm its license is compatible with MIT.
 
 ---

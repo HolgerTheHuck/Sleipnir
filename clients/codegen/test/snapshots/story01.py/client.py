@@ -1,4 +1,4 @@
-# Auto-generated Trame async client. Requires: pip install httpx
+# Auto-generated Sleipnir async client. Requires: pip install httpx
 # (httpx is imported lazily at call time so `py_compile` passes without it).
 # Method names are snake_case; the wire method is the discovery methodName verbatim.
 # Parameter names are verbatim (case-sensitive wire binding). The batch mode is
@@ -33,7 +33,7 @@ def _build_single(controller: str, method: str, params: dict, *,
 
 
 def _parse_response(r: Any) -> dict:
-    """Parse a TrameResponse; on non-2xx HTTP, synthesize an error response."""
+    """Parse a SleipnirResponse; on non-2xx HTTP, synthesize an error response."""
     text = r.text
     if not r.is_success:
         return {
@@ -56,18 +56,18 @@ def _is_success(resp: dict) -> bool:
     return 200 <= code <= 299
 
 
-class TrameError(Exception):
-    """Raised when a Trame call returns a non-2xx logical response."""
+class SleipnirError(Exception):
+    """Raised when a Sleipnir call returns a non-2xx logical response."""
 
     def __init__(self, error: dict) -> None:
         self.code = error.get("code", 0)
-        self.message = error.get("message", "Trame error")
+        self.message = error.get("message", "Sleipnir error")
         self.details = error.get("details")
         super().__init__(f"[{self.code}] {self.message}")
 
 
-class TrameCall:
-    """A single Trame call built by a generated controller method."""
+class SleipnirCall:
+    """A single Sleipnir call built by a generated controller method."""
 
     def __init__(self, controller: str, method: str, params: dict) -> None:
         self._controller = controller
@@ -76,11 +76,11 @@ class TrameCall:
         self._id: Optional[str] = None
         self._dependency_mapping: dict = {}
 
-    def named(self, id: str) -> "TrameCall":
+    def named(self, id: str) -> "SleipnirCall":
         self._id = id
         return self
 
-    def exposes(self, path: str, alias: str) -> "TrameCall":
+    def exposes(self, path: str, alias: str) -> "SleipnirCall":
         # The wire dependencyMapping key is the alias WITHOUT the leading '@'
         # (the server strips '@' from a consumer's '@alias' placeholder before lookup).
         key = alias[1:] if alias.startswith("@") else alias
@@ -97,7 +97,7 @@ class TrameCall:
 class _BatchEntry:
     """A call enrolled in a batch. exposes/alias mirror the TS runtime."""
 
-    def __init__(self, call: TrameCall) -> None:
+    def __init__(self, call: SleipnirCall) -> None:
         self._call = call
 
     def exposes(self, path: str, alias: str) -> "_BatchEntry":
@@ -117,9 +117,9 @@ class Batch:
     """
 
     def __init__(self) -> None:
-        self._calls: list[TrameCall] = []
+        self._calls: list[SleipnirCall] = []
 
-    def add(self, call: TrameCall) -> _BatchEntry:
+    def add(self, call: SleipnirCall) -> _BatchEntry:
         self._calls.append(call)
         return _BatchEntry(call)
 
@@ -127,55 +127,55 @@ class Batch:
         return {"requests": [c.to_request() for c in self._calls], "mode": 1}
 
 class StockClient:
-    def __init__(self, owner: "TrameClient") -> None:
+    def __init__(self, owner: "SleipnirClient") -> None:
         self._owner = owner
 
-    def get_by_articles(self, articleIds: list[int]) -> TrameCall:
-        return TrameCall("Stock", "GetByArticles", {"articleIds": articleIds})
+    def get_by_articles(self, articleIds: list[int]) -> SleipnirCall:
+        return SleipnirCall("Stock", "GetByArticles", {"articleIds": articleIds})
 
 class OrderLineClient:
-    def __init__(self, owner: "TrameClient") -> None:
+    def __init__(self, owner: "SleipnirClient") -> None:
         self._owner = owner
 
-    def get_by_order(self, orderId: int) -> TrameCall:
-        return TrameCall("OrderLine", "GetByOrder", {"orderId": orderId})
+    def get_by_order(self, orderId: int) -> SleipnirCall:
+        return SleipnirCall("OrderLine", "GetByOrder", {"orderId": orderId})
 
 class ArticleClient:
-    def __init__(self, owner: "TrameClient") -> None:
+    def __init__(self, owner: "SleipnirClient") -> None:
         self._owner = owner
 
-    def get_by_ids(self, articleIds: list[int]) -> TrameCall:
-        return TrameCall("Article", "GetByIds", {"articleIds": articleIds})
+    def get_by_ids(self, articleIds: list[int]) -> SleipnirCall:
+        return SleipnirCall("Article", "GetByIds", {"articleIds": articleIds})
 
 class OrderClient:
-    def __init__(self, owner: "TrameClient") -> None:
+    def __init__(self, owner: "SleipnirClient") -> None:
         self._owner = owner
 
-    def get_by_id(self, id: int) -> TrameCall:
-        return TrameCall("Order", "GetById", {"id": id})
+    def get_by_id(self, id: int) -> SleipnirCall:
+        return SleipnirCall("Order", "GetById", {"id": id})
 
 class CustomerClient:
-    def __init__(self, owner: "TrameClient") -> None:
+    def __init__(self, owner: "SleipnirClient") -> None:
         self._owner = owner
 
-    def get_by_id(self, customerId: int) -> TrameCall:
-        return TrameCall("Customer", "GetById", {"customerId": customerId})
+    def get_by_id(self, customerId: int) -> SleipnirCall:
+        return SleipnirCall("Customer", "GetById", {"customerId": customerId})
 
 class AddressClient:
-    def __init__(self, owner: "TrameClient") -> None:
+    def __init__(self, owner: "SleipnirClient") -> None:
         self._owner = owner
 
-    def get_by_id(self, addressId: int) -> TrameCall:
-        return TrameCall("Address", "GetById", {"addressId": addressId})
+    def get_by_id(self, addressId: int) -> SleipnirCall:
+        return SleipnirCall("Address", "GetById", {"addressId": addressId})
 
-class TrameClient:
-    """Root generated Trame client. Async; backed by httpx.
+class SleipnirClient:
+    """Root generated Sleipnir client. Async; backed by httpx.
 
     Use `call` / `call_typed` for a single call, `call_batch` for a
     dependency-chained batch (Serial). Per-controller accessors are below.
     """
 
-    def __init__(self, base_url: str, *, api_path: str = "api/trame", bearer: Optional[str] = None) -> None:
+    def __init__(self, base_url: str, *, api_path: str = "api/sleipnir", bearer: Optional[str] = None) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_path = api_path.strip("/")
         self._bearer = bearer
@@ -191,7 +191,7 @@ class TrameClient:
         return f"{self._base_url}/{self._api_path}/{path}"
 
     async def discover(self) -> dict:
-        """GET /api/trame/discovery."""
+        """GET /api/sleipnir/discovery."""
         import httpx
         headers = self._headers()
         async with httpx.AsyncClient() as client:
@@ -200,7 +200,7 @@ class TrameClient:
             return r.json()
 
     async def call(self, controller: str, method: str, **params: Any) -> dict:
-        """POST /api/trame/json with named params; return the raw TrameResponse dict."""
+        """POST /api/sleipnir/json with named params; return the raw SleipnirResponse dict."""
         import httpx
         body = _build_single(controller, method, params)
         headers = self._headers()
@@ -208,11 +208,11 @@ class TrameClient:
             r = await client.post(self._url("json"), json=body, headers=headers)
             return _parse_response(r)
 
-    async def call_typed(self, call: "TrameCall", cls: type) -> Optional[Any]:
-        """Execute a single TrameCall and deserialize data into `cls` (via from_dict)."""
+    async def call_typed(self, call: "SleipnirCall", cls: type) -> Optional[Any]:
+        """Execute a single SleipnirCall and deserialize data into `cls` (via from_dict)."""
         resp = await self._post_call(call)
         if not _is_success(resp):
-            raise TrameError(resp.get("error") or {"code": resp.get("code", 0), "message": "non-2xx"})
+            raise SleipnirError(resp.get("error") or {"code": resp.get("code", 0), "message": "non-2xx"})
         data = resp.get("data")
         if data is None:
             return None
@@ -221,7 +221,7 @@ class TrameClient:
         return data
 
     async def call_batch(self, batch: "Batch") -> list:
-        """POST /api/trame/json/multi; return the list of TrameResponse dicts.
+        """POST /api/sleipnir/json/multi; return the list of SleipnirResponse dicts.
 
         Responses return in topological order (the server runs the topological
         path whenever any request carries a dependencyMapping). Fetch results
@@ -243,7 +243,7 @@ class TrameClient:
             parsed = r.json()
             return parsed if isinstance(parsed, list) else []
 
-    async def _post_call(self, call: "TrameCall") -> dict:
+    async def _post_call(self, call: "SleipnirCall") -> dict:
         import httpx
         body = call.to_request()
         headers = self._headers()

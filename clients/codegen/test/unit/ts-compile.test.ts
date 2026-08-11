@@ -1,7 +1,7 @@
 // Regression gate: the generated TS client must compile, AND the typed batch
 // must type-check the Story-01 diamond (producer exposes camelCase paths,
 // consumer resolves the typed alias). Spawns `tsc --noEmit` against a temp
-// project under the package root so `trame-client` resolves via node_modules.
+// project under the package root so `sleipnir-client` resolves via node_modules.
 import { describe, it, expect } from "vitest";
 import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -21,11 +21,11 @@ const require = createRequire(import.meta.url);
 const tscPath = require.resolve("typescript/bin/tsc");
 
 const harness = `// Story-01 diamond: compile-time-typed dependency chain.
-import { TrameClient } from "./api/client.js";
+import { SleipnirClient } from "./api/client.js";
 import { Batch } from "./api/typed-call.js";
 
 export async function diamond(): Promise<void> {
-  const client = new TrameClient("http://localhost:5001");
+  const client = new SleipnirClient("http://localhost:5001");
   const batch = new Batch();
 
   // Producer exposes camelCase paths (compile-checked against JsonPathOf<Order>).

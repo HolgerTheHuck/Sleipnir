@@ -1,4 +1,4 @@
-# Auto-generated Trame data types. Fields are camelCase (wire) and
+# Auto-generated Sleipnir data types. Fields are camelCase (wire) and
 # default to None (discovery carries no nullability; callers narrow).
 # DateTime is emitted as str (parse with datetime.fromisoformat if needed).
 from __future__ import annotations

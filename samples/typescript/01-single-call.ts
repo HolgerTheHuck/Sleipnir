@@ -6,14 +6,14 @@
 // Latenz); REST ist zustandslos und am einfachsten.
 //
 // Hinweis: Der TS-WebSocket-Client nimmt die Basis-URL (https://…) + einen
-// separaten wsPath (Default "tramews"); er hebt intern auf wss://…/tramews ab.
+// separaten wsPath (Default "sleipnirws"); er hebt intern auf wss://…/sleipnirws ab.
 // ==============================================================================
 
-import { TrameRestClient, TrameCall, TrameWebSocketClient } from "trame-client";
+import { SleipnirRestClient, SleipnirCall, SleipnirWebSocketClient } from "sleipnir-client";
 
 type Customer = { id: number; name: string; email: string };
 
-export async function run(rest: TrameRestClient): Promise<void> {
+export async function run(rest: SleipnirRestClient): Promise<void> {
   // --- REST: Kunden anlegen (skalarer int kommt zurück) ------------------------
   const newId = await rest.callJson<number>("Customer", "AddCustomer", {
     name: "Alice",
@@ -30,12 +30,12 @@ export async function run(rest: TrameRestClient): Promise<void> {
   console.log(`  [REST]    GetAllCustomers -> ${all?.length ?? 0} Kunde(n)`);
 
   // --- WebSocket: derselbe Aufruf über den persistenten Kanal -----------------
-  // baseUrl + Default-wsPath "tramews" -> wss://localhost:5001/tramews.
-  const ws = new TrameWebSocketClient("https://localhost:5001");
+  // baseUrl + Default-wsPath "sleipnirws" -> wss://localhost:5001/sleipnirws.
+  const ws = new SleipnirWebSocketClient("https://localhost:5001");
   await ws.connect();
   try {
     const c2 = await ws.callJson<Customer>(
-      TrameCall.init("Customer", "GetCustomerById").with({ id: newId }).toRequest(),
+      SleipnirCall.init("Customer", "GetCustomerById").with({ id: newId }).toRequest(),
     );
     console.log(`  [WebSocket] GetCustomerById(${newId}) -> ${c2?.name} <${c2?.email}>`);
   } finally {
@@ -43,7 +43,7 @@ export async function run(rest: TrameRestClient): Promise<void> {
   }
 
   // --- Raw-Form (ohne Fluent Builder) — gelegentlich nützlich -----------------
-  // params = TrameParameter[]; data ist der native JSON-Wert. GetAllCustomers hat
+  // params = SleipnirParameter[]; data ist der native JSON-Wert. GetAllCustomers hat
   // keine Parameter -> leeres Array.
   const rawList = await rest.callJson<Customer[]>({
     controller: "Customer",

@@ -7,18 +7,18 @@
     <!-- Nicht Teil der Solution/eines Release-Builds — reiner Sample-Drop-in. -->
     <IsPackable>false</IsPackable>
     <!-- Einzigartige Assembly/Root-Namespace, damit die Controller dieses
-         Samples nicht mit denen des root Trame-Demo-Apps kollidieren. -->
-    <RootNamespace>Trame.Samples.Server</RootNamespace>
-    <AssemblyName>Trame.SampleServer</AssemblyName>
+         Samples nicht mit denen des root Sleipnir-Demo-Apps kollidieren. -->
+    <RootNamespace>Sleipnir.Samples.Server</RootNamespace>
+    <AssemblyName>Sleipnir.SampleServer</AssemblyName>
   </PropertyGroup>
 
-  <!-- Trame.Server zieht transitiv alle Transporte (REST, WebSocket, SignalR)
-       + Developer-UI + Core/Common. Ein Paket genügt. Trame.Telemetry ist optional
+  <!-- Sleipnir.Server zieht transitiv alle Transporte (REST, WebSocket, SignalR)
+       + Developer-UI + Core/Common. Ein Paket genügt. Sleipnir.Telemetry ist optional
        (OTel-SDK-Bootstrap) und wird hier demonstrativ dazugenommen — die Spans
        landen auf der Konsole, sodass ein Call/Batch sichtbar wird. -->
   <ItemGroup>
-    <PackageReference Include="Trame.Server" Version="1.0.0" />
-    <PackageReference Include="Trame.Telemetry" Version="1.0.0" />
+    <PackageReference Include="Sleipnir.Server" Version="1.0.0" />
+    <PackageReference Include="Sleipnir.Telemetry" Version="1.0.0" />
   </ItemGroup>
 
 </Project>

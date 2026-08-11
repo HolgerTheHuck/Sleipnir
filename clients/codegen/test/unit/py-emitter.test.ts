@@ -51,9 +51,9 @@ describe("emitPyClient (golden against story01 snapshot)", () => {
 
   it("emits snake_case method names with verbatim wire method + params", () => {
     const py = tree["client.py"];
-    expect(py).toContain("def get_by_id(self, id: int) -> TrameCall:");
-    expect(py).toContain('return TrameCall("Order", "GetById", {"id": id})');
-    expect(py).toContain("def get_by_articles(self, articleIds: list[int]) -> TrameCall:");
+    expect(py).toContain("def get_by_id(self, id: int) -> SleipnirCall:");
+    expect(py).toContain('return SleipnirCall("Order", "GetById", {"id": id})');
+    expect(py).toContain("def get_by_articles(self, articleIds: list[int]) -> SleipnirCall:");
   });
 
   it("alias() returns the @placeholder and exposes strips @ for the mapping key", () => {

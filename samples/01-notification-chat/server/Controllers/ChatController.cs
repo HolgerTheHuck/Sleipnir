@@ -1,25 +1,25 @@
-using TrameCore.Attributes;
-using Trame.Samples.NotificationChat.Server.Data;
-using Trame.Samples.NotificationChat.Server.Models;
+using SleipnirCore.Attributes;
+using Sleipnir.Samples.NotificationChat.Server.Data;
+using Sleipnir.Samples.NotificationChat.Server.Models;
 
-namespace Trame.Samples.NotificationChat.Server.Controllers;
+namespace Sleipnir.Samples.NotificationChat.Server.Controllers;
 
-[TrameController("Chat")]
+[SleipnirController("Chat")]
 public class ChatController(INotificationStore store)
 {
-    [TrameMethod("GetChats")]
+    [SleipnirMethod("GetChats")]
     public IReadOnlyList<Chat> GetChats()
         => store.GetChats();
 
-    [TrameMethod("GetChat")]
+    [SleipnirMethod("GetChat")]
     public Chat? GetChat(int id)
         => store.GetChat(id);
 
-    [TrameMethod("GetMessages")]
+    [SleipnirMethod("GetMessages")]
     public IReadOnlyList<Message> GetMessages(int chatId)
         => store.GetMessagesByChat(chatId);
 
-    [TrameMethod("CreateChat")]
+    [SleipnirMethod("CreateChat")]
     public Chat CreateChat(string name, List<string> participants)
     {
         var chat = new Chat
@@ -30,7 +30,7 @@ public class ChatController(INotificationStore store)
         return store.AddChat(chat);
     }
 
-    [TrameMethod("SendMessage")]
+    [SleipnirMethod("SendMessage")]
     public Message SendMessage(int chatId, string sender, string text)
     {
         var message = new Message
@@ -42,7 +42,7 @@ public class ChatController(INotificationStore store)
         return store.AddMessage(message);
     }
 
-    [TrameMethod("SendMessageWithAttachment")]
+    [SleipnirMethod("SendMessageWithAttachment")]
     public Message SendMessageWithAttachment(int chatId, string sender, string text, int mediaId)
     {
         var media = store.GetMedia(mediaId);

@@ -1,11 +1,11 @@
-// E2E against a running Story-01 server. Opt-in via TRAME_E2E=1, else skipped.
-//   PowerShell: $env:TRAME_E2E=1; npm run test:e2e
-//   Bash:       TRAME_E2E=1 npm run test:e2e
+// E2E against a running Story-01 server. Opt-in via SLEIPNIR_E2E=1, else skipped.
+//   PowerShell: $env:SLEIPNIR_E2E=1; npm run test:e2e
+//   Bash:       SLEIPNIR_E2E=1 npm run test:e2e
 // Boot the server:  dotnet run --project stories/01-n-plus-one-screen/Story01.csproj
-// Target URL:      TRAME_URL (default http://127.0.0.1:5001) — the server *base* URL.
+// Target URL:      SLEIPNIR_URL (default http://127.0.0.1:5001) — the server *base* URL.
 //
 // Verifies the full loop end to end: live discovery → emit TS → tsc type-check +
-// emit JS → dynamically import the GENERATED TrameClient → execute a single call
+// emit JS → dynamically import the GENERATED SleipnirClient → execute a single call
 // AND the typed Story-01 diamond batch → assert the order round-trips with
 // id === 42 and the alias chain resolves (customer.id === 7, 3 articles, etc.).
 import { describe, it, expect } from "vitest";
@@ -19,8 +19,8 @@ import { buildEmitterInput } from "../../src/core/model.js";
 import { NamingResolver } from "../../src/core/naming.js";
 import { emitTsClient } from "../../src/emitters/ts.js";
 
-const enabled = process.env.TRAME_E2E === "1";
-const url = process.env.TRAME_URL ?? "http://127.0.0.1:5001";
+const enabled = process.env.SLEIPNIR_E2E === "1";
+const url = process.env.SLEIPNIR_URL ?? "http://127.0.0.1:5001";
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = join(here, "..", "..");
 const compileDir = join(pkgRoot, ".tsc-e2e");
@@ -30,16 +30,16 @@ const tscPath = require.resolve("typescript/bin/tsc");
 // A harness that builds the typed Story-01 diamond via the GENERATED client +
 // Batch, and a single getById call. Emitted alongside api/*.ts, type-checked by
 // tsc, then imported at runtime to execute against the live server.
-const harness = `import { TrameClient } from "./api/client.js";
+const harness = `import { SleipnirClient } from "./api/client.js";
 import { Batch } from "./api/typed-call.js";
 
 export async function singleOrder(baseUrl: string) {
-  const client = new TrameClient(baseUrl);
+  const client = new SleipnirClient(baseUrl);
   return await client.call(client.order.getById(42));
 }
 
 export async function diamond(baseUrl: string) {
-  const client = new TrameClient(baseUrl);
+  const client = new SleipnirClient(baseUrl);
   const batch = new Batch();
   const order = batch.add(client.order.getById(42))
     .exposes("$.customerId", "@customerId")
@@ -70,7 +70,7 @@ const run = (cmd: string, args: string[], opts: Record<string, unknown> = {}) =>
 
 describe.skipIf(!enabled)("e2e: Story-01 live discovery → emit → compile → execute", () => {
   it("discovers, emits, type-checks, and executes the single call + typed diamond", async () => {
-    // 1. Live discovery (base URL → default apiPath "api/trame").
+    // 1. Live discovery (base URL → default apiPath "api/sleipnir").
     const discovery = await loadDiscovery(url);
     expect(discovery.controllers.length).toBe(6);
 

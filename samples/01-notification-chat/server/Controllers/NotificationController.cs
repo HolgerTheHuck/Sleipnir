@@ -1,29 +1,29 @@
-using TrameCore.Attributes;
-using Trame.Samples.NotificationChat.Server.Data;
-using Trame.Samples.NotificationChat.Server.Models;
+using SleipnirCore.Attributes;
+using Sleipnir.Samples.NotificationChat.Server.Data;
+using Sleipnir.Samples.NotificationChat.Server.Models;
 
-namespace Trame.Samples.NotificationChat.Server.Controllers;
+namespace Sleipnir.Samples.NotificationChat.Server.Controllers;
 
-[TrameController("Notification")]
+[SleipnirController("Notification")]
 public class NotificationController(INotificationStore store)
 {
-    [TrameMethod("GetInbox")]
+    [SleipnirMethod("GetInbox")]
     public IReadOnlyList<Notification> GetInbox()
         => store.GetInbox();
 
-    [TrameMethod("GetByType")]
+    [SleipnirMethod("GetByType")]
     public IReadOnlyList<Notification> GetByType(NotificationType type)
         => store.GetByType(type);
 
-    [TrameMethod("GetUnreadCount")]
+    [SleipnirMethod("GetUnreadCount")]
     public int GetUnreadCount()
         => store.GetUnreadCount();
 
-    [TrameMethod("GetById")]
+    [SleipnirMethod("GetById")]
     public Notification? GetById(int id)
         => store.GetNotification(id);
 
-    [TrameMethod("SendMail")]
+    [SleipnirMethod("SendMail")]
     public Notification SendMail(string to, string subject, string body)
     {
         var notification = new Notification
@@ -37,7 +37,7 @@ public class NotificationController(INotificationStore store)
         return store.AddNotification(notification);
     }
 
-    [TrameMethod("SendWhatsApp")]
+    [SleipnirMethod("SendWhatsApp")]
     public Notification SendWhatsApp(string to, string text)
     {
         var notification = new Notification
@@ -51,7 +51,7 @@ public class NotificationController(INotificationStore store)
         return store.AddNotification(notification);
     }
 
-    [TrameMethod("SendInbox")]
+    [SleipnirMethod("SendInbox")]
     public Notification SendInbox(string title, string body)
     {
         var notification = new Notification
@@ -65,7 +65,7 @@ public class NotificationController(INotificationStore store)
         return store.AddNotification(notification);
     }
 
-    [TrameMethod("MarkAsRead")]
+    [SleipnirMethod("MarkAsRead")]
     public object MarkAsRead(int id)
     {
         var ok = store.MarkAsRead(id);

@@ -1,6 +1,6 @@
-using Trame.Samples.NotificationChat.Server.Data;
-using TrameHub.Extensions;
-using TrameServer;
+using Sleipnir.Samples.NotificationChat.Server.Data;
+using SleipnirHub.Extensions;
+using SleipnirServer;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,7 +22,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddSingleton<INotificationStore, NotificationStore>();
 
-builder.Services.AddTrame(o =>
+builder.Services.AddSleipnir(o =>
 {
     o.UseSignalR = true;
     o.EnableDetailedErrors = builder.Environment.IsDevelopment();
@@ -36,9 +36,9 @@ app.UseCors();
 app.UseRouting();
 app.UseStaticFiles();
 
-app.UseTrameTransports();
-app.MapTrame();
+app.UseSleipnirTransports();
+app.MapSleipnir();
 
-app.MapGet("/", () => Results.Redirect("/Trame"));
+app.MapGet("/", () => Results.Redirect("/Sleipnir"));
 
 app.Run();

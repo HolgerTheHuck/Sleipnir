@@ -1,6 +1,6 @@
-import { TrameError, CancelledError } from "./errors.js";
-import { ExecutionMode, TrameConnectionState } from "./types.js";
-import type { TrameMultiRequest, TrameRequest, TrameResponse } from "./types.js";
+import { SleipnirError, CancelledError } from "./errors.js";
+import { ExecutionMode, SleipnirConnectionState } from "./types.js";
+import type { SleipnirMultiRequest, SleipnirRequest, SleipnirResponse } from "./types.js";
 import { fromBase64, normalizeResponse, normalizeResponses } from "./request.js";
 
 const READY_CONNECTING = 0;
@@ -56,8 +56,8 @@ export interface WsCallOptions {
 }
 
 /** Optionen für den WebSocket-Client. */
-export interface TrameWebSocketClientOptions {
-  /** WS-Pfad (Default "tramews"). */
+export interface SleipnirWebSocketClientOptions {
+  /** WS-Pfad (Default "sleipnirws"). */
   wsPath?: string;
   /** Bearer-Token (Node: als Authorization-Header; Browser: als ?access_token=). */
   bearer?: string;
@@ -72,11 +72,11 @@ export interface TrameWebSocketClientOptions {
   /** Backoff-Intervalle in ms (Default SignalR-Spiegel). Leeres Array schaltet Reconnect aus. */
   reconnectDelays?: number[];
   /** Observer für Zustandswechsel (UI/Logs). */
-  onStateChanged?: (state: TrameConnectionState) => void;
+  onStateChanged?: (state: SleipnirConnectionState) => void;
 }
 
 interface PendingCall {
-  resolve: (v: TrameResponse | TrameResponse[]) => void;
+  resolve: (v: SleipnirResponse | SleipnirResponse[]) => void;
   reject: (e: Error) => void;
   isBatch: boolean;
   timer?: ReturnType<typeof setTimeout>;
@@ -98,7 +98,7 @@ async function resolveDefaultFactory(): Promise<WsFactory> {
     const mod: any = await import("ws");
     const WS = mod.WebSocket ?? mod.default?.WebSocket ?? mod.default;
     if (typeof WS !== "function") {
-      throw new TrameError(
+      throw new SleipnirError(
         0,
         "No WebSocket implementation found. In Node, install the optional 'ws' package.",
       );
@@ -109,7 +109,7 @@ async function resolveDefaultFactory(): Promise<WsFactory> {
 }
 
 /**
- * WebSocket-Client für Trame (RFC 6455 + JSON-Text-Frames), isomorph.
+ * WebSocket-Client für Sleipnir (RFC 6455 + JSON-Text-Frames), isomorph.
  *
  * Connect-Race (B1): konkurrierende `call()` erwarten denselben in-flight
  * Connect-Promise statt abgewiesen zu werden. Correlation (B3): jede Antwort
@@ -124,7 +124,7 @@ async function resolveDefaultFactory(): Promise<WsFactory> {
  * authentifizierte Browser-WS-Calls brauchen serverseitige `?access_token=`-
  * Unterstützung (Roadmap) oder REST. Node (`ws`) sendet den Header korrekt.
  */
-export class TrameWebSocketClient {
+export class SleipnirWebSocketClient {
   private readonly _baseUrl: string;
   private readonly _wsPath: string;
   private readonly _bearer?: string;
@@ -133,23 +133,23 @@ export class TrameWebSocketClient {
   private readonly _wsCtor?: WsFactory;
   private readonly _reconnect: boolean;
   private readonly _reconnectDelays: number[];
-  private readonly _onStateChanged?: (state: TrameConnectionState) => void;
+  private readonly _onStateChanged?: (state: SleipnirConnectionState) => void;
 
   private _ws?: IWebSocket;
   private _connectPromise?: Promise<void>;
   private _pending = new Map<string, PendingCall>();
-  private _state: TrameConnectionState = TrameConnectionState.Disconnected;
+  private _state: SleipnirConnectionState = SleipnirConnectionState.Disconnected;
   private _closedByClient = false;
   private _disposed = false;
   private _reconnectPromise?: Promise<void>;
   private _reconnectAbort?: AbortController;
 
-  constructor(baseUrl: string, options: TrameWebSocketClientOptions = {}) {
+  constructor(baseUrl: string, options: SleipnirWebSocketClientOptions = {}) {
     if (!baseUrl || baseUrl.trim().length === 0) {
-      throw new Error("TrameWebSocketClient: baseUrl darf nicht leer sein.");
+      throw new Error("SleipnirWebSocketClient: baseUrl darf nicht leer sein.");
     }
     this._baseUrl = baseUrl.replace(/\/+$/, "");
-    this._wsPath = (options.wsPath ?? "tramews").replace(/^\/+|\/+$/g, "");
+    this._wsPath = (options.wsPath ?? "sleipnirws").replace(/^\/+|\/+$/g, "");
     this._bearer = options.bearer;
     this._callTimeout = options.callTimeout;
     this._connectTimeout = options.connectTimeout ?? 15000;
@@ -160,11 +160,11 @@ export class TrameWebSocketClient {
   }
 
   /** Aktueller Verbindungs-Zustand (Observer-Oberfläche für UI/Logs). */
-  get state(): TrameConnectionState {
+  get state(): SleipnirConnectionState {
     return this._state;
   }
 
-  private setState(s: TrameConnectionState): void {
+  private setState(s: SleipnirConnectionState): void {
     this._state = s;
     try {
       this._onStateChanged?.(s);
@@ -175,12 +175,12 @@ export class TrameWebSocketClient {
 
   /** Stellt eine offene Verbindung sicher (B1: concurrent-safe). */
   async connect(): Promise<void> {
-    if (this._disposed) throw new Error("TrameWebSocketClient: disposed.");
+    if (this._disposed) throw new Error("SleipnirWebSocketClient: disposed.");
     if (this._ws && this._ws.readyState === READY_OPEN) return;
 
     // Läuft ein Hintergrund-Reconnect? Darauf warten (nicht selbst verbinden),
     // damit parallele Calls denselben in-flight Reconnect teilen.
-    if (this._reconnectPromise && this._state === TrameConnectionState.Reconnecting) {
+    if (this._reconnectPromise && this._state === SleipnirConnectionState.Reconnecting) {
       try {
         await this._reconnectPromise;
       } catch {
@@ -190,9 +190,9 @@ export class TrameWebSocketClient {
     }
 
     if (this._connectPromise) return this._connectPromise;
-    this.setState(TrameConnectionState.Connecting);
+    this.setState(SleipnirConnectionState.Connecting);
     this._connectPromise = this.connectSlow()
-      .then(() => this.setState(TrameConnectionState.Connected))
+      .then(() => this.setState(SleipnirConnectionState.Connected))
       .finally(() => {
         this._connectPromise = undefined;
       });
@@ -200,40 +200,40 @@ export class TrameWebSocketClient {
   }
 
   /** Sendet einen einzelnen Request. */
-  async call(req: TrameRequest, opts?: WsCallOptions): Promise<TrameResponse> {
+  async call(req: SleipnirRequest, opts?: WsCallOptions): Promise<SleipnirResponse> {
     if (!req.id) req.id = `${req.controller}.${req.method}`;
     await this.connect();
-    return this.sendAndAwait(req, false, opts) as Promise<TrameResponse>;
+    return this.sendAndAwait(req, false, opts) as Promise<SleipnirResponse>;
   }
 
   /** Sendet einen Batch (Multi-Request). Auto-Setzt leere Ids. */
   async callBatch(
-    requests: TrameRequest[],
+    requests: SleipnirRequest[],
     mode: ExecutionMode = ExecutionMode.Parallel,
     opts?: WsCallOptions,
-  ): Promise<TrameResponse[]> {
+  ): Promise<SleipnirResponse[]> {
     const normalized = requests.map((r) =>
       r.id ? r : { ...r, id: `${r.controller}.${r.method}` },
     );
     await this.connect();
-    const multi: TrameMultiRequest = { requests: normalized, mode };
+    const multi: SleipnirMultiRequest = { requests: normalized, mode };
     const key = normalized[0]?.id;
-    if (!key) throw new TrameError(0, "Batch requires at least one request with an id.");
-    return this.sendAndAwait(multi as unknown as TrameRequest, true, opts, key) as Promise<
-      TrameResponse[]
+    if (!key) throw new SleipnirError(0, "Batch requires at least one request with an id.");
+    return this.sendAndAwait(multi as unknown as SleipnirRequest, true, opts, key) as Promise<
+      SleipnirResponse[]
     >;
   }
 
   /** Ruft auf und deserialisiert `response.data` als T. Wirft bei Nicht-2xx. */
-  async callJson<T>(req: TrameRequest, opts?: WsCallOptions): Promise<T | null> {
+  async callJson<T>(req: SleipnirRequest, opts?: WsCallOptions): Promise<T | null> {
     const response = await this.call(req, opts);
     return parseData<T>(response);
   }
 
   /** Ruft eine byte[]-Methode auf; liefert `response.content` als Uint8Array. Wirft bei Nicht-2xx. */
-  async callBinary(req: TrameRequest, opts?: WsCallOptions): Promise<Uint8Array | null> {
+  async callBinary(req: SleipnirRequest, opts?: WsCallOptions): Promise<Uint8Array | null> {
     const response = await this.call(req, opts);
-    if (!response.isSuccess) throw TrameError.fromResponse(response);
+    if (!response.isSuccess) throw SleipnirError.fromResponse(response);
     return response.content ? fromBase64(response.content) : null;
   }
 
@@ -242,7 +242,7 @@ export class TrameWebSocketClient {
     this._closedByClient = true;
     this._disposed = true;
     this.stopReconnect();
-    this.rejectAllPending(new TrameError(0, "WebSocket closed by client."));
+    this.rejectAllPending(new SleipnirError(0, "WebSocket closed by client."));
     if (this._ws) {
       try {
         this._ws.close(1000, "client close");
@@ -251,7 +251,7 @@ export class TrameWebSocketClient {
       }
     }
     this._ws = undefined;
-    this.setState(TrameConnectionState.Disconnected);
+    this.setState(SleipnirConnectionState.Disconnected);
   }
 
   /** Alias für {@link close} (Symmetrie zum REST-Client). */
@@ -288,7 +288,7 @@ export class TrameWebSocketClient {
       };
 
       connectTimer = setTimeout(
-        () => fail(new TrameError(0, "WebSocket connect timed out.")),
+        () => fail(new SleipnirError(0, "WebSocket connect timed out.")),
         this._connectTimeout,
       );
 
@@ -301,11 +301,11 @@ export class TrameWebSocketClient {
       ws.onclose = (ev) => {
         this.onClosed();
         if (!opened) {
-          fail(new TrameError(0, `WebSocket closed before open (code ${ev?.code ?? "n/a"}).`));
+          fail(new SleipnirError(0, `WebSocket closed before open (code ${ev?.code ?? "n/a"}).`));
         }
       };
       ws.onerror = () => {
-        if (!opened) fail(new TrameError(0, "WebSocket connection failed."));
+        if (!opened) fail(new SleipnirError(0, "WebSocket connection failed."));
         // nach open folgt onclose, das alle pending ablehnt.
       };
     });
@@ -322,27 +322,27 @@ export class TrameWebSocketClient {
   }
 
   private sendAndAwait(
-    payload: TrameRequest,
+    payload: SleipnirRequest,
     isBatch: boolean,
     opts: WsCallOptions | undefined,
     explicitKey?: string,
-  ): Promise<TrameResponse | TrameResponse[]> {
+  ): Promise<SleipnirResponse | SleipnirResponse[]> {
     const key = explicitKey ?? payload.id!;
     const deferred = this.registerPending(key, isBatch, opts);
     try {
       const ws = this._ws;
       if (!ws || ws.readyState !== READY_OPEN) {
         this.disposePending(key);
-        return Promise.reject(new TrameError(0, "WebSocket is not open."));
+        return Promise.reject(new SleipnirError(0, "WebSocket is not open."));
       }
       ws.send(JSON.stringify(payload));
       return deferred.promise;
     } catch (err) {
       this.disposePending(key);
       return Promise.reject(
-        err instanceof TrameError
+        err instanceof SleipnirError
           ? err
-          : new TrameError(0, `WebSocket send error: ${(err as Error)?.message ?? err}`),
+          : new SleipnirError(0, `WebSocket send error: ${(err as Error)?.message ?? err}`),
       );
     }
   }
@@ -351,10 +351,10 @@ export class TrameWebSocketClient {
     key: string,
     isBatch: boolean,
     opts: WsCallOptions | undefined,
-  ): { promise: Promise<TrameResponse | TrameResponse[]> } {
-    let resolve!: (v: TrameResponse | TrameResponse[]) => void;
+  ): { promise: Promise<SleipnirResponse | SleipnirResponse[]> } {
+    let resolve!: (v: SleipnirResponse | SleipnirResponse[]) => void;
     let reject!: (e: Error) => void;
-    const promise = new Promise<TrameResponse | TrameResponse[]>((res, rej) => {
+    const promise = new Promise<SleipnirResponse | SleipnirResponse[]>((res, rej) => {
       resolve = res;
       reject = rej;
     });
@@ -364,7 +364,7 @@ export class TrameWebSocketClient {
 
     if (timeoutMs && timeoutMs > 0) {
       pending.timer = setTimeout(
-        () => this.rejectPending(key, new CancelledError("Trame call timed out.", true)),
+        () => this.rejectPending(key, new CancelledError("Sleipnir call timed out.", true)),
         timeoutMs,
       );
     }
@@ -372,11 +372,11 @@ export class TrameWebSocketClient {
     if (opts?.signal) {
       if (opts.signal.aborted) {
         // Sofort abgelehnt (unverpackt).
-        queueMicrotask(() => this.rejectPending(key, new CancelledError("Trame call was cancelled.")));
+        queueMicrotask(() => this.rejectPending(key, new CancelledError("Sleipnir call was cancelled.")));
       } else {
         pending.callerSignal = opts.signal;
         pending.onCallerAbort = () =>
-          this.rejectPending(key, new CancelledError("Trame call was cancelled."));
+          this.rejectPending(key, new CancelledError("Sleipnir call was cancelled."));
         opts.signal.addEventListener("abort", pending.onCallerAbort, { once: true });
       }
     }
@@ -407,7 +407,7 @@ export class TrameWebSocketClient {
     this._pending.delete(key);
   }
 
-  private resolvePending(key: string, value: TrameResponse | TrameResponse[]): boolean {
+  private resolvePending(key: string, value: SleipnirResponse | SleipnirResponse[]): boolean {
     const pending = this._pending.get(key);
     if (!pending) return false;
     if (pending.timer) clearTimeout(pending.timer);
@@ -435,14 +435,14 @@ export class TrameWebSocketClient {
 
     if (Array.isArray(parsed)) {
       // Batch-Response: Korrelation über das erste Element.
-      const arr = normalizeResponses(parsed as TrameResponse[]);
+      const arr = normalizeResponses(parsed as SleipnirResponse[]);
       const key = arr[0]?.id ?? undefined;
       if (key && this.resolvePending(key, arr)) return;
       this.dropUnmatched(text, key);
       return;
     }
 
-    const resp = normalizeResponse(parsed as TrameResponse);
+    const resp = normalizeResponse(parsed as SleipnirResponse);
     const key = resp?.id ?? undefined;
     if (key && this.resolvePending(key, resp)) return;
     this.dropUnmatched(text, key);
@@ -452,29 +452,29 @@ export class TrameWebSocketClient {
     // B3: kein Last-Resort — nicht zuordnen, verwerfen. Der pending Caller läuft
     // über seinen Timeout/sein Signal ab.
     console.warn(
-      `[trame-client] Received WebSocket response with no matching pending request (id=${key ?? "n/a"}). Dropping.`,
+      `[sleipnir-client] Received WebSocket response with no matching pending request (id=${key ?? "n/a"}). Dropping.`,
     );
     void text;
   }
 
   private onClosed(): void {
     this._ws = undefined;
-    this.rejectAllPending(new TrameError(0, "WebSocket connection closed."));
+    this.rejectAllPending(new SleipnirError(0, "WebSocket connection closed."));
 
     // Unerwarteter Disconnect (nicht durch close()/dispose() ausgelöst) -> Reconnect.
     if (!this._closedByClient && !this._disposed && this._reconnect) {
       this.startReconnect();
     } else {
-      this.setState(TrameConnectionState.Disconnected);
+      this.setState(SleipnirConnectionState.Disconnected);
     }
   }
 
   /** Startet den Hintergrund-Reconnect mit Backoff (idempotent). */
   private startReconnect(): void {
     if (this._disposed) return;
-    if (this._reconnectPromise && this._state === TrameConnectionState.Reconnecting) return;
+    if (this._reconnectPromise && this._state === SleipnirConnectionState.Reconnecting) return;
 
-    this.setState(TrameConnectionState.Reconnecting);
+    this.setState(SleipnirConnectionState.Reconnecting);
     this._reconnectAbort?.abort();
     this._reconnectAbort = new AbortController();
     const signal = this._reconnectAbort.signal;
@@ -498,7 +498,7 @@ export class TrameWebSocketClient {
         try {
           await this._connectPromise;
           if (this._ws && this._ws.readyState === READY_OPEN) {
-            this.setState(TrameConnectionState.Connected);
+            this.setState(SleipnirConnectionState.Connected);
             return; // Erfolg
           }
         } catch {
@@ -506,7 +506,7 @@ export class TrameWebSocketClient {
         }
       }
       // Backoff erschöpft -> aufgeben.
-      if (!this._disposed) this.setState(TrameConnectionState.Disconnected);
+      if (!this._disposed) this.setState(SleipnirConnectionState.Disconnected);
     })();
   }
 
@@ -519,11 +519,11 @@ export class TrameWebSocketClient {
 
 // --- Shared (gleichlautend mit rest.ts) ---
 
-function parseData<T>(response: TrameResponse): T | null {
+function parseData<T>(response: SleipnirResponse): T | null {
   // Seit dem Single-Pass-Fix ist data bereits ein strukturierter Wert (kein JSON-String).
   if (response.isSuccess && response.data != null) {
     return response.data as T;
   }
-  if (!response.isSuccess) throw TrameError.fromResponse(response);
+  if (!response.isSuccess) throw SleipnirError.fromResponse(response);
   return null;
 }

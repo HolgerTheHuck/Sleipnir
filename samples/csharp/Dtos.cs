@@ -4,13 +4,13 @@
 // Spiegel der server-seitigen Typen (samples/server/SampleServer.cs). Die
 // Property-Namen sind PascalCase — der C#-Client deserialisiert mit
 // PropertyNameCaseInsensitive=true, sodass camelCase-JSON vom Server ohne
-// weitere Attribute bindet. Kein [TrameDataContract] nötig (Client-seite sind
+// weitere Attribute bindet. Kein [SleipnirDataContract] nötig (Client-seite sind
 // reine Deserialisierungs-POCOs, keine Discovery-Verträge).
 // ==============================================================================
 
 using System.Text.Json;
 
-namespace Trame.Samples.CSharp;
+namespace Sleipnir.Samples.CSharp;
 
 public class Customer
 {
@@ -29,7 +29,7 @@ public class Order
 
 /// <summary>
 /// Geteilte JSON-Optionen für die manuelle Deserialisierung von
-/// <c>TrameResponse.Data</c> (JsonElement) in den Batch-Szenarien.
+/// <c>SleipnirResponse.Data</c> (JsonElement) in den Batch-Szenarien.
 /// CaseInsensitive, weil der Server camelCase serialisiert (siehe Discovery).
 /// </summary>
 public static class SampleJson

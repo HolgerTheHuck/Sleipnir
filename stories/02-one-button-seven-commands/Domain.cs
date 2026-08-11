@@ -1,8 +1,8 @@
-using TrameCommon.Models;
-using TrameCommon.Results;
-using TrameCore.Attributes;
+using SleipnirCommon.Models;
+using SleipnirCommon.Results;
+using SleipnirCore.Attributes;
 
-namespace TrameStories.Story02;
+namespace SleipnirStories.Story02;
 
 // === Story 02 Domain — "One Button, Seven Commands" ===============================
 // Ein UI-Klick („Bestellung aufgeben") fächert auf sieben Downstream-Commands aus.
@@ -38,12 +38,12 @@ internal static class Story02Store
 
 // === Die sieben Commands ==========================================================
 
-[TrameController("Order")]
+[SleipnirController("Order")]
 public class OrderController
 {
     // Provider: legt die Bestellung an, exposet die neue OrderId für die drei
     // Downstream-Commands, die die OrderId brauchen (Notification, Audit, Shipping).
-    [TrameMethod("Create")]
+    [SleipnirMethod("Create")]
     public async Task<CommandAck> Create(int customerId, int addressId, List<int> articleIds)
     {
         await StoryLatency.Wait();
@@ -52,10 +52,10 @@ public class OrderController
     }
 }
 
-[TrameController("Inventory")]
+[SleipnirController("Inventory")]
 public class InventoryController
 {
-    [TrameMethod("Reserve")]
+    [SleipnirMethod("Reserve")]
     public async Task<CommandAck> Reserve(List<int> articleIds)
     {
         await StoryLatency.Wait();
@@ -64,26 +64,26 @@ public class InventoryController
     }
 }
 
-[TrameController("Billing")]
+[SleipnirController("Billing")]
 public class BillingController
 {
     // Der einzige Command, der bewusst einen Business-Fehler zurückgibt (für Customer
-    // im Over-Credit-Limit-Set). Gibt TrameResults.Error zurück — NIEMALS werfen, um
-    // einen client-sichtbaren Code+Message zu setzen (TrameResults.Error → ReturnResponse).
-    [TrameMethod("Charge")]
-    public async Task<TrameResponse> Charge(int customerId, decimal amount)
+    // im Over-Credit-Limit-Set). Gibt SleipnirResults.Error zurück — NIEMALS werfen, um
+    // einen client-sichtbaren Code+Message zu setzen (SleipnirResults.Error → ReturnResponse).
+    [SleipnirMethod("Charge")]
+    public async Task<SleipnirResponse> Charge(int customerId, decimal amount)
     {
         await StoryLatency.Wait();
         if (Story02Store.OverCreditLimit.Contains(customerId))
-            return TrameResults.Error(402, $"Credit limit exceeded for customer {customerId} (amount {amount:F2}).");
-        return TrameResults.Ok(new CommandAck { Service = "Billing", Ref = $"charged {amount:F2}" });
+            return SleipnirResults.Error(402, $"Credit limit exceeded for customer {customerId} (amount {amount:F2}).");
+        return SleipnirResults.Ok(new CommandAck { Service = "Billing", Ref = $"charged {amount:F2}" });
     }
 }
 
-[TrameController("Loyalty")]
+[SleipnirController("Loyalty")]
 public class LoyaltyController
 {
-    [TrameMethod("AwardPoints")]
+    [SleipnirMethod("AwardPoints")]
     public async Task<CommandAck> AwardPoints(int customerId, decimal amount)
     {
         await StoryLatency.Wait();
@@ -93,11 +93,11 @@ public class LoyaltyController
     }
 }
 
-[TrameController("Notification")]
+[SleipnirController("Notification")]
 public class NotificationController
 {
     // Consumer von @orderId (Parameter heißt `orderId` → Bindung nach Name).
-    [TrameMethod("SendConfirmation")]
+    [SleipnirMethod("SendConfirmation")]
     public async Task<CommandAck> SendConfirmation(int customerId, int orderId)
     {
         await StoryLatency.Wait();
@@ -106,10 +106,10 @@ public class NotificationController
     }
 }
 
-[TrameController("Audit")]
+[SleipnirController("Audit")]
 public class AuditController
 {
-    [TrameMethod("Log")]
+    [SleipnirMethod("Log")]
     public async Task<CommandAck> Log(int orderId, string action)
     {
         await StoryLatency.Wait();
@@ -119,10 +119,10 @@ public class AuditController
     }
 }
 
-[TrameController("Shipping")]
+[SleipnirController("Shipping")]
 public class ShippingController
 {
-    [TrameMethod("Schedule")]
+    [SleipnirMethod("Schedule")]
     public async Task<CommandAck> Schedule(int orderId, int addressId)
     {
         await StoryLatency.Wait();

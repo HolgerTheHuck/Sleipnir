@@ -1,8 +1,8 @@
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
-using TrameClient.Trame;
-using TrameCommon.Models;
+using SleipnirClient.Sleipnir;
+using SleipnirCommon.Models;
 
 const string BaseUrl = "https://localhost:5002";
 
@@ -13,7 +13,7 @@ var httpHandler = new HttpClientHandler
 };
 var httpClient = new HttpClient(httpHandler);
 
-var rest = new TrameRestJsonClient(BaseUrl, httpClient);
+var rest = new SleipnirRestJsonClient(BaseUrl, httpClient);
 
 Console.WriteLine("=== NotificationChat C# Client ===");
 Console.WriteLine($"Base URL: {BaseUrl}\n");
@@ -23,7 +23,7 @@ Console.WriteLine("1. Single REST call: Notification.GetInbox");
 try
 {
     var inbox = await rest.Call<List<NotificationDto>>(
-        TrameCall.Init("Notification", "GetInbox").ToRequest()
+        SleipnirCall.Init("Notification", "GetInbox").ToRequest()
     );
     Console.WriteLine($"   Inbox has {inbox?.Count ?? 0} items.");
     inbox?.Take(3).ToList().ForEach(n => Console.WriteLine($"   - [{n.Type}] {n.Title}: {n.Body}"));
@@ -37,19 +37,19 @@ catch (Exception ex)
 Console.WriteLine("\n2. Parallel batch: UnreadCount + Chats + Gallery");
 try
 {
-    var batch = new TrameMultiRequest
+    var batch = new SleipnirMultiRequest
     {
         Mode = ExecutionMode.Parallel,
         Requests =
         [
-            TrameCall.Init("Notification", "GetUnreadCount").ToRequest(),
-            TrameCall.Init("Chat", "GetChats").ToRequest(),
-            TrameCall.Init("Media", "GetGallery").ToRequest()
+            SleipnirCall.Init("Notification", "GetUnreadCount").ToRequest(),
+            SleipnirCall.Init("Chat", "GetChats").ToRequest(),
+            SleipnirCall.Init("Media", "GetGallery").ToRequest()
         ]
     };
 
     var responses = await rest.Call(batch);
-    foreach (var r in responses ?? Enumerable.Empty<TrameResponse?>())
+    foreach (var r in responses ?? Enumerable.Empty<SleipnirResponse?>())
     {
         if (r is null) continue;
         Console.WriteLine($"   {r.Id}: code={r.Code}, data kind={r.Data?.ValueKind ?? JsonValueKind.Undefined}");
@@ -64,26 +64,26 @@ catch (Exception ex)
 Console.WriteLine("\n3. Dependency chain: CreateChat -> SendMessage -> GetMessages");
 try
 {
-    var chain = new TrameMultiRequest
+    var chain = new SleipnirMultiRequest
     {
         Mode = ExecutionMode.Serial,
         Requests =
         [
-            TrameCall.Init("Chat", "CreateChat")
+            SleipnirCall.Init("Chat", "CreateChat")
                 .Param("name", "Demo Chat")
                 .Param("participants", new List<string> { "Client", "Server" })
                 .Named("create")
                 .Exposes("$.id", "chatId")
                 .ToRequest(),
 
-            TrameCall.Init("Chat", "SendMessage")
+            SleipnirCall.Init("Chat", "SendMessage")
                 .WithAlias("@chatId")
                 .Param("sender", "Client")
-                .Param("text", "Hello from the C# client via Trame!")
+                .Param("text", "Hello from the C# client via Sleipnir!")
                 .Named("send")
                 .ToRequest(),
 
-            TrameCall.Init("Chat", "GetMessages")
+            SleipnirCall.Init("Chat", "GetMessages")
                 .WithAlias("@chatId")
                 .Named("messages")
                 .ToRequest()
@@ -91,7 +91,7 @@ try
     };
 
     var chainResponses = await rest.Call(chain);
-    foreach (var r in chainResponses ?? Enumerable.Empty<TrameResponse?>())
+    foreach (var r in chainResponses ?? Enumerable.Empty<SleipnirResponse?>())
     {
         if (r is null) continue;
         Console.WriteLine($"   {r.Id}: code={r.Code}");
@@ -113,13 +113,13 @@ catch (Exception ex)
 Console.WriteLine("\n4. WebSocket call: Notification.SendMail + Notification.GetById");
 try
 {
-    var ws = new TrameWebSocketClient(BaseUrl);
+    var ws = new SleipnirWebSocketClient(BaseUrl);
     await ws.ConnectAsync();
     try
     {
         var sent = await ws.Call<NotificationDto>(
-            TrameCall.Init("Notification", "SendMail")
-                .Param("to", "client@trame.test")
+            SleipnirCall.Init("Notification", "SendMail")
+                .Param("to", "client@sleipnir.test")
                 .Param("subject", "WebSocket test")
                 .Param("body", "This mail arrived over the persistent WebSocket channel.")
                 .ToRequest()
@@ -128,7 +128,7 @@ try
         Console.WriteLine($"   Sent: [{sent?.Type}] {sent?.Title} (Id={sent?.Id})");
 
         var loaded = await ws.Call<NotificationDto>(
-            TrameCall.Init("Notification", "GetById").Param("id", sent!.Id).ToRequest()
+            SleipnirCall.Init("Notification", "GetById").Param("id", sent!.Id).ToRequest()
         );
         Console.WriteLine($"   Loaded: [{loaded?.Type}] {loaded?.Title}");
     }

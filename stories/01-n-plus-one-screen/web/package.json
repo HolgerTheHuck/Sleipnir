@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Story 01 demo UI — consumes the trame-codegen-generated typed client. The N+1 screen: 6 serial roundtrips vs 1 typed Trame batch.",
+  "description": "Story 01 demo UI — consumes the sleipnir-codegen-generated typed client. The N+1 screen: 6 serial roundtrips vs 1 typed Sleipnir batch.",
   "scripts": {
     "setup": "npm run build --prefix ../../clients/codegen",
     "gen": "node scripts/gen.mjs",
@@ -12,8 +12,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "trame-client": "file:../../../clients/ts",
-    "trame-codegen": "file:../../../clients/codegen"
+    "sleipnir-client": "file:../../../clients/ts",
+    "sleipnir-codegen": "file:../../../clients/codegen"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

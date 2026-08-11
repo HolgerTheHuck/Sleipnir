@@ -10,22 +10,22 @@
 // wichtig sind oder der Roundtrip einmal bleiben soll.
 // ==============================================================================
 
-using TrameClient.Trame;
-using TrameCommon.Models;
+using SleipnirClient.Sleipnir;
+using SleipnirCommon.Models;
 
-namespace Trame.Samples.CSharp;
+namespace Sleipnir.Samples.CSharp;
 
 public static class BatchSerialScenario
 {
-    public static async Task RunAsync(TrameRestJsonClient rest, TextWriter w)
+    public static async Task RunAsync(SleipnirRestJsonClient rest, TextWriter w)
     {
-        var multi = new TrameMultiRequest
+        var multi = new SleipnirMultiRequest
         {
             Mode = ExecutionMode.Serial,          // sequenziell in Request-Reihenfolge
-            Requests = new List<TrameRequest>
+            Requests = new List<SleipnirRequest>
             {
-                TrameCall.Init("Customer", "GetCustomerById").With(1).Named("a").ToRequest(),
-                TrameCall.Init("Customer", "GetCustomerById").With(2).Named("b").ToRequest(),
+                SleipnirCall.Init("Customer", "GetCustomerById").With(1).Named("a").ToRequest(),
+                SleipnirCall.Init("Customer", "GetCustomerById").With(2).Named("b").ToRequest(),
             },
         };
 

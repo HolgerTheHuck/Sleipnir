@@ -1,4 +1,4 @@
-// Auto-generated Trame data types. Properties are camelCase (wire) and
+// Auto-generated Sleipnir data types. Properties are camelCase (wire) and
 // optional (discovery carries no nullability; callers narrow).
 
 export interface StockInfo {

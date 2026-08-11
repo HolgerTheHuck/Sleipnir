@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Sleipnir",
+  "classifications": [ "Web", "Sleipnir", "Server", "SPA", "Svelte" ],
+  "identity": "Sleipnir.Server.Spa",
+  "name": "Sleipnir Server with Svelte SPA",
+  "shortName": "sleipnir-server-spa",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "sourceName": "SleipnirServerSpaTemplate",
+  "preferNameDirectory": true,
+  "primaryOutputs": [
+    { "path": "SleipnirServerSpaTemplate.csproj" }
+  ],
+  "sources": [
+    {
+      "source": "./",
+      "target": "./",
+      "exclude": [
+        "**/.template.config/**",
+        "**/node_modules/**",
+        "**/obj/**",
+        "**/bin/**"
+      ]
+    }
+  ]
+}

@@ -1,15 +1,15 @@
 # Discovery Schema — The Language-Neutral Type Contract
 
 > This is the authoritative specification of the `DiscoveryInfo` payload returned by
-> `GET /api/trame/discovery` (and the JSON-RPC `trame.discover` capability). It defines a
+> `GET /api/sleipnir/discovery` (and the JSON-RPC `sleipnir.discover` capability). It defines a
 > **language-neutral type system** (`TypeRef`) that the .NET server emits and any client
 > generator — or any non-C# server — consumes. The protocol-level landing page is
 > [PROTOCOL.md](../PROTOCOL.md#discovery-mex); the generator's runtime guard that enforces
 > this shape is `assertDiscoveryShape` in
 > [`clients/codegen/src/core/discovery.ts`](../clients/codegen/src/core/discovery.ts); the
-> producer is [`TrameCore/Services/TrameDiscoveryService.cs`](../TrameCore/Services/TrameDiscoveryService.cs).
+> producer is [`SleipnirCore/Services/SleipnirDiscoveryService.cs`](../SleipnirCore/Services/SleipnirDiscoveryService.cs).
 
-Trame is code-first: the C# classes decorated with attributes *are* the contract, and the
+Sleipnir is code-first: the C# classes decorated with attributes *are* the contract, and the
 discovery payload is that contract's runtime projection. For that projection to be a real
 contract — usable by independent implementers and never drifting from wire behavior — it
 must be **language-neutral**, **versioned**, and **pinned to the server's actual output**.
@@ -33,7 +33,7 @@ This document specifies how. The guiding invariant:
 | Field | Type | Meaning |
 |---|---|---|
 | `discoveryVersion` | `string` | Schema version, additive-only (see §11). Current: `"1"`. |
-| `controllers` | `ControllerMeta[]` | One per registered `[TrameController]`. |
+| `controllers` | `ControllerMeta[]` | One per registered `[SleipnirController]`. |
 | `types` | `Record<string, TypeMeta>` | Registry of every expandable contract type (object or enum) referenced anywhere in the payload. Keys are **opaque producer-chosen identifiers** (the .NET producer uses the fully-qualified type name); they are *identity*, not type *syntax*. A `TypeRef` with `kind:"ref"` points here. The .NET producer keys and resolves this map with an **OrdinalIgnoreCase** comparer, and writes both a `ref` and its target `types` key from the same `TypeKey`, so the two always agree on casing in producer output. A non-C# producer should pick one casing convention and keep `ref` and `types` keys consistent. |
 
 `ControllerMeta`:
@@ -52,7 +52,7 @@ This document specifies how. The guiding invariant:
   "methodName": "GetById",
   "returnType": TypeRef,            // the method's effective return type (Task<T> unwrapped; void → {kind:"void"})
   "parameters": [ ParameterMeta, … ],
-  "documentation": "Returns a customer by ID"   // from [TrameDocumentation] on the method, or null
+  "documentation": "Returns a customer by ID"   // from [SleipnirDocumentation] on the method, or null
 }
 ```
 
@@ -63,7 +63,7 @@ This document specifies how. The guiding invariant:
   "parameterName": "id",
   "parameterType": TypeRef,
   "defaultValue": 0,                 // C# default parameter value, or absent/JSON null if none
-  "documentation": "…"             // v1: copied from the method-level [TrameDocumentation]; per-parameter docs are not yet read
+  "documentation": "…"             // v1: copied from the method-level [SleipnirDocumentation]; per-parameter docs are not yet read
 }
 ```
 
@@ -77,7 +77,7 @@ This document specifies how. The guiding invariant:
   "typeName": "Example.Shop.Order",   // the registry key (opaque id) repeated
   "properties": [ PropertyMeta, … ],            // present when kind:"object"
   "members": [ { "name": "Pending", "value": 0 }, … ],  // present when kind:"enum"
-  "example": { … }                   // from [TrameExample] or a default instance; may be null
+  "example": { … }                   // from [SleipnirExample] or a default instance; may be null
 }
 ```
 
@@ -105,7 +105,7 @@ TypeRef =
   | { "kind": "map",     "key": TypeRef, "value": TypeRef, "nullable": bool? }
   | { "kind": "stream",  "element": TypeRef }              // IAsyncEnumerable<T> — never nullable
   | { "kind": "ref",     "ref": <typeKey>,    "nullable": bool? }
-  | { "kind": "opaque",  "nativeName": "TrameResponse", "nullable": bool? }
+  | { "kind": "opaque",  "nativeName": "SleipnirResponse", "nullable": bool? }
   | { "kind": "void" }
 ```
 
@@ -116,7 +116,7 @@ TypeRef =
 | `element` | `array`, `set`, `stream` | The element's `TypeRef`. |
 | `key`, `value` | `map` | The key and value `TypeRef`s. Keys are restricted to scalar kinds in practice. |
 | `ref` | `ref` | The `types` registry key this usage resolves to. |
-| `nativeName` | `opaque` | Informational hint of the unmodelled framework/BCL type (e.g. `"TrameResponse"`, `"ExpandoObject"`). **Never** used as identity by consumers; present for diagnostics only. |
+| `nativeName` | `opaque` | Informational hint of the unmodelled framework/BCL type (e.g. `"SleipnirResponse"`, `"ExpandoObject"`). **Never** used as identity by consumers; present for diagnostics only. |
 | `nullable` | `scalar`, `array`, `set`, `map`, `ref`, `opaque` | Occurrence-level nullability from C# nullable reference types (NRT). Absent ⟹ not nullable. `stream` and `void` are never nullable. See §7. |
 
 Design rules:
@@ -153,7 +153,7 @@ target-language spellings are producer/consumer concerns.
 | `timeonly` | `System.TimeOnly` |
 | `timespan` | `System.TimeSpan` |
 | `guid` | `System.Guid` |
-| `bytes` | `byte[]` (binary — flows via `TrameRequest.BinaryData`) |
+| `bytes` | `byte[]` (binary — flows via `SleipnirRequest.BinaryData`) |
 | `uri` | `System.Uri` |
 | `version` | `System.Version` |
 | `any` | `object`, `dynamic`, `JsonElement`, `JsonNode`, `JsonObject`, `JsonArray`, `JsonValue`, `JsonDocument`, `ExpandoObject` |
@@ -178,7 +178,7 @@ emitted as `string`/`str` by the generator). The kinds:
 | `map` | Keyed entries | `Dictionary<K,V>`, `IDictionary<K,V>`, `IReadOnlyDictionary<K,V>`, `SortedDictionary<K,V>`, `SortedList<K,V>` |
 | `stream` | Asynchronous sequence | `IAsyncEnumerable<T>` |
 
-`stream` is a **contract declaration only**. At runtime the Trame invoker consumes an
+`stream` is a **contract declaration only**. At runtime the Sleipnir invoker consumes an
 `IAsyncEnumerable<T>` into a `List<T>` and serializes it as a JSON array on the wire (see
 `CLAUDE.md` → `InvokeDi`). The discovery contract still reports `kind:"stream"` so a
 non-C# server or client can model streaming authentically; the *result* wire shape for a
@@ -191,7 +191,7 @@ materialized result without losing correctness.
 ## 5. `ref`, the registry, objects vs enums
 
 A contract type (a class/struct/enum whose assembly belongs to the controller assemblies,
-or which is force-expanded via `[TrameDataContract]`) is registered once in `types`. A usage
+or which is force-expanded via `[SleipnirDataContract]`) is registered once in `types`. A usage
 site is `{kind:"ref", ref:"<key>", nullable}`. The `IsExpandableType` boundary (opaque vs
 expanded) is unchanged by this schema — only the *representation* of a type reference changes.
 
@@ -215,8 +215,8 @@ expanded) is unchanged by this schema — only the *representation* of a type re
 ## 6. Opaque
 
 `kind:"opaque"` covers types the server knows about but does not model structurally:
-framework envelopes (`TrameResponse`), BCL types outside the contract-assembly boundary and
-without a `[TrameDataContract]` override, and types the producer declines to expand. The
+framework envelopes (`SleipnirResponse`), BCL types outside the contract-assembly boundary and
+without a `[SleipnirDataContract]` override, and types the producer declines to expand. The
 `nativeName` is a **diagnostic hint only**; consumers emit a dynamic/`any`/`object`/`Any`
 placeholder and must not branch on `nativeName`. `opaque` is the explicit, named successor of
 the prior "unrecognized .NET name" fallback — nothing is ever silently `unknown` on the wire.
@@ -234,7 +234,7 @@ It is read from C# nullable reference types (NRT) via `NullabilityInfoContext`:
 - **`Task<T>` / `ValueTask<T>` returns are reported as non-nullable** (`nullable` absent),
   even when `T` is a nullable reference type. The NRT of `T` *inside* `Task<T>` is not exposed
   by `NullabilityInfoContext`, so the producer reads occurrence nullability only for non-Task
-  reference returns. Since most Trame methods return `Task<T>`, this is the common case; a
+  reference returns. Since most Sleipnir methods return `Task<T>`, this is the common case; a
   consumer that wants true async-result nullability must derive it from the declared type
   separately.
 - For value types: nullable only via `Nullable<T>` (`int?`), which the producer represents as
@@ -263,15 +263,15 @@ previously every parameter was required because no default was reported.
 
 Intentionally absent (and why):
 
-- **Method overloads.** Trame dispatches by `Controller_Method` name only; overloads are
-  modeled with distinct `[TrameMethod]` names. The schema reflects what is callable.
+- **Method overloads.** Sleipnir dispatches by `Controller_Method` name only; overloads are
+  modeled with distinct `[SleipnirMethod]` names. The schema reflects what is callable.
 - **The `*TypeDefinition` inline overrides.** The prior shape embedded a nested `TypeMeta`
   on each parameter/return/property (`returnTypeDefinition`, `typeDefinition`,
   `nestedTypeDefinition`). These are gone — a `ref` resolves into the single `types`
   registry, eliminating a duplication that could drift.
 - **Parameter `num` / positional info.** Parameters bind by name on the wire (see
   `PROTOCOL.md`); discovery reports names, not positions.
-- **Authorization metadata.** `[TrameAuthorise]` is not surfaced in discovery; discovery is an
+- **Authorization metadata.** `[SleipnirAuthorise]` is not surfaced in discovery; discovery is an
   attack-surface oracle and is itself auth-gated (see `BEST_PRACTICES.md` §4.4).
 
 ---
@@ -373,12 +373,12 @@ Intentionally absent (and why):
 **The contract is the server's observed output, by construction.** Three gates keep it so,
 and weakening any of them is a release blocker:
 
-1. **Producer-side derivation.** `TrameTests/Integration/DiscoveryContractTests.cs` fetches
-   `GET /api/trame/discovery` from a running host and asserts structural equality against the
+1. **Producer-side derivation.** `SleipnirTests/Integration/DiscoveryContractTests.cs` fetches
+   `GET /api/sleipnir/discovery` from a running host and asserts structural equality against the
    committed golden fixture
    [`clients/codegen/test/fixtures/story01-discovery.json`](../clients/codegen/test/fixtures/story01-discovery.json).
    The golden is **derived from wire behavior**, not authored: regenerating it
-   (`TRAME_REGEN_GOLDEN=1`) re-fetches from the server; default mode **fails on diff**, so
+   (`SLEIPNIR_REGEN_GOLDEN=1`) re-fetches from the server; default mode **fails on diff**, so
    any server change that alters the contract is caught in CI.
 2. **Consumer-side validation.** `assertDiscoveryShape` enforces `discoveryVersion`
    (additive-only) and validates every `TypeRef` (kind ∈ the enum, scalar `name` ∈ the table,
@@ -392,7 +392,7 @@ and weakening any of them is a release blocker:
 
 Because the golden round-trips through the C# producer and the TypeScript consumer, the
 `TypeRef` class and the `TypeRef` interface cannot silently diverge: a mismatch breaks one
-of the three gates. This is how Trame holds the invariant *the discovery payload is the
+of the three gates. This is how Sleipnir holds the invariant *the discovery payload is the
 contract, and the contract equals the wire*.
 
 ---

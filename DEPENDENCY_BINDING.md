@@ -3,7 +3,7 @@
 > This is the authoritative, precise specification of how a provider's result becomes a
 > consumer's argument through an `@alias`. It is the dedicated chapter for the JSON mapping
 > between provider and receiver. The executable spec lives in
-> [`TrameTests/Unit/Core/AliasBindingTests.cs`](TrameTests/Unit/Core/AliasBindingTests.cs);
+> [`SleipnirTests/Unit/Core/AliasBindingTests.cs`](SleipnirTests/Unit/Core/AliasBindingTests.cs);
 > the short landing-page version is in [README.md](README.md#safety), the protocol-level
 > summary in [PROTOCOL.md](PROTOCOL.md#alias-serialization--type-binding).
 
@@ -120,7 +120,7 @@ data**. Missing *reference-type* properties default to `null` (usually visible q
 missing *value-type* properties are the **insidious case** — `0`, `false`, `DateTime.MinValue`
 — no error, no log, just a wrong result.
 
-This is inherent to JSON duck-typing. Trame has no runtime schema to enforce structural
+This is inherent to JSON duck-typing. Sleipnir has no runtime schema to enforce structural
 equality, by design: the C# classes **are** the contract, discovered at runtime. The DevUI
 dependency builder catches the dangerous direction **statically** where both schemas are
 known (see §6); the runtime stays lenient by default, with optional **Strict** and
@@ -136,15 +136,15 @@ subsequent commands whose parameter types are each shaped to receive only the fi
 need:
 
 ```csharp
-TrameCall.Init("Customer", "Get")          // → { id, name, ... }
+SleipnirCall.Init("Customer", "Get")          // → { id, name, ... }
     .Exposes("$", "customer")              // one alias, whole object
     .ToRequest(),
 
-TrameCall.Init("Billing", "ChargeById")    // param: CustomerId { public int Id; }
+SleipnirCall.Init("Billing", "ChargeById")    // param: CustomerId { public int Id; }
     .WithAlias("@customer")
     .ToRequest(),
 
-TrameCall.Init("Directory", "Label")       // param: CustomerName { public string Name; }
+SleipnirCall.Init("Directory", "Label")       // param: CustomerName { public string Name; }
     .WithAlias("@customer")
     .ToRequest()
 ```
@@ -162,7 +162,7 @@ instead (`$.id` → `@cid`, `$.name` → `@cname`).
 
 ## 5. Casing contract
 
-.NET and JavaScript handle casing differently, and Trame sits between them. There are
+.NET and JavaScript handle casing differently, and Sleipnir sits between them. There are
 **three independent casing regimes**, each applying to a different part of the call:
 
 | Regime | Applies to | Casing | Consequence |
@@ -187,7 +187,7 @@ instead (`$.id` → `@cid`, `$.name` → `@cname`).
 ### Why not drop case-sensitivity entirely?
 
 It is tempting but not achievable in one place. Parameter *names* are matched by a
-case-sensitive dictionary key for dispatch determinism — Trame dispatches by name only (no
+case-sensitive dictionary key for dispatch determinism — Sleipnir dispatches by name only (no
 parameter-based overloading), so a case-insensitive name match would introduce ambiguity
 with no schema to resolve it. Parameter *values* go through STJ's case-insensitive property
 matching, which is the right behavior for JSON payloads. The two regimes are kept separate;
@@ -197,10 +197,10 @@ each is internally consistent.
 
 ## 6. DevUI static checker
 
-The dependency builder in the developer UI (`/Trame`) is the one place that has **both**
+The dependency builder in the developer UI (`/Sleipnir`) is the one place that has **both**
 schemas — the provider's return type and the consumer's parameter type — from discovery. It
 runs a static type/casing/structural check
-([`TrameDeveloperUi/src/lib/utils/dependencyCheck.ts`](TrameDeveloperUi/src/lib/utils/dependencyCheck.ts))
+([`SleipnirDeveloperUi/src/lib/utils/dependencyCheck.ts`](SleipnirDeveloperUi/src/lib/utils/dependencyCheck.ts))
 that reproduces the runtime rules above **before** execution:
 
 - **Expose paths** validated against the provider's return schema — a PascalCase `$.Id` is
@@ -215,14 +215,14 @@ that reproduces the runtime rules above **before** execution:
 
 The check is **non-blocking** — "Send anyway" stays available, because the runtime shape
 can differ from the static schema (polymorphism, dynamic results, opaque return types). For
-opaque return types (BCL/third-party without a `[TrameDataContract]` override) it warns that
+opaque return types (BCL/third-party without a `[SleipnirDataContract]` override) it warns that
 the path cannot be statically verified, rather than claiming a false green.
 
 ---
 
 ## 7. Binding modes — Weak, Strict, Paranoid
 
-By default Trame uses **weak** binding — the duck-typing described above, with silent
+By default Sleipnir uses **weak** binding — the duck-typing described above, with silent
 defaults. This is powerful and convenient (the subset fan-out in §4 relies on it). For teams
 that want rigid, fail-loud typing — where a silent default is a correctness KO-criterion —
 two stronger modes are available. They are per-server options, off by default, and each is a
@@ -237,15 +237,15 @@ two stronger modes are available. They are per-server options, off by default, a
 ### Option
 
 ```csharp
-services.AddTrame(new TrameOptions
+services.AddSleipnir(new SleipnirOptions
 {
     AliasBindingMode = AliasBindingMode.Paranoid, // Weak | Strict | Paranoid (default: Weak)
 });
 ```
 
-`AliasBindingMode` (`TrameCommon.Models`) is plumbed through `TrameOptions` to the
-`TrameInvoker` singleton, alongside the cardinality caps. `Weak` is the default and the
-behavior described in §1–§6; a bare `new TrameInvoker()` is also `Weak`.
+`AliasBindingMode` (`SleipnirCommon.Models`) is plumbed through `SleipnirOptions` to the
+`SleipnirInvoker` singleton, alongside the cardinality caps. `Weak` is the default and the
+behavior described in §1–§6; a bare `new SleipnirInvoker()` is also `Weak`.
 
 ### What Strict checks
 
@@ -284,7 +284,7 @@ Paranoid is Strict with both gaps closed:
 1. **All parameters are checked — including literals.** A literal `{"id":7}` sent to a
    method taking `{int Id; bool Active}` is a 400 in Paranoid (silent `Active=false` in
    Weak *and* Strict). This is server-side input validation against the declared contract —
-   the closest Trame gets to schema validation without a schema language.
+   the closest Sleipnir gets to schema validation without a schema language.
 2. **Recursive depth.** The coverage check descends into nested object properties and array
    elements. A `TakeOrder(OrderDto { Id; Address { Street; Zip } })` receiving
    `{"id":1,"address":{"street":"A"}}` is a 400 in Paranoid (missing `Address.Zip`); Strict
@@ -343,8 +343,8 @@ lighter, alias-only, top-level-only variant.
   to fragment size, so it is the most expensive mode and runs on every call.
 
 The executable specs are
-[`TrameTests/Unit/Core/AliasBindingStrictTests.cs`](TrameTests/Unit/Core/AliasBindingStrictTests.cs)
-and [`TrameTests/Unit/Core/AliasBindingParanoidTests.cs`](TrameTests/Unit/Core/AliasBindingParanoidTests.cs).
+[`SleipnirTests/Unit/Core/AliasBindingStrictTests.cs`](SleipnirTests/Unit/Core/AliasBindingStrictTests.cs)
+and [`SleipnirTests/Unit/Core/AliasBindingParanoidTests.cs`](SleipnirTests/Unit/Core/AliasBindingParanoidTests.cs).
 
 ### When the coverage check fires before System.Text.Json
 
@@ -381,7 +381,7 @@ half of the contract. It is well-defined, not a crash, and it is **propagated**:
 | Provider succeeded but **did not expose** the alias (JsonPath matched nothing, the method returned `null`/void, or a declared path produced no fragment) | `400` — `Dependency '@a' unavailable: provider '<id>' did not expose '@a'.` |
 | **No provider** in the batch exposes that alias (dangling `@alias`) | `400` — `Dependency '@a' unavailable: no provider exposes '@a'.` |
 
-> **Extraction is gated on success.** A provider exposes fragments **only when its response is `2xx`**. Any non-2xx response — a business error returned via `TrameResults` (`NotFound`/`BadRequest`/`Error(ProblemDetails)`/…), a thrown exception (→ `500`), or an unauthorized/missing-route decision from the pre-pass — leaves `exposedDependencies` empty, *even if the error payload itself contains fields the declared JsonPath would match* (e.g. a `ProblemDetails` body with `title`/`status`). No value is ever extracted from an error payload and forwarded to a dependent; the dependent sees the propagation row above instead. This is the guarantee behind property 2 (a failed provider produces no `exposedDependencies`).
+> **Extraction is gated on success.** A provider exposes fragments **only when its response is `2xx`**. Any non-2xx response — a business error returned via `SleipnirResults` (`NotFound`/`BadRequest`/`Error(ProblemDetails)`/…), a thrown exception (→ `500`), or an unauthorized/missing-route decision from the pre-pass — leaves `exposedDependencies` empty, *even if the error payload itself contains fields the declared JsonPath would match* (e.g. a `ProblemDetails` body with `title`/`status`). No value is ever extracted from an error payload and forwarded to a dependent; the dependent sees the propagation row above instead. This is the guarantee behind property 2 (a failed provider produces no `exposedDependencies`).
 
 Three properties make this predictable:
 
@@ -404,7 +404,7 @@ Three properties make this predictable:
 
 Authorization is checked **per request**, not per batch. In a batch of independent commands, a
 `401` on one request does **not** abort the others — each response is independent
-(JSON-RPC-conformant). A batch may mix unauthenticated reads with `[TrameAuthorise]` writes;
+(JSON-RPC-conformant). A batch may mix unauthenticated reads with `[SleipnirAuthorise]` writes;
 the writes fail with `401`, the reads succeed, and the client gets a mixed response array.
 Only the dependency **chain** is coupled: a failed provider propagates to its dependents (above).
 
@@ -412,7 +412,7 @@ Only the dependency **chain** is coupled: a failed provider propagates to its de
 
 `HttpContext` is not thread-safe, yet every request in a batch shares the *same* incoming
 context (REST/WebSocket connection). The server therefore splits each batched invocation into
-two phases: **authorization** (controller/method lookup + `[TrameAuthorise]` check) runs
+two phases: **authorization** (controller/method lookup + `[SleipnirAuthorise]` check) runs
 **serially in a pre-pass** before the fan-out; **execution** (parameter binding, the compiled
 delegate, `exposedDependencies` extraction) runs **parallel via `Task.WhenAll` and never
 touches `HttpContext`**. This eliminates the framework's concurrent context access
@@ -420,7 +420,7 @@ structurally. Authorization is cheap (claims reads, microseconds), so the serial
 does not regress parallel throughput — the heavy work stays fully parallel.
 
 > **User-code contract.** A controller can still obtain the context via
-> `IHttpContextAccessor` (the standard ASP.NET pattern; Trame does not register it but
+> `IHttpContextAccessor` (the standard ASP.NET pattern; Sleipnir does not register it but
 > cannot prevent users from doing so). Because `AsyncLocal` flows into all `Task.WhenAll`
 > children, user code in a parallel batch sees the same shared context — it must treat it
 > as **read-only** (no writes to `HttpContext.Items`, the response, or the request body).

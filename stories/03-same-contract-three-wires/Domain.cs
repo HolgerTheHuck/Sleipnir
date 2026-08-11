@@ -1,6 +1,6 @@
-using TrameCore.Attributes;
+using SleipnirCore.Attributes;
 
-namespace TrameStories.Story03;
+namespace SleipnirStories.Story03;
 
 // === Story 03 Domain — "The Same Contract, Three Wires" ===========================
 // Eine winzige Domain, bewusst klein, damit der Punkt der Transport-Unabhängigkeit
@@ -18,11 +18,11 @@ internal static class GreetingStore
     public static int CallCount;
 }
 
-[TrameController("Greeter")]
+[SleipnirController("Greeter")]
 public class GreeterController
 {
     // Ein einfacher Call, der über alle drei Wires identisch läuft.
-    [TrameMethod("Greet")]
+    [SleipnirMethod("Greet")]
     public Greeting Greet(string name)
     {
         var n = Interlocked.Increment(ref GreetingStore.CallCount);
@@ -31,9 +31,9 @@ public class GreeterController
 
     // Ein 2er-Batch-Fall: Add liefert eine Summe; Echo gibt sie unverändert zurück.
     // Beweist, dass auch die Batch-Topologie transport-unabhängig ist.
-    [TrameMethod("Add")]
+    [SleipnirMethod("Add")]
     public int Add(int a, int b) => a + b;
 
-    [TrameMethod("Echo")]
+    [SleipnirMethod("Echo")]
     public int Echo(int value) => value;
 }

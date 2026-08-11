@@ -2,7 +2,7 @@
 //
 // Single source of truth (replaces the duplicated maps in
 // CodegenPage.svelte:14-41, EditorPane.svelte, ParamEditor.svelte). The
-// name sets are lifted from TrameDeveloperUi/src/lib/utils/dependencyCheck.ts:69-95
+// name sets are lifted from SleipnirDeveloperUi/src/lib/utils/dependencyCheck.ts:69-95
 // and are the superset incl. bigint/uint/ulong/short/byte/sbyte/ushort/version/
 // timespan/dateonly/timeonly/datetimeoffset — they encode System.Text.Json's
 // JSON-kind mapping.

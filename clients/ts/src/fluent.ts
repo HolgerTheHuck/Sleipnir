@@ -1,14 +1,14 @@
 import { ExecutionMode } from "./types.js";
-import type { TrameMultiRequest, TrameParameter, TrameRequest } from "./types.js";
+import type { SleipnirMultiRequest, SleipnirParameter, SleipnirRequest } from "./types.js";
 import { toBase64 } from "./request.js";
 
 /**
- * Fluent Builder für einen TrameRequest — Spiegel des C#-TrameCall.
- * Transport-agnostisch: liefert einen {@link TrameRequest}, den jeder Client
+ * Fluent Builder für einen SleipnirRequest — Spiegel des C#-SleipnirCall.
+ * Transport-agnostisch: liefert einen {@link SleipnirRequest}, den jeder Client
  * (REST/WebSocket) senden kann.
  *
  * ```ts
- * TrameCall.init("Customer", "Add")
+ * SleipnirCall.init("Customer", "Add")
  *   .with({ name: "Alice" })        // benannt
  *   .with([42, "x"])                // oder positional
  *   .withBinary(blob)               // -> binaryData (base64)
@@ -18,11 +18,11 @@ import { toBase64 } from "./request.js";
  *   .toRequest();
  * ```
  */
-export class TrameCall {
+export class SleipnirCall {
   private readonly _controller: string;
   private readonly _method: string;
   private _id?: string;
-  private _params: TrameParameter[] = [];
+  private _params: SleipnirParameter[] = [];
   private _num = 0;
   private _exposed = new Map<string, string>();
   private _binary?: Uint8Array;
@@ -33,8 +33,8 @@ export class TrameCall {
   }
 
   /** Startet einen Builder für `controller.method`. */
-  static init(controller: string, method: string): TrameCall {
-    return new TrameCall(controller, method);
+  static init(controller: string, method: string): SleipnirCall {
+    return new SleipnirCall(controller, method);
   }
 
   /** Setzt die Request-Id (Korrelation). Default: `${controller}.${method}`. */
@@ -105,8 +105,8 @@ export class TrameCall {
     return this;
   }
 
-  /** Wandelt den Builder in einen versandfertigen TrameRequest um. */
-  toRequest(): TrameRequest {
+  /** Wandelt den Builder in einen versandfertigen SleipnirRequest um. */
+  toRequest(): SleipnirRequest {
     const id = this._id ?? `${this._controller}.${this._method}`;
     return {
       controller: this._controller,
@@ -119,10 +119,10 @@ export class TrameCall {
   }
 
   /**
-   * Batch-Factory: baut einen TrameMultiRequest aus mehreren (vorab gebauten)
-   * TrameRequests. `mode` Serial aktiviert @alias-Abhängigkeitsauflösung.
+   * Batch-Factory: baut einen SleipnirMultiRequest aus mehreren (vorab gebauten)
+   * SleipnirRequests. `mode` Serial aktiviert @alias-Abhängigkeitsauflösung.
    */
-  static batch(requests: TrameRequest[], mode: ExecutionMode = ExecutionMode.Serial): TrameMultiRequest {
+  static batch(requests: SleipnirRequest[], mode: ExecutionMode = ExecutionMode.Serial): SleipnirMultiRequest {
     return { requests, mode };
   }
 

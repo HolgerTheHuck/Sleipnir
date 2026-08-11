@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { TrameError, CancelledError, isCancelled } from "../../src/errors.js";
+import { SleipnirError, CancelledError, isCancelled } from "../../src/errors.js";
 
-describe("TrameError", () => {
+describe("SleipnirError", () => {
   it("fromBody übernimmt code/message/requestId", () => {
-    const e = TrameError.fromBody({ code: 404, message: "not found", requestId: "x" });
-    expect(e).toBeInstanceOf(TrameError);
+    const e = SleipnirError.fromBody({ code: 404, message: "not found", requestId: "x" });
+    expect(e).toBeInstanceOf(SleipnirError);
     expect(e).toBeInstanceOf(Error);
     expect(e.code).toBe(404);
     expect(e.message).toBe("not found");
@@ -12,13 +12,13 @@ describe("TrameError", () => {
   });
 
   it("fromResponse nutzt Fallback-Message, wenn kein error-Feld (Data trägt seit Single-Pass-Fix keine Fehlertexte)", () => {
-    const e = TrameError.fromResponse({ code: 500, isSuccess: false });
+    const e = SleipnirError.fromResponse({ code: 500, isSuccess: false });
     expect(e.code).toBe(500);
-    expect(e.message).toBe("Trame call failed with code 500.");
+    expect(e.message).toBe("Sleipnir call failed with code 500.");
   });
 
   it("fromResponse bevorzugt strukturiertes error-Feld", () => {
-    const e = TrameError.fromResponse({
+    const e = SleipnirError.fromResponse({
       code: 400,
       data: "x",
       isSuccess: false,
@@ -29,16 +29,16 @@ describe("TrameError", () => {
   });
 
   it("fromResponse mit Fallback-Message bei leerem data", () => {
-    const e = TrameError.fromResponse({ code: 403, data: null, isSuccess: false });
+    const e = SleipnirError.fromResponse({ code: 403, data: null, isSuccess: false });
     expect(e.message).toContain("403");
   });
 });
 
 describe("CancelledError", () => {
-  it("ist keine TrameError (unverpackt)", () => {
+  it("ist keine SleipnirError (unverpackt)", () => {
     const c = new CancelledError("x", true);
     expect(c).toBeInstanceOf(CancelledError);
-    expect(c).not.toBeInstanceOf(TrameError);
+    expect(c).not.toBeInstanceOf(SleipnirError);
     expect(c.timedOut).toBe(true);
     expect(isCancelled(c)).toBe(true);
   });

@@ -10,7 +10,7 @@
 // case leaves names unchanged (`Order` stays `Order`), so Story-01 (no
 // short-name collisions) emits identical names to before.
 
-import type { TypeMeta } from "trame-client";
+import type { TypeMeta } from "sleipnir-client";
 import { shortName } from "./casing.js";
 
 export class NamingResolver {

@@ -1,7 +1,7 @@
 {
-  "name": "trame-client",
+  "name": "sleipnir-client",
   "version": "1.0.0",
-  "description": "Isomorphic JavaScript/TypeScript client for the Trame multi-transport RPC framework (REST + WebSocket). Browser + Node.",
+  "description": "Isomorphic JavaScript/TypeScript client for the Sleipnir multi-transport RPC framework (REST + WebSocket). Browser + Node.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -24,7 +24,7 @@
     "prepublishOnly": "npm run build"
   },
   "keywords": [
-    "trame",
+    "sleipnir",
     "rpc",
     "rest",
     "websocket",
@@ -33,17 +33,17 @@
     "browser",
     "node"
   ],
-  "author": "Trame",
+  "author": "Sleipnir",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/HolgerTheHuck/Trame.git",
+    "url": "git+https://github.com/HolgerTheHuck/Sleipnir.git",
     "directory": "clients/ts"
   },
   "bugs": {
-    "url": "https://github.com/HolgerTheHuck/Trame/issues"
+    "url": "https://github.com/HolgerTheHuck/Sleipnir/issues"
   },
-  "homepage": "https://github.com/HolgerTheHuck/Trame/tree/main/clients/ts#readme",
+  "homepage": "https://github.com/HolgerTheHuck/Sleipnir/tree/main/clients/ts#readme",
   "sideEffects": false,
   "publishConfig": {
     "access": "public"

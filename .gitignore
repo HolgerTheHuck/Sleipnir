@@ -35,7 +35,7 @@ ScaffoldingReadMe.txt
 *.nupkg
 # NuGet Symbol Packages
 *.snupkg
-# npm pack tarballs (regenerierbares Build-Artifact, z. B. trame-client-*.tgz)
+# npm pack tarballs (regenerierbares Build-Artifact, z. B. sleipnir-client-*.tgz)
 *.tgz
 
 # Others
@@ -68,7 +68,7 @@ nunit-*.xml
 /Designer/Designer/node_modules/.vite
 /Designer/Designer/node_modules
 
-# Node (TrameDeveloperUI, Svelte)
+# Node (SleipnirDeveloperUI, Svelte)
 node_modules/
 .vite/
 dist/

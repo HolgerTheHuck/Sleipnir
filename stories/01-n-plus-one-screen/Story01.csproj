@@ -4,28 +4,28 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>TrameStories.Story01</RootNamespace>
+    <RootNamespace>SleipnirStories.Story01</RootNamespace>
   </PropertyGroup>
 
-  <!-- ProjectReference in-repo: kein Pack-Schritt, F5 läuft sofort. TrameServer
-       aggregiert transitiv TrameHub/Rest/WebSocket/DeveloperUi/Core/Common. -->
+  <!-- ProjectReference in-repo: kein Pack-Schritt, F5 läuft sofort. SleipnirServer
+       aggregiert transitiv SleipnirHub/Rest/WebSocket/DeveloperUi/Core/Common. -->
   <ItemGroup>
-    <ProjectReference Include="..\..\TrameServer\TrameServer.csproj" />
+    <ProjectReference Include="..\..\SleipnirServer\SleipnirServer.csproj" />
     <!-- Force the export tool to build before this server (build order only — the tool is not a
          runtime dependency). ReferenceOutputAssembly=false keeps it out of the server's compile
          refs while still ensuring the tool dll exists when the drift-check target runs. -->
-    <ProjectReference Include="..\..\Trame.Server.Codegen\Trame.Server.Codegen.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\Sleipnir.Server.Codegen\Sleipnir.Server.Codegen.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
-  <!-- Trame server-side contract export + drift-check (Slice 3). Regenerates discovery from the
-       built server and fails the build if it drifts from the committed contract.trame.json.
-       TRAME_REGEN_GOLDEN=1 regenerates the committed contract instead of failing. Dev wiring: set
+  <!-- Sleipnir server-side contract export + drift-check (Slice 3). Regenerates discovery from the
+       built server and fails the build if it drifts from the committed contract.sleipnir.json.
+       SLEIPNIR_REGEN_GOLDEN=1 regenerates the committed contract instead of failing. Dev wiring: set
        the tool dll path to its built output (the packaged NuGet sets it via the targets file). -->
   <PropertyGroup>
-    <TrameContractFile>contract.trame.json</TrameContractFile>
-    <TrameExportToolDll>..\..\Trame.Server.Codegen\bin\$(Configuration)\net8.0\Trame.Server.Codegen.dll</TrameExportToolDll>
+    <SleipnirContractFile>contract.sleipnir.json</SleipnirContractFile>
+    <SleipnirExportToolDll>..\..\Sleipnir.Server.Codegen\bin\$(Configuration)\net8.0\Sleipnir.Server.Codegen.dll</SleipnirExportToolDll>
   </PropertyGroup>
-  <Import Project="..\..\Trame.Server.Codegen\build\Trame.Server.Codegen.targets" />
+  <Import Project="..\..\Sleipnir.Server.Codegen\build\Sleipnir.Server.Codegen.targets" />
 
   <!-- N+1-Screen (web/dist) in die Ausgabe kopieren, damit ein published Host
        web/dist unter seinem ContentRoot findet (Program.cs dient ihn unter /story01).

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { TrameWebSocketClient } from "../../src/websocket.js";
-import type { TrameWebSocketClientOptions, IWebSocket, WsFactory } from "../../src/websocket.js";
-import { TrameError, CancelledError } from "../../src/errors.js";
-import { ExecutionMode, TrameConnectionState } from "../../src/types.js";
+import { SleipnirWebSocketClient } from "../../src/websocket.js";
+import type { SleipnirWebSocketClientOptions, IWebSocket, WsFactory } from "../../src/websocket.js";
+import { SleipnirError, CancelledError } from "../../src/errors.js";
+import { ExecutionMode, SleipnirConnectionState } from "../../src/types.js";
 
 const OPEN = 1;
 
@@ -52,18 +52,18 @@ class MockWs implements IWebSocket {
  * einfrieren — deshalb Holder statt Getter).
  */
 interface ClientCtx {
-  client: TrameWebSocketClient;
+  client: SleipnirWebSocketClient;
   ref: { ws: MockWs | undefined; created: number };
 }
 
-function makeClient(options: TrameWebSocketClientOptions = {}): ClientCtx {
+function makeClient(options: SleipnirWebSocketClientOptions = {}): ClientCtx {
   const ref: { ws: MockWs | undefined; created: number } = { ws: undefined, created: 0 };
   const factory: WsFactory = (url, opts) => {
     ref.created++;
     ref.ws = new MockWs(url, opts);
     return ref.ws;
   };
-  const client = new TrameWebSocketClient("http://127.0.0.1:0", {
+  const client = new SleipnirWebSocketClient("http://127.0.0.1:0", {
     WebSocketCtor: factory,
     ...options,
   });
@@ -74,7 +74,7 @@ function resp(id: string, data: string): string {
   return JSON.stringify({ code: 200, data, id, isSuccess: true });
 }
 
-describe("TrameWebSocketClient", () => {
+describe("SleipnirWebSocketClient", () => {
   it("concurrent calls teilen sich EINEN Connect (B1) und korrelieren per id (B3)", async () => {
     const { client, ref } = makeClient();
     const calls = [0, 1, 2, 3, 4].map((i) =>
@@ -167,7 +167,7 @@ describe("TrameWebSocketClient", () => {
     await expect(p).rejects.toBeInstanceOf(CancelledError);
   });
 
-  it("Schließen der Verbindung lehnt pending Calls mit TrameError ab", async () => {
+  it("Schließen der Verbindung lehnt pending Calls mit SleipnirError ab", async () => {
     // reconnect aus — der In-Flight-Drop wird isoliert geprüft (Spiegel SignalR).
     const { client, ref } = makeClient({ reconnect: false });
     const p = client.call({ controller: "C", method: "M", params: [], id: "p" });
@@ -175,7 +175,7 @@ describe("TrameWebSocketClient", () => {
     ws.fireOpen();
     await vi.waitFor(() => expect(ws.sent.length).toBe(1), { interval: 1, timeout: 1000 });
     ws.fireClose(1001);
-    await expect(p).rejects.toBeInstanceOf(TrameError);
+    await expect(p).rejects.toBeInstanceOf(SleipnirError);
     client.dispose();
   });
 
@@ -202,14 +202,14 @@ describe("TrameWebSocketClient", () => {
       ws = new MockWs(u, {});
       return ws;
     };
-    const client = new TrameWebSocketClient("https://host:5001/app/", {
+    const client = new SleipnirWebSocketClient("https://host:5001/app/", {
       WebSocketCtor: factory,
-      wsPath: "tramews",
+      wsPath: "sleipnirws",
     });
     const p = client.call({ controller: "C", method: "M", params: [], id: "x" });
     // factory wird synchron beim Connect angelegt
     expect(created).toBe(1);
-    expect(url).toBe("wss://host:5001/app/tramews");
+    expect(url).toBe("wss://host:5001/app/sleipnirws");
     // aufräumen: Connect ablehnen (Mock-close feuert onclose -> Connect-Promise rejected).
     client.dispose();
     ws.fireClose();
@@ -224,18 +224,18 @@ describe("TrameWebSocketClient", () => {
     await vi.waitFor(() => expect(ws1.sent.length).toBe(1), { interval: 1, timeout: 1000 });
     ws1.fireMessage(resp("r0", "v0"));
     await p0;
-    expect(client.state).toBe(TrameConnectionState.Connected);
+    expect(client.state).toBe(SleipnirConnectionState.Connected);
 
     // Unerwarteter Drop -> Hintergrund-Reconnect (neuer MockWs via Factory).
     ws1.fireClose(1001);
-    await vi.waitFor(() => expect(client.state).toBe(TrameConnectionState.Reconnecting), {
+    await vi.waitFor(() => expect(client.state).toBe(SleipnirConnectionState.Reconnecting), {
       interval: 1,
       timeout: 1000,
     });
     await vi.waitFor(() => expect(ref.created).toBe(2), { interval: 1, timeout: 1000 });
     const ws2 = ref.ws!;
     ws2.fireOpen(); // Reconnect-Connect auflösen
-    await vi.waitFor(() => expect(client.state).toBe(TrameConnectionState.Connected), {
+    await vi.waitFor(() => expect(client.state).toBe(SleipnirConnectionState.Connected), {
       interval: 1,
       timeout: 1000,
     });
@@ -264,7 +264,7 @@ describe("TrameWebSocketClient", () => {
       }
       return ws;
     };
-    const client = new TrameWebSocketClient("http://127.0.0.1:0", {
+    const client = new SleipnirWebSocketClient("http://127.0.0.1:0", {
       WebSocketCtor: factory,
       reconnectDelays: [5, 5, 5],
     });
@@ -275,7 +275,7 @@ describe("TrameWebSocketClient", () => {
     await p0;
 
     ref.ws!.fireClose(1001); // Drop -> 3 Reconnect-Versuche (alle schlagen fehl)
-    await vi.waitFor(() => expect(client.state).toBe(TrameConnectionState.Disconnected), {
+    await vi.waitFor(() => expect(client.state).toBe(SleipnirConnectionState.Disconnected), {
       interval: 1,
       timeout: 2000,
     });
@@ -292,13 +292,13 @@ describe("TrameWebSocketClient", () => {
     await p0;
 
     ref.ws!.fireClose(1001);
-    await vi.waitFor(() => expect(client.state).toBe(TrameConnectionState.Reconnecting), {
+    await vi.waitFor(() => expect(client.state).toBe(SleipnirConnectionState.Reconnecting), {
       interval: 1,
       timeout: 1000,
     });
     const createdBeforeDispose = ref.created;
     client.dispose();
-    expect(client.state).toBe(TrameConnectionState.Disconnected);
+    expect(client.state).toBe(SleipnirConnectionState.Disconnected);
 
     // Keine weiteren Reconnect-Versuche nach dispose.
     await vi.waitFor(() => expect(ref.created).toBe(createdBeforeDispose), {

@@ -7,7 +7,7 @@
           "methodName": "GetAdresse",
           "returnType": "AdresseX",
           "returnTypeDefinition": {
-            "typeName": "Trame.Api.AdresseX",
+            "typeName": "Sleipnir.Api.AdresseX",
             "properties": [
               {
                 "propertyName": "Id",
@@ -33,7 +33,7 @@
                 "propertyName": "Contace",
                 "propertyType": "Contact",
                 "nestedTypeDefinition": {
-                  "typeName": "Trame.Api.Contact",
+                  "typeName": "Sleipnir.Api.Contact",
                   "properties": [],
                   "example": null
                 }
@@ -70,7 +70,7 @@
           "methodName": "GetAdresses",
           "returnType": "List\u003CAdresseX\u003E",
           "returnTypeDefinition": {
-            "typeName": "Trame.Api.AdresseX",
+            "typeName": "Sleipnir.Api.AdresseX",
             "properties": [
               {
                 "propertyName": "Id",
@@ -96,7 +96,7 @@
                 "propertyName": "Contace",
                 "propertyType": "Contact",
                 "nestedTypeDefinition": {
-                  "typeName": "Trame.Api.Contact",
+                  "typeName": "Sleipnir.Api.Contact",
                   "properties": [],
                   "example": null
                 }
@@ -125,7 +125,7 @@
               "parameterName": "a",
               "parameterType": "AdresseX",
               "typeDefinition": {
-                "typeName": "Trame.Api.AdresseX",
+                "typeName": "Sleipnir.Api.AdresseX",
                 "properties": [
                   {
                     "propertyName": "Id",
@@ -151,7 +151,7 @@
                     "propertyName": "Contace",
                     "propertyType": "Contact",
                     "nestedTypeDefinition": {
-                      "typeName": "Trame.Api.Contact",
+                      "typeName": "Sleipnir.Api.Contact",
                       "properties": [],
                       "example": null
                     }
@@ -183,7 +183,7 @@
           "methodName": "GetAdresseParallel",
           "returnType": "AdresseX",
           "returnTypeDefinition": {
-            "typeName": "Trame.Api.AdresseX",
+            "typeName": "Sleipnir.Api.AdresseX",
             "properties": [
               {
                 "propertyName": "Id",
@@ -209,7 +209,7 @@
                 "propertyName": "Contace",
                 "propertyType": "Contact",
                 "nestedTypeDefinition": {
-                  "typeName": "Trame.Api.Contact",
+                  "typeName": "Sleipnir.Api.Contact",
                   "properties": [],
                   "example": null
                 }
@@ -265,7 +265,7 @@
           "methodName": "GetCustomerById",
           "returnType": "Customer",
           "returnTypeDefinition": {
-            "typeName": "Trame.Model.Customer",
+            "typeName": "Sleipnir.Model.Customer",
             "properties": [
               {
                 "propertyName": "Id",
@@ -301,7 +301,7 @@
                 "propertyName": "Addresses",
                 "propertyType": "List\u003CAddress\u003E",
                 "nestedTypeDefinition": {
-                  "typeName": "Trame.Model.Address",
+                  "typeName": "Sleipnir.Model.Address",
                   "properties": [],
                   "example": null
                 }
@@ -331,7 +331,7 @@
           "methodName": "GetOrderByOrderId",
           "returnType": "List\u003COrder\u003E",
           "returnTypeDefinition": {
-            "typeName": "Trame.Model.Order",
+            "typeName": "Sleipnir.Model.Order",
             "properties": [
               {
                 "propertyName": "Id",
@@ -369,7 +369,7 @@
           "methodName": "GetAllCustomers",
           "returnType": "List\u003CCustomer\u003E",
           "returnTypeDefinition": {
-            "typeName": "Trame.Model.Customer",
+            "typeName": "Sleipnir.Model.Customer",
             "properties": [
               {
                 "propertyName": "Id",
@@ -405,7 +405,7 @@
                 "propertyName": "Addresses",
                 "propertyType": "List\u003CAddress\u003E",
                 "nestedTypeDefinition": {
-                  "typeName": "Trame.Model.Address",
+                  "typeName": "Sleipnir.Model.Address",
                   "properties": [],
                   "example": null
                 }
@@ -560,8 +560,8 @@
     }
   ],
   "types": {
-    "Trame.Api.Contact": {
-      "typeName": "Trame.Api.Contact",
+    "Sleipnir.Api.Contact": {
+      "typeName": "Sleipnir.Api.Contact",
       "properties": [
         {
           "propertyName": "Id",
@@ -579,8 +579,8 @@
         "name": ""
       }
     },
-    "Trame.Api.AdresseX": {
-      "typeName": "Trame.Api.AdresseX",
+    "Sleipnir.Api.AdresseX": {
+      "typeName": "Sleipnir.Api.AdresseX",
       "properties": [
         {
           "propertyName": "Id",
@@ -606,7 +606,7 @@
           "propertyName": "Contace",
           "propertyType": "Contact",
           "nestedTypeDefinition": {
-            "typeName": "Trame.Api.Contact",
+            "typeName": "Sleipnir.Api.Contact",
             "properties": [],
             "example": null
           }
@@ -623,8 +623,8 @@
         }
       }
     },
-    "Trame.Model.Address": {
-      "typeName": "Trame.Model.Address",
+    "Sleipnir.Model.Address": {
+      "typeName": "Sleipnir.Model.Address",
       "properties": [
         {
           "propertyName": "Id",
@@ -654,8 +654,8 @@
         "postalCode": ""
       }
     },
-    "Trame.Model.Customer": {
-      "typeName": "Trame.Model.Customer",
+    "Sleipnir.Model.Customer": {
+      "typeName": "Sleipnir.Model.Customer",
       "properties": [
         {
           "propertyName": "Id",
@@ -691,7 +691,7 @@
           "propertyName": "Addresses",
           "propertyType": "List\u003CAddress\u003E",
           "nestedTypeDefinition": {
-            "typeName": "Trame.Model.Address",
+            "typeName": "Sleipnir.Model.Address",
             "properties": [],
             "example": null
           }
@@ -707,8 +707,8 @@
         "addresses": []
       }
     },
-    "Trame.Model.Order": {
-      "typeName": "Trame.Model.Order",
+    "Sleipnir.Model.Order": {
+      "typeName": "Sleipnir.Model.Order",
       "properties": [
         {
           "propertyName": "Id",

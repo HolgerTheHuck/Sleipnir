@@ -3,7 +3,7 @@
 // Wird per <Compile Include> in ProbeMp2.csproj (MessagePack 2.5.187 = Server)
 // UND ProbeMp3.csproj (MessagePack 3.1.3 = Client) gelinkt — derselbe Source
 // kompiliert gegen jede eigene MessagePack-Version. Genau das, was später in
-// TrameHub + TrameClient passiert (Step 8 des Single-Pass-Fix-Plans).
+// SleipnirHub + SleipnirClient passiert (Step 8 des Single-Pass-Fix-Plans).
 //
 // Nullable bewusst AUS, damit die IFormatterResolver/IMessagePackFormatter-Signatur
 // in beiden Versionen matched (3.x hat teils ?-Annotationen, 2.x nicht — beides
@@ -15,7 +15,7 @@ using MessagePack;
 using MessagePack.Formatters;
 using MessagePack.Resolvers;
 
-namespace Trame.Spikes.MessagePack;
+namespace Sleipnir.Spikes.MessagePack;
 
 /// <summary>
 /// Serialisiert <see cref="JsonElement"/> (und <see cref="JsonElement"/>) als

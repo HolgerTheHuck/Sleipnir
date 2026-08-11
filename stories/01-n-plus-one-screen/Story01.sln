@@ -5,19 +5,19 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Story01", "Story01.csproj", "{61D6D9DE-5A6E-43EA-892B-D0808DE453DB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrameServer", "..\..\TrameServer\TrameServer.csproj", "{66D4C7B0-347C-422A-86E2-DD14A7B2FE70}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SleipnirServer", "..\..\SleipnirServer\SleipnirServer.csproj", "{66D4C7B0-347C-422A-86E2-DD14A7B2FE70}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrameHub", "..\..\TrameHub\TrameHub.csproj", "{08BFF4F1-50F7-4119-B757-A609872F0936}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SleipnirHub", "..\..\SleipnirHub\SleipnirHub.csproj", "{08BFF4F1-50F7-4119-B757-A609872F0936}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrameCore", "..\..\TrameCore\TrameCore.csproj", "{FB1EDF67-20D3-495C-875E-2BD4DF529DDC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SleipnirCore", "..\..\SleipnirCore\SleipnirCore.csproj", "{FB1EDF67-20D3-495C-875E-2BD4DF529DDC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrameCommon", "..\..\TrameCommon\TrameCommon.csproj", "{58950F0A-5F30-4498-A923-51F9FE18A36D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SleipnirCommon", "..\..\SleipnirCommon\SleipnirCommon.csproj", "{58950F0A-5F30-4498-A923-51F9FE18A36D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrameRest", "..\..\TrameRest\TrameRest.csproj", "{02682855-B8E4-492B-A5CA-699FD80CECB9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SleipnirRest", "..\..\SleipnirRest\SleipnirRest.csproj", "{02682855-B8E4-492B-A5CA-699FD80CECB9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrameWebSocket", "..\..\TrameWebSocket\TrameWebSocket.csproj", "{BE099E08-1992-4930-ADDC-E2BCE87D3975}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SleipnirWebSocket", "..\..\SleipnirWebSocket\SleipnirWebSocket.csproj", "{BE099E08-1992-4930-ADDC-E2BCE87D3975}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrameDeveloperUi", "..\..\TrameDeveloperUi\TrameDeveloperUi.csproj", "{4A1D0F49-A4FA-41C6-83C5-46938D350967}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SleipnirDeveloperUi", "..\..\SleipnirDeveloperUi\SleipnirDeveloperUi.csproj", "{4A1D0F49-A4FA-41C6-83C5-46938D350967}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

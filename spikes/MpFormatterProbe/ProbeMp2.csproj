@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Probe gegen MessagePack 2.5.302 = die gepatchte 2.5.x, die TrameHub (Server)
+  <!-- Probe gegen MessagePack 2.5.302 = die gepatchte 2.5.x, die SleipnirHub (Server)
        als Floor direkt ref'ed (SignalR 8.0.28 würde sonst 2.5.187 ziehen). -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -8,7 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <IsPackable>false</IsPackable>
-    <RootNamespace>Trame.Spikes.MessagePack</RootNamespace>
+    <RootNamespace>Sleipnir.Spikes.MessagePack</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

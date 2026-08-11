@@ -6,24 +6,24 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api/trame': {
+      '/api/sleipnir': {
         target: 'https://localhost:5002',
         changeOrigin: true,
         secure: false
       },
-      '/tramews': {
+      '/sleipnirws': {
         target: 'https://localhost:5002',
         changeOrigin: true,
         secure: false,
         ws: true
       },
-      '/tramehub': {
+      '/sleipnirhub': {
         target: 'https://localhost:5002',
         changeOrigin: true,
         secure: false,
         ws: true
       },
-      '/Trame': {
+      '/Sleipnir': {
         target: 'https://localhost:5002',
         changeOrigin: true,
         secure: false

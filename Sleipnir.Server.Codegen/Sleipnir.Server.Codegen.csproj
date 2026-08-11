@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <PackageId>Sleipnir.Server.Codegen</PackageId>
+    <IsPackable>true</IsPackable>
+    <Description>Server-side Sleipnir contract export + drift-check. Regenerates the discovery contract (contract.sleipnir.json) in-process from a built server assembly via SleipnirDiscoveryService, and fails the build if the regenerated contract drifts from the committed one (SLEIPNIR_REGEN_GOLDEN=1 to regenerate). NuGet-shipped, Node-free.</Description>
+    <AssemblyName>Sleipnir.Server.Codegen</AssemblyName>
+    <RootNamespace>Sleipnir.Server.Codegen</RootNamespace>
+    <!-- Tool, not a library: do not place the build output in lib/. It is shipped (with its deps) in
+         tasks/net8.0/ below so the packaged build/*.targets can invoke it via `dotnet`. -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- Tool package: the build output ships in tasks/net8.0/ (not lib/), so the "no lib
+         assembly" and "deps not referenced" pack warnings are expected and intentional. -->
+    <NoWarn>NU5100;NU5128</NoWarn>
+    <!-- Tool package: IncludeBuildOutput=false ships the assembly in tasks/net8.0/ via <None>,
+         so the SDK's snupkg has no .pdb and nuget.org rejects it (400 "no symbol files").
+         Disable symbol packaging here — the 9 library packages still ship snupkgs. -->
+    <IncludeSymbols>false</IncludeSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SleipnirCore\SleipnirCore.csproj" />
+    <ProjectReference Include="..\SleipnirCommon\SleipnirCommon.csproj" />
+  </ItemGroup>
+
+  <!-- Pack the build/ targets into the nupkg so PackageReference auto-imports them. -->
+  <ItemGroup>
+    <None Include="build\**\*" Pack="true" PackagePath="build\" />
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+    <None Include="..\CODEGEN_ONBOARDING.md" Pack="true" PackagePath="docs/CODEGEN_ONBOARDING.md" />
+  </ItemGroup>
+
+  <!-- Ship the export tool (dll + its runtime deps) in tasks/net8.0/ so the packaged
+       build/Sleipnir.Server.Codegen.targets can invoke `dotnet tasks/net8.0/Sleipnir.Server.Codegen.dll`.
+       Framework-dependent: the deps.json + adjacent dependency dlls let `dotnet` resolve it. -->
+  <ItemGroup>
+    <None Include="$(OutputPath)\Sleipnir.Server.Codegen.dll" Pack="true" PackagePath="tasks\net8.0\" />
+    <None Include="$(OutputPath)\Sleipnir.Server.Codegen.dll.config" Pack="true" PackagePath="tasks\net8.0\" Condition="Exists('$(OutputPath)\Sleipnir.Server.Codegen.dll.config')" />
+    <None Include="$(OutputPath)\Sleipnir.Server.Codegen.deps.json" Pack="true" PackagePath="tasks\net8.0\" />
+    <None Include="$(OutputPath)\Sleipnir.Server.Codegen.runtimeconfig.json" Pack="true" PackagePath="tasks\net8.0\" />
+    <!-- The tool's runtime deps (SleipnirCore, SleipnirCommon, Microsoft.Extensions.*) must sit next to
+         it so the isolated tool process resolves them without the MSBuild host's probing paths. -->
+    <None Include="$(OutputPath)\*.dll" Exclude="$(OutputPath)\Sleipnir.Server.Codegen.dll" Pack="true" PackagePath="tasks\net8.0\" />
+  </ItemGroup>
+
+</Project>

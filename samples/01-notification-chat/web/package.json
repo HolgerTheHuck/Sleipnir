@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "svelte": "^5.0.0",
-    "trame-client": "file:../../../templates/Trame.Templates/nupkg/localfeed/trame-client-1.0.0.tgz"
+    "sleipnir-client": "file:../../../templates/Sleipnir.Templates/nupkg/localfeed/sleipnir-client-1.0.0.tgz"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",

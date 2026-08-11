@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// trame-gen — generate typed Trame client stubs from discovery.
+// sleipnir-gen — generate typed Sleipnir client stubs from discovery.
 //
 // Usage:
-//   npx trame-gen --lang ts --discovery <url|file|-> [--out <dir> | --stdout]
+//   npx sleipnir-gen --lang ts --discovery <url|file|-> [--out <dir> | --stdout]
 //                                       [--base-url <url>] [--bearer <token>]
 //
 // `--discovery` accepts a live URL (http(s)://…), a file path, or `-` (stdin).
 // `--lang ts` emits TypeScript; `js` JSDoc-typed JS; `cs` a single C# file
-// calling the TrameClient runtime; `py` a self-contained httpx async client.
+// calling the SleipnirClient runtime; `py` a self-contained httpx async client.
 //
 // Exit codes: 0 ok · 1 usage/runtime error · 2 discovery shape mismatch · 3 I/O.
 
@@ -70,22 +70,22 @@ async function main(): Promise<void> {
 
   if (!args.lang) failUsage("--lang is required (ts | js | cs | py)");
   if (!SUPPORTED_LANGS.has(args.lang)) {
-    stderr(`trame-gen: error: unsupported --lang "${args.lang}" (expected ts | js | cs | py).`);
+    stderr(`sleipnir-gen: error: unsupported --lang "${args.lang}" (expected ts | js | cs | py).`);
     process.exit(1);
   }
   if (!args.discovery) failUsage("--discovery is required (url | file | -)");
   if (!args.stdout && !args.out) failUsage("either --out <dir> or --stdout is required");
   if (args.stdout && args.out) failUsage("--stdout and --out are mutually exclusive");
 
-  let discoveryRaw: import("trame-client").DiscoveryInfo;
+  let discoveryRaw: import("sleipnir-client").DiscoveryInfo;
   try {
     discoveryRaw = await loadDiscovery(args.discovery, { bearer: args.bearer, timeout: args.timeout });
   } catch (err) {
     if (err instanceof DiscoveryShapeError) {
-      stderr(`trame-gen: error: discovery shape: ${err.message}`);
+      stderr(`sleipnir-gen: error: discovery shape: ${err.message}`);
       process.exit(2);
     }
-    stderr(`trame-gen: error: failed to load discovery: ${(err as Error).message}`);
+    stderr(`sleipnir-gen: error: failed to load discovery: ${(err as Error).message}`);
     process.exit(3);
   }
 
@@ -94,7 +94,7 @@ async function main(): Promise<void> {
   try {
     assertDiscoveryShape(discoveryRaw);
   } catch (err) {
-    stderr(`trame-gen: error: discovery shape: ${(err as Error).message}`);
+    stderr(`sleipnir-gen: error: discovery shape: ${(err as Error).message}`);
     process.exit(2);
   }
 
@@ -116,7 +116,7 @@ async function main(): Promise<void> {
     await writeFile(dest, content, "utf8");
   }
   const count = Object.keys(files).length;
-  process.stdout.write(`trame-gen: wrote ${count} file${count === 1 ? "" : "s"} to ${outDir}\n`);
+  process.stdout.write(`sleipnir-gen: wrote ${count} file${count === 1 ? "" : "s"} to ${outDir}\n`);
 }
 
 /** Dispatch the emitter for a language, threading the base-url hint. */
@@ -140,7 +140,7 @@ function safeJoin(base: string, rel: string): string {
 }
 
 function failUsage(message: string): never {
-  stderr(`trame-gen: error: ${message}`);
+  stderr(`sleipnir-gen: error: ${message}`);
   printHelp();
   process.exit(1);
 }
@@ -151,10 +151,10 @@ function stderr(line: string): void {
 
 function printHelp(): void {
   process.stdout.write(
-    `trame-gen — generate typed Trame client stubs from discovery.\n` +
+    `sleipnir-gen — generate typed Sleipnir client stubs from discovery.\n` +
     `\n` +
     `Usage:\n` +
-    `  trame-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdout]\n` +
+    `  sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdout]\n` +
     `           [--base-url <url>] [--bearer <token>] [--timeout <ms>]\n` +
     `\n` +
     `Options:\n` +
@@ -172,10 +172,10 @@ function printHelp(): void {
 
 function printVersion(): void {
   // Package version read lazily to avoid bundler/resolve complexity.
-  process.stdout.write("trame-gen 1.0.0\n");
+  process.stdout.write("sleipnir-gen 1.0.0\n");
 }
 
 main().catch((err) => {
-  stderr(`trame-gen: error: ${(err as Error).message}`);
+  stderr(`sleipnir-gen: error: ${(err as Error).message}`);
   process.exit(1);
 });

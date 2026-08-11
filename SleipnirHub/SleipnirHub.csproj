@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>Sleipnir.Hub</PackageId>
+    <Description>SignalR transport + AddSleipnir/UseSleipnir server integration for Sleipnir RPC framework</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <!-- Project README as the package README (PackageReadmeFile via Directory.Build.props). -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Protocols.MessagePack" Version="8.0.28" />
+    <!-- Floor: transitiv würde SignalR 8.0.28 MessagePack 2.5.187 (verwundbar, s. GHSA-hv8m
+         u.a.) ziehen. Direkte Ref auf 2.5.302 erzwingt die gepatchte 2.5.x — Standalone-Hosts
+         ohne eigene 3.x-Ref laden sonst die verwundbare Version. -->
+    <PackageReference Include="MessagePack" Version="2.5.302" />
+  </ItemGroup>
+
+  <!-- JsonElement-Formatter + SleipnirResponse-Formatter gegen die hier resolved
+       MessagePack-Version (2.5.x, transitiv via SignalR.Protocols.MessagePack 8.0.28).
+       Source geteilt mit SleipnirClient (dort 3.1.8). -->
+  <ItemGroup>
+    <Compile Include="..\SleipnirCommon\MessagePack\JsonElementMessagePackFormatter.cs" Link="MessagePack\JsonElementMessagePackFormatter.cs" />
+    <Compile Include="..\SleipnirCommon\MessagePack\JsonNodeMessagePackFormatter.cs" Link="MessagePack\JsonNodeMessagePackFormatter.cs" />
+    <Compile Include="..\SleipnirCommon\MessagePack\SleipnirResponseMessagePackFormatter.cs" Link="MessagePack\SleipnirResponseMessagePackFormatter.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SleipnirCore\SleipnirCore.csproj" />
+  </ItemGroup>
+
+</Project>

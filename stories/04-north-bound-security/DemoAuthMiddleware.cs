@@ -1,23 +1,23 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 
-namespace TrameStories.Story04;
+namespace SleipnirStories.Story04;
 
 /// <summary>
 /// DEMO-Auth-Middleware für die North-Bound-Security-Story. KEIN Produktions-Auth —
 /// sie steht für eine echte Identity-Prvider-Lauf (JWT/Cookie/mTLS), die upstream
-/// <c>HttpContext.User</c> belegt. Trame selbst liest nur <c>HttpContext.User</c>;
+/// <c>HttpContext.User</c> belegt. Sleipnir selbst liest nur <c>HttpContext.User</c>;
 /// es führt keine eigene Identity-Prvider-Logik.
 ///
 /// Akzeptiert einen Demo-Token über drei Kanäle (damit der Curl-Walkthrough, die
 /// Browser-URL und die DevUI-Bearer-Eingabe alle funktionieren):
-///   - <c>Authorization: Bearer trame-demo</c> / <c>trame-admin</c>  (DevUI Auth-Panel)
-///   - <c>X-Trame-Token: trame-demo</c> / <c>trame-admin</c>        (curl-Komfort)
-///   - <c>?token=trame-demo</c> / <c>?token=trame-admin</c>        (Browser-URL/WS-Upgrade)
+///   - <c>Authorization: Bearer sleipnir-demo</c> / <c>sleipnir-admin</c>  (DevUI Auth-Panel)
+///   - <c>X-Sleipnir-Token: sleipnir-demo</c> / <c>sleipnir-admin</c>        (curl-Komfort)
+///   - <c>?token=sleipnir-demo</c> / <c>?token=sleipnir-admin</c>        (Browser-URL/WS-Upgrade)
 ///
-/// <c>trame-demo</c>  → authentifiziert als "demo" (keine Rolle).
-/// <c>trame-admin</c> → authentifiziert als "demo" + Rolle "Admin".
-/// Ohne/ungültigen Token → <c>HttpContext.User</c> bleibt unauthentifiziert; die Trame-
+/// <c>sleipnir-demo</c>  → authentifiziert als "demo" (keine Rolle).
+/// <c>sleipnir-admin</c> → authentifiziert als "demo" + Rolle "Admin".
+/// Ohne/ungültigen Token → <c>HttpContext.User</c> bleibt unauthentifiziert; die Sleipnir-
 /// Transporte/der Invoker liefern dann 401 (RequireAuthentication-Default-Deny).
 /// </summary>
 public class DemoAuthMiddleware
@@ -41,8 +41,8 @@ public class DemoAuthMiddleware
         if (auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             return auth["Bearer ".Length..].Trim();
 
-        // 2) X-Trame-Token header
-        var header = context.Request.Headers["X-Trame-Token"].ToString();
+        // 2) X-Sleipnir-Token header
+        var header = context.Request.Headers["X-Sleipnir-Token"].ToString();
         if (!string.IsNullOrWhiteSpace(header)) return header.Trim();
 
         // 3) ?token= query (Browser-URL, WS-Upgrade)
@@ -56,8 +56,8 @@ public class DemoAuthMiddleware
     {
         principal = null!;
         bool admin = false;
-        if (token.Equals("trame-demo", StringComparison.OrdinalIgnoreCase)) { /* normal user */ }
-        else if (token.Equals("trame-admin", StringComparison.OrdinalIgnoreCase)) { admin = true; }
+        if (token.Equals("sleipnir-demo", StringComparison.OrdinalIgnoreCase)) { /* normal user */ }
+        else if (token.Equals("sleipnir-admin", StringComparison.OrdinalIgnoreCase)) { admin = true; }
         else return false; // ungültiger Token → unauthentifiziert (Default-Deny greift)
 
         var claims = new List<Claim> { new(ClaimTypes.Name, "demo") };

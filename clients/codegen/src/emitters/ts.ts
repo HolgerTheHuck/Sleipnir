@@ -61,7 +61,7 @@ function emitTypes(input: EmitterInput, _resolver: NamingResolver): string {
     blocks.push(`export interface ${t.emittedName} {\n${props.join("\n")}\n}`);
   }
   if (blocks.length === 0) return "// No structured types declared in discovery.\n";
-  return `// Auto-generated Trame data types. Properties are camelCase (wire) and\n// optional (discovery carries no nullability; callers narrow).\n\n${blocks.join("\n\n")}\n`;
+  return `// Auto-generated Sleipnir data types. Properties are camelCase (wire) and\n// optional (discovery carries no nullability; callers narrow).\n\n${blocks.join("\n\n")}\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,8 +112,8 @@ function emitTypedCall(input: EmitterInput, resolver: NamingResolver): string {
 // set at the call site by the generated controller method. \`exposes\` takes
 // \`path: keyof TPaths\` and the alias type is \`TPaths[path]\` — so path and alias
 // validity are compile-checked without a (structurally ambiguous) lookup over T.
-import { TrameCall, ExecutionMode } from "trame-client";
-import type { TrameRequest, TrameMultiRequest, TrameResponse } from "trame-client";
+import { SleipnirCall, ExecutionMode } from "sleipnir-client";
+import type { SleipnirRequest, SleipnirMultiRequest, SleipnirResponse } from "sleipnir-client";
 ${typeImport}
 ${pathRecords.join("\n\n")}
 
@@ -121,15 +121,15 @@ ${pathRecords.join("\n\n")}
 export type PathTypes = Record<string, unknown>;
 
 /**
- * A typed single call wrapping a trame-client {@link TrameCall}. \`TPaths\` is
+ * A typed single call wrapping a sleipnir-client {@link SleipnirCall}. \`TPaths\` is
  * the generated path-type record for this call's return type.
  */
 export class TypedCall<T, TPaths = PathTypes> {
-  constructor(public readonly _call: TrameCall) {}
+  constructor(public readonly _call: SleipnirCall) {}
   /** Set the request id (correlation). */
   named(id: string): this { this._call.named(id); return this; }
   /** Materialize the wire request. */
-  toRequest(): TrameRequest { return this._call.toRequest(); }
+  toRequest(): SleipnirRequest { return this._call.toRequest(); }
 }
 
 /**
@@ -138,13 +138,13 @@ export class TypedCall<T, TPaths = PathTypes> {
  * at compile time so \`alias("@x")\` returns the producer's exposed type.
  */
 export class TypedRequest<T, TPaths = PathTypes, A extends Record<string, unknown> = {}> {
-  /** @internal */ _call: TrameCall;
+  /** @internal */ _call: SleipnirCall;
   constructor(call: TypedCall<T, TPaths>) { this._call = call._call; }
   /**
    * Declare that this call exposes \`path\` as \`alias\`. Compile-time-checked.
    * The wire \`dependencyMapping\` key is the alias **without** the leading \`@\`
    * (the server strips \`@\` from a consumer's \`@alias\` placeholder before
-   * lookup — see TrameInvoker.ReplaceDependencyByAliasCore), so we strip it
+   * lookup — see SleipnirInvoker.ReplaceDependencyByAliasCore), so we strip it
    * here. The alias type (\`TPaths[path]\`) is tracked regardless.
    */
   exposes<P extends string & keyof TPaths, Aname extends string>(path: P, alias: Aname): TypedRequest<T, TPaths, A & Record<Aname, TPaths[P]>> {
@@ -157,13 +157,13 @@ export class TypedRequest<T, TPaths = PathTypes, A extends Record<string, unknow
    * Resolve a previously-declared alias to its typed value (for a consumer param).
    * At runtime this returns the literal \`@alias\` placeholder string — the wire
    * value the server substitutes in Serial/topological mode (mirrors
-   * \`TrameCall.withAlias("@x")\`, which sets \`data: "@x"\`). The compile-time type
+   * \`SleipnirCall.withAlias("@x")\`, which sets \`data: "@x"\`). The compile-time type
    * is the producer's exposed type, so the consumer param typechecks.
    */
   alias<Aname extends string & keyof A>(name: Aname): A[Aname] {
     return name as unknown as A[Aname];
   }
-  /** @internal */ toRequest(): TrameRequest { return this._call.toRequest(); }
+  /** @internal */ toRequest(): SleipnirRequest { return this._call.toRequest(); }
 }
 
 /**
@@ -179,8 +179,8 @@ export class Batch<A extends Record<string, unknown> = {}> {
     return r;
   }
   /** Build the wire multi-request (Serial). */
-  toMulti(): TrameMultiRequest {
-    return TrameCall.batch(this._requests.map((r) => r.toRequest()), ExecutionMode.Serial);
+  toMulti(): SleipnirMultiRequest {
+    return SleipnirCall.batch(this._requests.map((r) => r.toRequest()), ExecutionMode.Serial);
   }
 }
 `;
@@ -238,9 +238,9 @@ function emitControllers(input: EmitterInput, resolver: NamingResolver): string 
   const typeImports = collectTypeImports(input, resolver);
   const pathImports = collectPathRecordImports(input, resolver);
   const classes = input.controllers.map((c) => emitControllerClass(c, resolver));
-  return `// Auto-generated Trame controllers. Method names are camelCase; parameter
-// names bind case-sensitively on the wire (keys passed verbatim to TrameCall).
-import { TrameCall } from "trame-client";
+  return `// Auto-generated Sleipnir controllers. Method names are camelCase; parameter
+// names bind case-sensitively on the wire (keys passed verbatim to SleipnirCall).
+import { SleipnirCall } from "sleipnir-client";
 import { TypedCall } from "./typed-call.js";
 ${typeImports ? typeImports + "\n" : ""}${pathImports ? pathImports + "\n" : ""}
 ${classes.join("\n\n")}
@@ -250,8 +250,8 @@ ${classes.join("\n\n")}
 function emitControllerClass(ctrl: ResolvedController, resolver: NamingResolver): string {
   const methods = ctrl.methods.map((m) => emitMethod(ctrl, m, resolver));
   return `export class ${ctrl.className} {
-  /** @internal */ _build: (controller: string, method: string) => TrameCall;
-  constructor(build: (controller: string, method: string) => TrameCall) {
+  /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
+  constructor(build: (controller: string, method: string) => SleipnirCall) {
     this._build = build;
   }
 ${methods.join("\n\n")}
@@ -291,22 +291,22 @@ function emitClient(input: EmitterInput, _resolver: NamingResolver): string {
   const imports = input.controllers.map((c) => `import { ${c.className} } from "./controllers.js";`).join("\n");
   const accessors = input.controllers.map((c) => `  readonly ${c.accessor}: ${c.className};`);
   const inits = input.controllers.map((c) => `    this.${c.accessor} = new ${c.className}(build);`);
-  return `// Auto-generated root Trame client. Compose with the trame-client runtime.
-import { TrameCall, TrameRestClient, ExecutionMode } from "trame-client";
-import type { TrameRestClientOptions, TrameResponse } from "trame-client";
+  return `// Auto-generated root Sleipnir client. Compose with the sleipnir-client runtime.
+import { SleipnirCall, SleipnirRestClient, ExecutionMode } from "sleipnir-client";
+import type { SleipnirRestClientOptions, SleipnirResponse } from "sleipnir-client";
 import { Batch, TypedCall } from "./typed-call.js";
 ${imports}
 
-/** A TrameResponse whose \`data\` is narrowed to T (the wire shape is unchanged). */
-export type TypedResponse<T> = TrameResponse & { data: T | null };
+/** A SleipnirResponse whose \`data\` is narrowed to T (the wire shape is unchanged). */
+export type TypedResponse<T> = SleipnirResponse & { data: T | null };
 
-export class TrameClient {
-  private readonly _rest: TrameRestClient;
+export class SleipnirClient {
+  private readonly _rest: SleipnirRestClient;
 ${accessors.join("\n")}
 
-  constructor(baseUrl: string, options: TrameRestClientOptions = {}) {
-    this._rest = new TrameRestClient(baseUrl, options);
-    const build = (controller: string, method: string) => TrameCall.init(controller, method);
+  constructor(baseUrl: string, options: SleipnirRestClientOptions = {}) {
+    this._rest = new SleipnirRestClient(baseUrl, options);
+    const build = (controller: string, method: string) => SleipnirCall.init(controller, method);
 ${inits.join("\n")}
   }
 
@@ -316,13 +316,13 @@ ${inits.join("\n")}
   }
 
   /** Execute a typed batch (Serial — required for @alias resolution). */
-  async batch<A extends Record<string, unknown>>(b: Batch<A>): Promise<TrameResponse[]> {
+  async batch<A extends Record<string, unknown>>(b: Batch<A>): Promise<SleipnirResponse[]> {
     const multi = b.toMulti();
     return this._rest.callBatch(multi.requests, multi.mode);
   }
 
   /** The underlying REST client (escape hatch for raw calls). */
-  get rest(): TrameRestClient { return this._rest; }
+  get rest(): SleipnirRestClient { return this._rest; }
 }
 `;
 }
@@ -336,7 +336,7 @@ function emitIndex(_input: EmitterInput): string {
 export * from "./types.js";
 export * from "./typed-call.js";
 export * from "./controllers.js";
-export { TrameClient } from "./client.js";
+export { SleipnirClient } from "./client.js";
 `;
 }
 

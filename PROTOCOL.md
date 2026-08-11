@@ -1,24 +1,24 @@
-# Trame Wire Protocol Specification
+# Sleipnir Wire Protocol Specification
 
 > Version: 1.0.0 · Status: Draft
 >
-> This specification defines the Trame wire protocol so that clients and servers
+> This specification defines the Sleipnir wire protocol so that clients and servers
 > can be implemented in any language (JavaScript/TypeScript, Python, Go, Rust, etc.).
 
 ## Overview
 
-Trame is a method-oriented RPC protocol. A client sends a `TrameRequest` containing
+Sleipnir is a method-oriented RPC protocol. A client sends a `SleipnirRequest` containing
 a controller name, method name, and parameters (a native JSON array). The server invokes the
-matching method and returns a `TrameResponse` with a status code and JSON-encoded result.
+matching method and returns a `SleipnirResponse` with a status code and JSON-encoded result.
 
-Trame supports three transports (REST, WebSocket, SignalR) but the request/response
+Sleipnir supports three transports (REST, WebSocket, SignalR) but the request/response
 format is identical across all of them.
 
 ---
 
 ## Message Types
 
-### TrameRequest
+### SleipnirRequest
 
 Single method invocation.
 
@@ -37,12 +37,12 @@ Single method invocation.
 |-------|------|----------|-------------|
 | `controller` | string | ✅ | Target controller name. A dotted namespace is allowed (e.g. `Customer.Address.Contact`) to express arbitrarily deep hierarchies — there is no fixed two-level limit. Controller names must be unique app-wide. |
 | `method` | string | ✅ | Target method name. Dispatch is **name-only** — the server resolves `{controller}_{method}` against registered handlers and does **not** consider the parameter set, so there is no signature-based overloading over the wire. Method names must be unique within a controller. Duplicate controller or method names throw `InvalidOperationException` at startup instead of silently shadowing. Model C# overloads with distinct names (`add`, `addAll`). |
-| `params` | array \| null | ❌ | Native JSON array of `TrameParameter` objects (`null` or omitted = no parameters). The array and each `data` value are native JSON — there is no double encoding (no JSON-string-wrapping of values). |
+| `params` | array \| null | ❌ | Native JSON array of `SleipnirParameter` objects (`null` or omitted = no parameters). The array and each `data` value are native JSON — there is no double encoding (no JSON-string-wrapping of values). |
 | `id` | string | ✅ | Request identifier for correlation |
 | `dependencyMapping` | object\|null | ❌ | Map of alias → JsonPath for dependency chaining |
 | `binaryData` | base64\|null | ❌ | Optional binary payload. base64 over REST and WebSocket (JSON text wire); native MessagePack `bin` over SignalR. Injected into the first `byte[]` parameter of the target method (first-match-only; a method with more than one `byte[]` parameter is not supported in v1). |
 
-### TrameParameter
+### SleipnirParameter
 
 Method parameter within `params`.
 
@@ -72,7 +72,7 @@ Method parameter within `params`.
 > dependency chaining: a `data` value that is the **string** `"@aliasName"` is
 > resolved against an earlier request's `exposedDependencies` before invocation.
 
-### TrameResponse
+### SleipnirResponse
 
 Result of a method invocation.
 
@@ -102,7 +102,7 @@ Result of a method invocation.
 > no `JSON.parse(data)` / `json.loads(data)` step. A `string` result is a JSON string on
 > the wire, so a client binding `data` to a `string` target receives it as-is; an object
 > result binds to an object. The C# `Call<T>` deserializes the raw `data` bytes into `T`
-> in a single pass; the TS `trame-client` casts the already-parsed `data` to `T`.
+> in a single pass; the TS `sleipnir-client` casts the already-parsed `data` to `T`.
 
 > **Wire key order** (REST + WebSocket, JSON): `code`, `data`, `content`, `id`,
 > `exposedDependencies`, `error`. Parsers read by name and tolerate reordered keys.
@@ -110,9 +110,9 @@ Result of a method invocation.
 > `[Key]` order: `[code, data, content, id, exposedDependencies, error]`; `data` is
 > encoded as native MessagePack tokens (JSON→MessagePack 1:1, no string wrapping).
 
-### TrameError
+### SleipnirError
 
-Structured error details, included in `TrameResponse.error` when `code != 2xx`.
+Structured error details, included in `SleipnirResponse.error` when `code != 2xx`.
 
 ```json
 {
@@ -130,7 +130,7 @@ Structured error details, included in `TrameResponse.error` when `code != 2xx`.
 | `details` | string\|null | Additional details (stack trace in development only) |
 | `requestId` | string\|null | Correlates with request ID |
 
-### TrameMultiRequest
+### SleipnirMultiRequest
 
 Batch of multiple requests in one roundtrip.
 
@@ -147,7 +147,7 @@ Batch of multiple requests in one roundtrip.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `requests` | array of TrameRequest | Individual RPC calls |
+| `requests` | array of SleipnirRequest | Individual RPC calls |
 | `mode` | int | 0 = Parallel, 1 = Serial |
 
 > When `mode = 1` (Serial) and any request has `dependencyMapping`, the server
@@ -157,9 +157,9 @@ Batch of multiple requests in one roundtrip.
 
 ## Status Codes
 
-`TrameResponse.code` is a **logical result code carried inside the response body**,
+`SleipnirResponse.code` is a **logical result code carried inside the response body**,
 not an HTTP status. Over REST, the HTTP envelope is always `200 OK` and the
-`TrameResponse` (with its `code` and `error`) is returned in the body — the same way
+`SleipnirResponse` (with its `code` and `error`) is returned in the body — the same way
 JSON-RPC carries its error object inside an HTTP 200. WebSocket and SignalR pass
 `code` as a field of the returned object the same way.
 
@@ -172,13 +172,13 @@ request body, `429` from the rate limiter, `499` for a cancelled request).
 | 200 | OK – method executed successfully |
 | 204 | No Content – void / `Task`-without-result method completed (no `data`) |
 | 400 | Bad Request – invalid parameters, duplicate parameter name, unresolved dependency, cycle, or malformed JSON |
-| 401 | Unauthorized – `[TrameAuthorise]` check failed (not authenticated) |
+| 401 | Unauthorized – `[SleipnirAuthorise]` check failed (not authenticated) |
 | 403 | Forbidden – role-based authorization failed _(roadmap: requires the auth attribute to distinguish authenticated-but-not-allowed from unauthenticated)_ |
 | 404 | Not Found – controller or method not found |
 | 429 | Too Many Requests – rate limit exceeded (transport-level) |
 | 500 | Internal Server Error – method threw an exception. The generic `message` never leaks the exception; `error.details` carries the stack trace only when detailed errors are enabled (Development / `EnableDetailedErrors`). |
 
-> `TrameError.requestId` is populated from the originating request `id` on every
+> `SleipnirError.requestId` is populated from the originating request `id` on every
 > non-2xx response, so clients can correlate failures even in batch calls.
 
 ### Returning Errors from a Controller Method
@@ -186,34 +186,34 @@ request body, `429` from the rate limiter, `499` for a cancelled request).
 A controller method has two ways to signal a non-success outcome, and they are
 **not** interchangeable.
 
-**Return an `TrameResponse` with a non-2xx `Code` — recommended for business /
-domain errors.** The invoker passes a returned `TrameResponse` through verbatim
-(`TrameInvoker.ReturnResponse`: `if (result is TrameResponse) return it;`), so the
-exact `Code`, `Data`, and `Error` reach the client. Use the `TrameResults` factory
-(`TrameCommon.Results`) so the human message lands in the structured `TrameError`
+**Return an `SleipnirResponse` with a non-2xx `Code` — recommended for business /
+domain errors.** The invoker passes a returned `SleipnirResponse` through verbatim
+(`SleipnirInvoker.ReturnResponse`: `if (result is SleipnirResponse) return it;`), so the
+exact `Code`, `Data`, and `Error` reach the client. Use the `SleipnirResults` factory
+(`SleipnirCommon.Results`) so the human message lands in the structured `SleipnirError`
 while `Data` stays `null` (the message does **not** travel in `data`):
 
 ```csharp
-using TrameCommon.Results;
+using SleipnirCommon.Results;
 
-[TrameMethod("GetById")]
-public TrameResponse GetById(int id)
+[SleipnirMethod("GetById")]
+public SleipnirResponse GetById(int id)
 {
     var customer = _repo.Find(id);
     if (customer is null)
-        return TrameResults.NotFound($"Customer '{id}' not found.");
-    return TrameResults.Ok(customer);
+        return SleipnirResults.NotFound($"Customer '{id}' not found.");
+    return SleipnirResults.Ok(customer);
 }
 ```
 
-`TrameResults` API: `Ok(object?)` (result serialized to a raw JSON value in
+`SleipnirResults` API: `Ok(object?)` (result serialized to a raw JSON value in
 `data`), `Ok(string jsonData)` (a **pre-serialized JSON string** taken as-is —
 requires valid JSON; stored as raw bytes, no re-parse), `Ok(byte[] binary)`
 (bytes in `content`, `data` null), `NoContent()` (204, `data` null),
 `Error(code, message, details?)`, plus convenience `BadRequest` / `Unauthorized`
 / `NotFound` / `Conflict` / `InternalServerError`, and an RFC-7807
 `Error(ProblemDetails)` overload (CamelCase JSON in `data`; `title`/`detail`
-mirrored onto `TrameError.Message`/`.Details`). The message is **not** gated by
+mirrored onto `SleipnirError.Message`/`.Details`). The message is **not** gated by
 `EnableDetailedErrors` — it is yours and reaches the client in every environment.
 
 **Throw an exception — only for unexpected / internal failures.** Any thrown
@@ -221,17 +221,17 @@ exception is mapped to `500` with a **generic** message (`"An internal error
 occurred…"`) and never leaks the exception text; the stack trace is placed in
 `error.details` only when `EnableDetailedErrors` is on (Development). Throwing is
 therefore wrong for validation or "not found": the client would see only the
-generic 500 and never your message. Note that throwing `TrameException` from a
-controller does **not** propagate its `TrameError.Code` — the server has no
-`catch(TrameException)`; every throw becomes a generic 500. To control the code,
-return `TrameResults.Error(...)`.
+generic 500 and never your message. Note that throwing `SleipnirException` from a
+controller does **not** propagate its `SleipnirError.Code` — the server has no
+`catch(SleipnirException)`; every throw becomes a generic 500. To control the code,
+return `SleipnirResults.Error(...)`.
 
-**Client side.** The C# `TrameClientBase.Call<T>` throws `TrameException` on
-non-2xx, carrying `TrameError` (from `response.Error`, or synthesized from
-`response.Code` via `TrameError.FromResponse`, which reads
-`response.Error?.Message`). The TS `trame-client` `call()` returns the raw
-`TrameResponse` (`isSuccess:false`, does not throw); `callJson<T>()` /
-`callBinary()` throw `TrameError`.
+**Client side.** The C# `SleipnirClientBase.Call<T>` throws `SleipnirException` on
+non-2xx, carrying `SleipnirError` (from `response.Error`, or synthesized from
+`response.Code` via `SleipnirError.FromResponse`, which reads
+`response.Error?.Message`). The TS `sleipnir-client` `call()` returns the raw
+`SleipnirResponse` (`isSuccess:false`, does not throw); `callJson<T>()` /
+`callBinary()` throw `SleipnirError`.
 
 ---
 
@@ -284,11 +284,11 @@ A subsequent request can **use** exposed values with `@alias` placeholders:
 
 Authorization is checked **per request**, not per batch. A `401` on one request does not
 abort the others — each response is independent (JSON-RPC-conformant), so a batch may mix
-unauthenticated reads with `[TrameAuthorise]` writes and return a mixed result array. Only
+unauthenticated reads with `[SleipnirAuthorise]` writes and return a mixed result array. Only
 the dependency chain is coupled: a failed provider propagates to its dependents (rule 5).
 
 `HttpContext` is not thread-safe, yet every request in a batch shares the same incoming
-context. The server therefore runs the `[TrameAuthorise]` check **serially in a pre-pass**
+context. The server therefore runs the `[SleipnirAuthorise]` check **serially in a pre-pass**
 before the parallel fan-out; the parallel execution (`Task.WhenAll`) never touches
 `HttpContext`. Authorization is cheap (claims reads), so this does not regress parallel
 throughput. **User-code contract:** controllers that obtain the context via
@@ -302,7 +302,7 @@ but user code is the caller's responsibility. Full specification:
 > Full, dedicated specification: [`DEPENDENCY_BINDING.md`](DEPENDENCY_BINDING.md).
 > This section is the protocol-level summary; the binding pipeline, the four outcomes,
 > casing, and the subset fan-out pattern are specified precisely there, and codified by
-> [`TrameTests/Unit/Core/AliasBindingTests.cs`](TrameTests/Unit/Core/AliasBindingTests.cs).
+> [`SleipnirTests/Unit/Core/AliasBindingTests.cs`](SleipnirTests/Unit/Core/AliasBindingTests.cs).
 
 `@alias` resolution is a two-step JSON pipeline; the consuming parameter's declared
 CLR type is enforced at the second step by `System.Text.Json`:
@@ -319,7 +319,7 @@ CLR type is enforced at the second step by `System.Text.Json`:
 
 2. **Inject.** In the consuming request, an `@alias` placeholder — a `data` field that
    is the **string** `"@alias"` — is replaced by a native `JsonNode` parsed from that
-   stored JSON text. The `TrameParameter.data` field then carries the native extracted
+   stored JSON text. The `SleipnirParameter.data` field then carries the native extracted
    value (e.g. `42`, `"alice"`, `[1,2,3]`, `{...}`), not a JSON string.
 
 3. **Bind.** `BuildParameters` deserializes each native `data` value into the method's
@@ -342,7 +342,7 @@ CLR type is enforced at the second step by `System.Text.Json`:
    Rejected: narrowing/lossy conversions (`3.5`→`int`, overflow, a mismatched string
    format).
 
-   These binding failures are **returned `TrameResponse`s** (`TrameResults.BadRequest`),
+   These binding failures are **returned `SleipnirResponse`s** (`SleipnirResults.BadRequest`),
    not thrown exceptions — so the message reaches the client verbatim and is **not**
    gated by `EnableDetailedErrors`.
 
@@ -357,7 +357,7 @@ CLR type is enforced at the second step by `System.Text.Json`:
    `{…}` object is the cross-kind row above → `400`, not a silent drop; for bare
    scalars expose per field (`$.id`, `$.name`) as separate aliases.
 
-   **Binding modes (optional).** `TrameOptions.AliasBindingMode` (`Weak` default | `Strict` | `Paranoid`)
+   **Binding modes (optional).** `SleipnirOptions.AliasBindingMode` (`Weak` default | `Strict` | `Paranoid`)
    controls how strictly the object→object silent-default row is enforced. Each mode is a
    superset of the previous in strictness:
 
@@ -390,7 +390,7 @@ CLR type is enforced at the second step by `System.Text.Json`:
 ### Casing Contract
 
 .NET and JavaScript disagree on casing, and `System.Text.Json` and `JsonPath.Net`
-disagree on case sensitivity. Trame bridges them with **three distinct regimes** —
+disagree on case sensitivity. Sleipnir bridges them with **three distinct regimes** —
 knowing which one applies where is the difference between a working chain and a
 mysterious `400`:
 
@@ -417,7 +417,7 @@ Consequences for cross-language use:
 
 "Case-insensitive everywhere" is **not achievable**: JS property access is
 case-sensitive by language semantics, and JsonPath paths are case-sensitive by spec
-— neither is a Trame decision. The server already reads case-insensitively, so the
+— neither is a Sleipnir decision. The server already reads case-insensitively, so the
 only residual strictness is forced by the toolchain, and the DevUI's camelCase
 suggestions + static checks make it visible before execution.
 
@@ -457,7 +457,7 @@ into multiple requests**. These are intentional design boundaries, not bugs:
    `MaxFanOut` cap, bounded concurrency (no unbounded `Task.WhenAll`), per-element
    results with correlation, and a read-only default for safety.
 6. **Server-side cardinality caps.** The server protects itself independently of
-   client calls via two configurable limits on `TrameOptions` (secure-by-default):
+   client calls via two configurable limits on `SleipnirOptions` (secure-by-default):
    - `MaxParameterArrayLength` — default **1000**, `0` = unlimited. Enforced in the
      invoker before the method call; an oversized array/collection parameter is rejected
      with `400 Bad Request` and a message naming the limit and the actual count.
@@ -490,7 +490,7 @@ method (first-match-only; a method with more than one `byte[]` parameter is
 not supported in v1). `byte[]` responses are **buffered** into `content`; a
 `ContentStream` field exists on the model but is not wired by any transport in
 v1. For large or frequent binary, run a plain REST or WebSocket endpoint
-alongside Trame; the v1.x+ binary-transfer plan is in [ROADMAP.md](ROADMAP.md).
+alongside Sleipnir; the v1.x+ binary-transfer plan is in [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -500,15 +500,15 @@ alongside Trame; the v1.x+ binary-transfer plan is in [ROADMAP.md](ROADMAP.md).
 
 | Endpoint | Method | Body | Response |
 |----------|--------|------|----------|
-| `POST /api/trame/json` | POST | TrameRequest | TrameResponse |
-| `POST /api/trame/json/multi` | POST | TrameMultiRequest | array of TrameResponse |
-| `GET /api/trame/discovery` | GET | – | DiscoveryInfo |
+| `POST /api/sleipnir/json` | POST | SleipnirRequest | SleipnirResponse |
+| `POST /api/sleipnir/json/multi` | POST | SleipnirMultiRequest | array of SleipnirResponse |
+| `GET /api/sleipnir/discovery` | GET | – | DiscoveryInfo |
 
 **Content-Type**: `application/json`
 
 **Example** (single call):
 ```
-POST /api/trame/json HTTP/1.1
+POST /api/sleipnir/json HTTP/1.1
 Content-Type: application/json
 
 {
@@ -536,29 +536,29 @@ Content-Type: application/json
 
 ### WebSocket (RFC 6455 + JSON text frames)
 
-**URL**: `ws://host/tramews` or `wss://host/tramews`
+**URL**: `ws://host/sleipnirws` or `wss://host/sleipnirws`
 
 **Protocol**: JSON text messages (one per request/response).
 
 **Message types** (auto-detected by server):
-- If JSON has `requests` and `mode` fields → `TrameMultiRequest` → returns array of `TrameResponse`
-- Otherwise → `TrameRequest` → returns single `TrameResponse`
+- If JSON has `requests` and `mode` fields → `SleipnirMultiRequest` → returns array of `SleipnirResponse`
+- Otherwise → `SleipnirRequest` → returns single `SleipnirResponse`
 
 **Flow**:
-1. Client connects to `ws://host/tramews`
-2. Client sends JSON text frame (TrameRequest or TrameMultiRequest)
-3. Server responds with JSON text frame (TrameResponse or array)
+1. Client connects to `ws://host/sleipnirws`
+2. Client sends JSON text frame (SleipnirRequest or SleipnirMultiRequest)
+3. Server responds with JSON text frame (SleipnirResponse or array)
 4. Repeat (connection stays open)
 
 ### SignalR (WebSocket + MessagePack)
 
-**Hub endpoint**: `/tramehub`
+**Hub endpoint**: `/sleipnirhub`
 
 **Hub methods**:
 | Method | Parameters | Returns |
 |--------|-----------|---------|
-| `DoWork` | `TrameRequest request` | `TrameResponse?` |
-| `DoWorkMany` | `TrameMultiRequest request` | `IEnumerable<TrameResponse>` |
+| `DoWork` | `SleipnirRequest request` | `SleipnirResponse?` |
+| `DoWorkMany` | `SleipnirMultiRequest request` | `IEnumerable<SleipnirResponse>` |
 
 **Protocol**: MessagePack binary (optional, can be JSON if configured).
 
@@ -566,7 +566,7 @@ Content-Type: application/json
 
 ## Discovery (MEX)
 
-`GET /api/trame/discovery` returns `DiscoveryInfo`. Types are carried as structured,
+`GET /api/sleipnir/discovery` returns `DiscoveryInfo`. Types are carried as structured,
 language-neutral `TypeRef` objects (not .NET type-name strings) — see
 [`docs/discovery-schema.md`](docs/discovery-schema.md) for the authoritative type-system
 spec, the scalar table, collection-kind semantics, enum members, nullability, and the
@@ -581,7 +581,7 @@ additive-only `discoveryVersion` rule.
       "methods": [
         {
           "methodName": "GetById",
-          "returnType": { "kind": "ref", "ref": "Trame.Model.Customer" },
+          "returnType": { "kind": "ref", "ref": "Sleipnir.Model.Customer" },
           "parameters": [
             {
               "parameterName": "id",
@@ -594,9 +594,9 @@ additive-only `discoveryVersion` rule.
     }
   ],
   "types": {
-    "Trame.Model.Customer": {
+    "Sleipnir.Model.Customer": {
       "kind": "object",
-      "typeName": "Trame.Model.Customer",
+      "typeName": "Sleipnir.Model.Customer",
       "properties": [
         { "propertyName": "Id", "propertyType": { "kind": "scalar", "name": "int" } },
         { "propertyName": "Name", "propertyType": { "kind": "scalar", "name": "string" } }
@@ -611,7 +611,7 @@ additive-only `discoveryVersion` rule.
 `scalar` carries a `name` from the fixed scalar table, `array`/`set`/`stream` carry an
 `element`, `map` carries `key`+`value`, `ref` carries a key into `discovery.types`, and
 `opaque` carries a diagnostic `nativeName`. Enums register as a `TypeMeta` with
-`kind:"enum"` + `members`; a usage site is a `{kind:"ref", ref:"<enumKey>"}` (Trame
+`kind:"enum"` + `members`; a usage site is a `{kind:"ref", ref:"<enumKey>"}` (Sleipnir
 serializes enums as their underlying integer, so a ref to an enum reads as a JSON number).
 
 ---
@@ -620,25 +620,25 @@ serializes enums as their underlying integer, so a ref to an enum reads as a JSO
 
 > A maintained, isomorphic reference client (REST + WebSocket, fluent + functional
 > API, browser + Node.js) ships under [`clients/ts/`](clients/ts/) as the
-> `trame-client` npm package. The snippet below illustrates the wire format only;
-> for real use prefer `import { createClient } from "trame-client"`.
+> `sleipnir-client` npm package. The snippet below illustrates the wire format only;
+> for real use prefer `import { createClient } from "sleipnir-client"`.
 
 ```typescript
-interface TrameParameter {
+interface SleipnirParameter {
   parameterName: string;
   data: unknown; // native JSON value — number, string, boolean, object, array
   num?: number;
 }
 
-interface TrameRequest {
+interface SleipnirRequest {
   controller: string;
   method: string;
-  params?: TrameParameter[] | null; // native array (no JSON-string wrapping)
+  params?: SleipnirParameter[] | null; // native array (no JSON-string wrapping)
   id: string;
   dependencyMapping?: Record<string, string> | null;
 }
 
-interface TrameResponse {
+interface SleipnirResponse {
   code: number;
   data: unknown | null; // structured JSON value — NOT a string blob, no JSON.parse needed
   content?: string | null; // base64 for byte[] results
@@ -648,14 +648,14 @@ interface TrameResponse {
   isSuccess: boolean; // derived client-side from code (server does not send it)
 }
 
-async function trameCall(
+async function sleipnirCall(
   url: string,
   controller: string,
   method: string,
   params: Record<string, any>,
   id?: string
-): Promise<TrameResponse> {
-  const request: TrameRequest = {
+): Promise<SleipnirResponse> {
+  const request: SleipnirRequest = {
     controller,
     method,
     params: Object.entries(params).map(([name, value]) => ({
@@ -665,19 +665,19 @@ async function trameCall(
     id: id ?? `${controller}.${method}`,
   };
 
-  const resp = await fetch(`${url}/api/trame/json`, {
+  const resp = await fetch(`${url}/api/sleipnir/json`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
 
-  const r = (await resp.json()) as TrameResponse;
+  const r = (await resp.json()) as SleipnirResponse;
   r.isSuccess = r.code >= 200 && r.code <= 299; // server omits isSuccess
   return r;
 }
 
 // Usage — data is already a structured value (the Customer object), no JSON.parse
-const result = await trameCall("https://localhost:5001", "Customer", "GetById", { id: 42 });
+const result = await sleipnirCall("https://localhost:5001", "Customer", "GetById", { id: 42 });
 const customer = result.data as { id: number; name: string };
 console.log(customer.name);
 ```
@@ -688,7 +688,7 @@ console.log(customer.name);
 import requests
 from typing import Any
 
-def trame_call(url: str, controller: str, method: str, params: dict[str, Any], id: str = None) -> dict:
+def sleipnir_call(url: str, controller: str, method: str, params: dict[str, Any], id: str = None) -> dict:
     request = {
         "controller": controller,
         "method": method,
@@ -698,13 +698,13 @@ def trame_call(url: str, controller: str, method: str, params: dict[str, Any], i
         ],
         "id": id or f"{controller}.{method}",
     }
-    response = requests.post(f"{url}/api/trame/json", json=request)
+    response = requests.post(f"{url}/api/sleipnir/json", json=request)
     r = response.json()
     r["isSuccess"] = 200 <= r.get("code", 0) <= 299  # server omits isSuccess
     return r
 
 # Usage — data is already a structured value (the Customer object), no json.loads
-result = trame_call("https://localhost:5001", "Customer", "GetById", {"id": 42})
+result = sleipnir_call("https://localhost:5001", "Customer", "GetById", {"id": 42})
 customer = result["data"]  # dict, directly usable
 print(customer["name"])
 ```
@@ -715,18 +715,18 @@ print(customer["name"])
 
 1. **Wire format is JSON** – no binary dependency for the protocol itself (MessagePack is optional for SignalR only)
 2. **Parameter values are native JSON** – `params` is a JSON array of `{parameterName, data}` where `data` is itself a native JSON value (number, string, boolean, object, array). There is no double encoding: a parameter `42` is sent as `42`, not `"42"`. The server deserializes each value directly into the target parameter type.
-3. **Discovery enables code generation** – the `/api/trame/discovery` endpoint returns full type metadata, enabling auto-generated clients in any language.
+3. **Discovery enables code generation** – the `/api/sleipnir/discovery` endpoint returns full type metadata, enabling auto-generated clients in any language.
 4. **No schema language required** – unlike gRPC (`.proto`) or GraphQL (SDL), the contract is defined in code and discovered at runtime.
 
 ---
 
 ## JSON-RPC 2.0 Compatibility
 
-Trame ships an **opt-in** JSON-RPC 2.0 adapter (`TrameOptions.EnableJsonRpcCompat`,
-default off) that maps JSON-RPC requests onto the same `TrameInvoker`:
+Sleipnir ships an **opt-in** JSON-RPC 2.0 adapter (`SleipnirOptions.EnableJsonRpcCompat`,
+default off) that maps JSON-RPC requests onto the same `SleipnirInvoker`:
 
 ```
-POST /api/trame/jsonrpc        # single object or a batch array
+POST /api/sleipnir/jsonrpc        # single object or a batch array
 ```
 
 * `method` is `Controller.Method` (split at the last dot).
@@ -734,12 +734,12 @@ POST /api/trame/jsonrpc        # single object or a batch array
 * `id` (number/string) echoed with its original type; absent/null → notification (no
   response). A batch of only notifications → `HTTP 204`.
 * HTTP envelope is envelope-at-200 like the native REST transport; errors live in
-  `error.code` (Trame codes mapped to the JSON-RPC ranges — incl. routing-404 →
+  `error.code` (Sleipnir codes mapped to the JSON-RPC ranges — incl. routing-404 →
   `-32601` vs. business-404 → `-32000`).
-* Capability methods `trame.discover` (→ DiscoveryInfo) and `trame.capabilities`
+* Capability methods `sleipnir.discover` (→ DiscoveryInfo) and `sleipnir.capabilities`
   (→ static strengths manifest) bridge to the native surface.
 * **Limitations:** no `@alias` chaining, no execution-mode selection (Parallel only),
   no binary out-of-band, no streaming — graduate to the native wire for those.
 
-Full spec, the Trame-vs-JSON-RPC protocol-differences table, and the implementation
+Full spec, the Sleipnir-vs-JSON-RPC protocol-differences table, and the implementation
 map: see [`JSONRPC_COMPAT.md`](JSONRPC_COMPAT.md).

@@ -1,24 +1,24 @@
 # 01 — Notification Chat
 
-A complete end-to-end Trame sample: a notification/chat/media server, a C# console client, and a Svelte 5 SPA.
+A complete end-to-end Sleipnir sample: a notification/chat/media server, a C# console client, and a Svelte 5 SPA.
 
 ## What it demonstrates
 
-- **Multi-transport server** — REST, WebSocket, SignalR from one `AddTrame` call.
-- **Code-first contract** — `[TrameController]` / `[TrameMethod]` classes.
+- **Multi-transport server** — REST, WebSocket, SignalR from one `AddSleipnir` call.
+- **Code-first contract** — `[SleipnirController]` / `[SleipnirMethod]` classes.
 - **Batching** — dashboard loads unread count, chats, and gallery in one roundtrip.
 - **Dependency chaining** — create a chat, send a message, then load messages using `@chatId`.
-- **C# client** — `TrameRestJsonClient`, `TrameWebSocketClient`, fluent `TrameCall`.
-- **TypeScript/Svelte client** — `trame-client` with Vite proxy.
-- **Developer UI** — browse and test the API at `/Trame`.
+- **C# client** — `SleipnirRestJsonClient`, `SleipnirWebSocketClient`, fluent `SleipnirCall`.
+- **TypeScript/Svelte client** — `sleipnir-client` with Vite proxy.
+- **Developer UI** — browse and test the API at `/Sleipnir`.
 
 ## Project layout
 
 ```
 samples/01-notification-chat/
-  server/          ASP.NET Core + Trame.Server
-  client/          C# console client (Trame.Client)
-  web/             Svelte 5 + Vite + trame-client SPA
+  server/          ASP.NET Core + Sleipnir.Server
+  client/          C# console client (Sleipnir.Client)
+  web/             Svelte 5 + Vite + sleipnir-client SPA
 ```
 
 ## Run
@@ -41,8 +41,8 @@ npm run dev
 Endpoints:
 
 - Server: `https://localhost:5002`
-- Developer UI: `https://localhost:5002/Trame`
-- REST: `https://localhost:5002/api/trame/json`
-- WebSocket: `wss://localhost:5002/tramews`
-- SignalR: `https://localhost:5002/tramehub`
+- Developer UI: `https://localhost:5002/Sleipnir`
+- REST: `https://localhost:5002/api/sleipnir/json`
+- WebSocket: `wss://localhost:5002/sleipnirws`
+- SignalR: `https://localhost:5002/sleipnirhub`
 - SPA dev server: `https://localhost:5173`

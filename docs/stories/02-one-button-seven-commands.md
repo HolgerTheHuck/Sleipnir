@@ -64,9 +64,9 @@ The user sees "something went wrong" with no structured list of what actually ha
 
 ---
 
-## The Trame Way
+## The Sleipnir Way
 
-Trame sends all seven as **one batch**. The server executes the dependency graph —
+Sleipnir sends all seven as **one batch**. The server executes the dependency graph —
 the four independent commands in parallel, the three `orderId`-dependent ones after
 `Order.Create` exposes its `orderId`. **A failure on one command does not abort the
 batch**: each request gets its own response, in order, with its own code. The caller
@@ -75,58 +75,58 @@ receives a structured array of seven results and decides what to do.
 ### The domain (code-first, no IDL)
 
 ```csharp
-[TrameController("Checkout.Order")]
+[SleipnirController("Checkout.Order")]
 public class CheckoutOrderController
 {
     // Provider: exposes orderId for the three downstream commands that need it.
-    [TrameMethod("Create")]
+    [SleipnirMethod("Create")]
     public Task<CommandAck> Create(int customerId, int addressId, List<int> articleIds) { … }
 }
 
-[TrameController("Checkout.Billing")]
+[SleipnirController("Checkout.Billing")]
 public class CheckoutBillingController
 {
-    // Returns TrameResults.Error on a business rule — NEVER throws to set a code.
-    [TrameMethod("Charge")]
-    public Task<TrameResponse> Charge(int customerId, decimal amount)
+    // Returns SleipnirResults.Error on a business rule — NEVER throws to set a code.
+    [SleipnirMethod("Charge")]
+    public Task<SleipnirResponse> Charge(int customerId, decimal amount)
     {
         if (OverCreditLimit.Contains(customerId))
-            return TrameResults.Error(402, $"Credit limit exceeded for customer {customerId}.");
-        return TrameResults.Ok(new CommandAck { Service = "Billing", … });
+            return SleipnirResults.Error(402, $"Credit limit exceeded for customer {customerId}.");
+        return SleipnirResults.Ok(new CommandAck { Service = "Billing", … });
     }
 }
 
-// Inventory, Loyalty, Notification, Audit, Shipping — each one [TrameMethod].
+// Inventory, Loyalty, Notification, Audit, Shipping — each one [SleipnirMethod].
 // Notification/Audit/Shipping take an `int orderId` parameter (name-bind to @orderId).
 ```
 
 The `Checkout.` prefix is demo hygiene: Story 01 already registers an `"Order"`
-controller in the same process, and Trame controller names are app-wide unique. In a
+controller in the same process, and Sleipnir controller names are app-wide unique. In a
 real app you'd name it `"Order"`.
 
 ### The batch — one request, seven commands, declared dependencies
 
 ```csharp
-var batch = new TrameMultiRequest
+var batch = new SleipnirMultiRequest
 {
     Mode = ExecutionMode.Parallel,   // ignored once a DependencyMapping is present:
                                      // the server auto-detects → topological execution.
     Requests = new()
     {
         // Provider: Order.Create. Exposes orderId for the three consumers below.
-        TrameCall.Init("Checkout.Order", "Create")
+        SleipnirCall.Init("Checkout.Order", "Create")
             .With(customerId, addressId, articleIds).Named("order")
             .Exposes("$.orderId", "orderId").ToRequest(),
 
         // Four independent commands — level 1, parallel with Order.
-        TrameCall.Init("Checkout.Inventory", "Reserve").With(articleIds).Named("inventory").ToRequest(),
-        TrameCall.Init("Checkout.Billing",  "Charge").With(customerId, amount).Named("billing").ToRequest(),
-        TrameCall.Init("Checkout.Loyalty",  "AwardPoints").With(customerId, amount).Named("loyalty").ToRequest(),
+        SleipnirCall.Init("Checkout.Inventory", "Reserve").With(articleIds).Named("inventory").ToRequest(),
+        SleipnirCall.Init("Checkout.Billing",  "Charge").With(customerId, amount).Named("billing").ToRequest(),
+        SleipnirCall.Init("Checkout.Loyalty",  "AwardPoints").With(customerId, amount).Named("loyalty").ToRequest(),
 
         // Three consumers of @orderId — level 2, after Order succeeds.
-        TrameCall.Init("Checkout.Notification", "SendConfirmation").With(customerId).WithAlias("@orderId").Named("notify").ToRequest(),
-        TrameCall.Init("Checkout.Audit",        "Log").WithAlias("@orderId").With("order.placed").Named("audit").ToRequest(),
-        TrameCall.Init("Checkout.Shipping",     "Schedule").WithAlias("@orderId").With(addressId).Named("shipping").ToRequest(),
+        SleipnirCall.Init("Checkout.Notification", "SendConfirmation").With(customerId).WithAlias("@orderId").Named("notify").ToRequest(),
+        SleipnirCall.Init("Checkout.Audit",        "Log").WithAlias("@orderId").With("order.placed").Named("audit").ToRequest(),
+        SleipnirCall.Init("Checkout.Shipping",     "Schedule").WithAlias("@orderId").With(addressId).Named("shipping").ToRequest(),
     }
 };
 
@@ -153,7 +153,7 @@ all seven attempted, in one roundtrip.
 
 ### Before / after
 
-|                          | The REST Way (abort on first error) | The Trame Way                |
+|                          | The REST Way (abort on first error) | The Sleipnir Way                |
 |--------------------------|--------------------------------------|------------------------------|
 | Roundtrips               | 3 (then aborts) / 7 (if no failure)  | **1**                        |
 | Commands attempted       | 3 of 7                               | **7 of 7**                   |
@@ -162,7 +162,7 @@ all seven attempted, in one roundtrip.
 | Unrelated work skipped   | yes — 4 services never contacted     | no — independent commands run |
 | Latency (≈30ms/call)     | ~90 ms (then stops)                  | **~60 ms** (2 topological levels) |
 
-The line that matters: **Trame attempted all seven and finished faster than REST did
+The line that matters: **Sleipnir attempted all seven and finished faster than REST did
 three** — because independent commands run in parallel and a failure does not abort
 the batch.
 
@@ -185,18 +185,18 @@ depend on `orderId` (not on Billing) still ran, because the server executes the
 
 ### The honest tradeoff: no saga, no rollback
 
-This is the boundary, and it is deliberate. **Trame is a request-time fan-out, not a
+This is the boundary, and it is deliberate. **Sleipnir is a request-time fan-out, not a
 saga engine.** In *both* columns above, Inventory was reserved before Billing refused.
-Trame did not roll back Inventory. It told you Billing failed (`402`, named, with the
+Sleipnir did not roll back Inventory. It told you Billing failed (`402`, named, with the
 message); compensating the reservation is your job — refund inventory, retry billing
 on a corrected card, queue for human review, whatever your domain says.
 
-What Trame gives you over the REST loop is **visibility and isolation in one roundtrip**:
+What Sleipnir gives you over the REST loop is **visibility and isolation in one roundtrip**:
 you see all seven outcomes at once, the unrelated work still ran, and you decide the
 compensation with the full picture — instead of discovering, after a retry, that the
 first attempt had already created an order and reserved stock that nobody told you
 about. If you need automatic compensation / rollback / long-lived workflows, reach for
-a real saga orchestrator (or a transactional outbox). Trame is the *dispatch* layer
+a real saga orchestrator (or a transactional outbox). Sleipnir is the *dispatch* layer
 that gets the seven commands out and their results back; it is not the *consistency*
 layer.
 
@@ -204,11 +204,11 @@ layer.
 
 - **When you need ACID across the seven.** If "all seven succeed or none do" is a hard
   requirement, a distributed transaction or a saga with compensation is the right tool.
-  Trame will faithfully report "six worked, one failed" — which is the wrong semantics
+  Sleipnir will faithfully report "six worked, one failed" — which is the wrong semantics
   if you needed "zero worked."
 - **When the seven are genuinely independent and fire-and-forget.** If you don't need
   the results and don't care which failed, a message bus with a consumer each is a
-  better fit. Trame earns its keep when you want the *results back, structured, in one
+  better fit. Sleipnir earns its keep when you want the *results back, structured, in one
   roundtrip*.
 - **Long-running commands.** Dependency chaining is for bounded request-time work. A
   command that takes minutes should not hold a batch open — dispatch it asynchronously
@@ -216,9 +216,9 @@ layer.
 
 ### One thing to know about failure here
 
-`Billing.Charge` returns `TrameResults.Error(402, …)` — it does **not** throw. A throw
+`Billing.Charge` returns `SleipnirResults.Error(402, …)` — it does **not** throw. A throw
 becomes a generic `500` with no message leak (Story 01's error contract). To set a
-client-visible code and message, return a `TrameResponse` via `TrameResults`. The
+client-visible code and message, return a `SleipnirResponse` via `SleipnirResults`. The
 invoker passes it through verbatim, so the `402` and the credit-limit message reach
 the client's result array unchanged.
 
@@ -232,8 +232,8 @@ the client's result array unchanged.
 stories/02-one-button-seven-commands/Story02.sln
 ```
 
-Boots a Trame server with the seven command controllers and an in-memory store (customer
-#7 over credit limit), and the browser lands in the Developer UI at `/Trame` (port 5002).
+Boots a Sleipnir server with the seven command controllers and an in-memory store (customer
+#7 over credit limit), and the browser lands in the Developer UI at `/Sleipnir` (port 5002).
 The one-batch call from this story — seven of seven attempted, Billing's `402` isolated —
 is in the story README (`stories/02-one-button-seven-commands/README.md`), ready to paste
 into the DevUI batch sender. Source: `stories/02-one-button-seven-commands/Program.cs`

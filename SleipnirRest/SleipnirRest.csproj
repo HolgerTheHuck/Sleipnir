@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageId>Sleipnir.Rest</PackageId>
+    <Description>REST transport for Sleipnir RPC framework (minimal-API, canonical)</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <!-- Project README as the package README (PackageReadmeFile via Directory.Build.props). -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="7.3.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SleipnirCore\SleipnirCore.csproj" />
+  </ItemGroup>
+
+  <!-- Adapter/Dispatcher/Models sind internal; Tests übersetzen rein. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="SleipnirTests" />
+  </ItemGroup>
+
+</Project>

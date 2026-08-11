@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>Sleipnir.Server</PackageId>
+    <Description>Unified ASP.NET Core server integration for Sleipnir — AddSleipnir + UseSleipnirTransports + MapSleipnir in a single package.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <!-- ASP.NET Core-Typen (IApplicationBuilder/IEndpointRouteBuilder/MapHub) —
+       Consumer ist ohnehin eine ASP.NET-App. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Aggregiert alle Transporte + DevUI; transitiv SleipnirCore/SleipnirCommon. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SleipnirHub\SleipnirHub.csproj" />
+    <ProjectReference Include="..\SleipnirRest\SleipnirRest.csproj" />
+    <ProjectReference Include="..\SleipnirWebSocket\SleipnirWebSocket.csproj" />
+    <ProjectReference Include="..\SleipnirDeveloperUi\SleipnirDeveloperUi.csproj" />
+  </ItemGroup>
+
+  <!-- Project README as the package README (resolves the NU5048 warning). -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+</Project>

@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Trame.Samples.NotificationChat.Server.Models;
+namespace Sleipnir.Samples.NotificationChat.Server.Models;
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum NotificationType

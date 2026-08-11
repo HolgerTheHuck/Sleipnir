@@ -1,28 +1,28 @@
 // ==============================================================================
-// Trame Beispiel-Server — ausführbares Server-Setup (Program.cs).
+// Sleipnir Beispiel-Server — ausführbares Server-Setup (Program.cs).
 //
-// Minimaler Einstieg: drei Zeilen Trame-Wiring (AddTrame → UseTrameTransports →
-// MapTrame) reichen, um REST + WebSocket (+ optional SignalR) + Developer-UI
-// bereitzustellen. Die [TrameController]-Typen aus SampleServer.cs werden per
-// Attribut-Scan automatisch gefunden und beim UseTrame-Aufruf registriert —
+// Minimaler Einstieg: drei Zeilen Sleipnir-Wiring (AddSleipnir → UseSleipnirTransports →
+// MapSleipnir) reichen, um REST + WebSocket (+ optional SignalR) + Developer-UI
+// bereitzustellen. Die [SleipnirController]-Typen aus SampleServer.cs werden per
+// Attribut-Scan automatisch gefunden und beim UseSleipnir-Aufruf registriert —
 // keine manuelle Registrierung.
 //
 // Start:  dotnet run --project samples/server/SampleServer.csproj
 //         (HTTPS braucht `dotnet dev-certs https --trust` einmalig pro Maschine)
 // Endpunkte:
-//   • REST          https://localhost:5001/api/trame/json  (+ /multi, /discovery)
-//   • WebSocket     wss://localhost:5001/tramews
-//   • Developer-UI  https://localhost:5001/Trame
+//   • REST          https://localhost:5001/api/sleipnir/json  (+ /multi, /discovery)
+//   • WebSocket     wss://localhost:5001/sleipnirws
+//   • Developer-UI  https://localhost:5001/Sleipnir
 // ==============================================================================
 
-using TrameHub.Extensions;
-using TrameServer;                       // UseTrameTransports, MapTrame
-using TrameTelemetry;                    // AddTrameTelemetry (optionales OTel-SDK)
+using SleipnirHub.Extensions;
+using SleipnirServer;                       // UseSleipnirTransports, MapSleipnir
+using SleipnirTelemetry;                    // AddSleipnirTelemetry (optionales OTel-SDK)
 
 var builder = WebApplication.CreateBuilder(args);
 
 // In Development die gebauten Developer-UI-Static-Assets aus dem
-// Trame.DeveloperUi-Paket einblenden (Produktion injiziert sie automatisch).
+// Sleipnir.DeveloperUi-Paket einblenden (Produktion injiziert sie automatisch).
 if (builder.Environment.IsDevelopment())
 {
     builder.WebHost.UseStaticWebAssets();
@@ -37,23 +37,23 @@ builder.Services.AddCors(options =>
         .AllowAnyMethod());
 });
 
-builder.Services.AddTrame(o =>
+builder.Services.AddSleipnir(o =>
 {
     o.EnableDetailedErrors = builder.Environment.IsDevelopment();
     // Rate-Limit nur in Produktion; in der Demo keine Drosselung.
     o.RateLimitPermitLimit = builder.Environment.IsProduction() ? 50 : 0;
 });
 
-// Optional: OpenTelemetry-SDK booten und den „Trame"-ActivitySource abonnieren.
-// Console-Exporter schreibt jeden TrameCall-/TrameBatch-Span auf die Konsole —
+// Optional: OpenTelemetry-SDK booten und den „Sleipnir"-ActivitySource abonnieren.
+// Console-Exporter schreibt jeden SleipnirCall-/SleipnirBatch-Span auf die Konsole —
 // für die Demo am einfachsten zu beobachten (Production: OTLP an einen Collector).
-builder.Services.AddTrameTelemetry(o =>
+builder.Services.AddSleipnirTelemetry(o =>
 {
-    o.ServiceName = "Trame.SampleServer";
-    o.Exporter = TrameExporter.Console;
+    o.ServiceName = "Sleipnir.SampleServer";
+    o.Exporter = SleipnirExporter.Console;
 });
 
-// Fixe URL, damit die Client-Snippets (https://localhost:5001 / wss://…/tramews)
+// Fixe URL, damit die Client-Snippets (https://localhost:5001 / wss://…/sleipnirws)
 // out-of-the-box passen.
 builder.WebHost.UseUrls("https://localhost:5001");
 
@@ -63,10 +63,10 @@ app.UseCors();
 app.UseRouting();
 app.UseRateLimiter();
 
-// Trame-Transport-Middleware (WebSocket primär) + Controller-Registrierung.
-app.UseTrameTransports();
+// Sleipnir-Transport-Middleware (WebSocket primär) + Controller-Registrierung.
+app.UseSleipnirTransports();
 
-// REST (/api/trame) + Developer-UI (/Trame) + ggf. SignalR-Hub (/tramehub).
-app.MapTrame();
+// REST (/api/sleipnir) + Developer-UI (/Sleipnir) + ggf. SignalR-Hub (/sleipnirhub).
+app.MapSleipnir();
 
 app.Run();

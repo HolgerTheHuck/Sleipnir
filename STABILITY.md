@@ -1,29 +1,29 @@
-# Stability & Compatibility — Trame 1.0.0
+# Stability & Compatibility — Sleipnir 1.0.0
 
-> What you can depend on, what is still moving, and how Trame evolves without breaking you.
+> What you can depend on, what is still moving, and how Sleipnir evolves without breaking you.
 >
-> This file is the authoritative stability promise for Trame 1.0.0. It complements
+> This file is the authoritative stability promise for Sleipnir 1.0.0. It complements
 > [`CHANGELOG.md`](CHANGELOG.md) (what changed) and [`ROADMAP.md`](ROADMAP.md) (what is
 > planned). Where the three disagree, **this file wins** for the 1.0.0 surface.
 >
-> A predecessor of Trame has been in internal production for years without contract breakage.
+> A predecessor of Sleipnir has been in internal production for years without contract breakage.
 > 1.0.0 is the public, versioned expression of that proven surface — not an early prototype.
 
 ---
 
 ## TL;DR
 
-- **Stable (1.0.0):** the wire protocol, the attribute surface (`[TrameController]` /
-  `[TrameMethod]` / `[TrameAuthorise]` / `[TrameAnonymous]`), the builder (`TrameCall`),
-  `TrameOptions`, `TrameResponse` / `TrameError`, `discoveryVersion`, and the client runtime
-  (`ITrameClient`, `TrameRestJsonClient`, `TrameWebSocketClient`, `TrameSignalrClient`).
+- **Stable (1.0.0):** the wire protocol, the attribute surface (`[SleipnirController]` /
+  `[SleipnirMethod]` / `[SleipnirAuthorise]` / `[SleipnirAnonymous]`), the builder (`SleipnirCall`),
+  `SleipnirOptions`, `SleipnirResponse` / `SleipnirError`, `discoveryVersion`, and the client runtime
+  (`ISleipnirClient`, `SleipnirRestJsonClient`, `SleipnirWebSocketClient`, `SleipnirSignalrClient`).
   A consumer built against these can upgrade within 1.x without code changes.
 - **Experimental:** codegen outputs, `Arg<T>` / `Call` / `Batch` generated shapes, the
   interceptor pipeline extension points beyond the built-in logging interceptor, and every
   feature marked `[Experimental]` in this file or in `ROADMAP.md`. These may change between
   minor versions; pin the exact version if you build on them.
-- **Out of scope for stability:** the Developer UI (`/Trame`), the sample app (`Trame/`),
-  the spikes (`spikes/`), and anything under `TrameTests/` / `TrameBench/`. Treat as
+- **Out of scope for stability:** the Developer UI (`/Sleipnir`), the sample app (`Sleipnir/`),
+  the spikes (`spikes/`), and anything under `SleipnirTests/` / `SleipnirBench/`. Treat as
   reference, not contract.
 
 ---
@@ -34,76 +34,76 @@ The following are **guaranteed stable** within the 1.x line. A breaking change t
 requires a 2.0.0 (SemVer major).
 
 ### 1.1 Wire protocol
-- The Trame request/response envelope as specified in [`PROTOCOL.md`](PROTOCOL.md):
-  `TrameRequest` (`controller`, `method`, `params[]`, `id`, `dependencyMapping?`),
-  `TrameResponse` (`code`, `data`, `error?`, `content?`, `id`, `exposedDependencies?`,
+- The Sleipnir request/response envelope as specified in [`PROTOCOL.md`](PROTOCOL.md):
+  `SleipnirRequest` (`controller`, `method`, `params[]`, `id`, `dependencyMapping?`),
+  `SleipnirResponse` (`code`, `data`, `error?`, `content?`, `id`, `exposedDependencies?`,
   `isSuccess` derived client-side).
-- The JSON-RPC 2.0 compatibility adapter (`POST /api/trame/jsonrpc`, `TrameOptions.EnableJsonRpcCompat`)
+- The JSON-RPC 2.0 compatibility adapter (`POST /api/sleipnir/jsonrpc`, `SleipnirOptions.EnableJsonRpcCompat`)
   — its mapping table is stable within 1.x.
-- The single-REST-endpoint shape (`POST /api/trame/json`, body-envelope-at-200) and the batch
-  endpoint (`POST /api/trame/json/multi`) — routes are stable.
-- WebSocket path `tramews` and SignalR hub path `tramehub` — stable.
+- The single-REST-endpoint shape (`POST /api/sleipnir/json`, body-envelope-at-200) and the batch
+  endpoint (`POST /api/sleipnir/json/multi`) — routes are stable.
+- WebSocket path `sleipnirws` and SignalR hub path `sleipnirhub` — stable.
 - `discoveryVersion` is **additive-only**: a consumer that accepts version `"1"` will continue
   to accept future `"1"`-prefixed versions; new fields may be added, existing fields keep their
   meaning. A breaking discovery-schema change bumps the version to `"2"`.
 
 ### 1.2 Attribute surface
-- `[TrameController("name")]` and `[TrameController("name", AutoDiscover = false)]` — names,
+- `[SleipnirController("name")]` and `[SleipnirController("name", AutoDiscover = false)]` — names,
   constructor signatures, and discovery semantics are stable.
-- `[TrameMethod("name")]` — stable.
-- `[TrameAuthorise]` and `[TrameAuthorise(Role = "...")]` — stable. **`[TrameAuthorise(Policy = "...")]`
+- `[SleipnirMethod("name")]` — stable.
+- `[SleipnirAuthorise]` and `[SleipnirAuthorise(Role = "...")]` — stable. **`[SleipnirAuthorise(Policy = "...")]`
   is stable as of Phase 1** (policy-based authorization via ASP.NET Core `IAuthorizationService`,
   `resource: null` in v1.1). `403 Forbidden` (`PermissionDenied`) is now distinguished from
   `401 Unauthorized` (`Unauthenticated`) — see `ERROR_CATALOG.md` and
   `docs/design/phase-1-interceptor-pipeline.md`.
-- `[TrameAnonymous]` — stable (method-level opt-out from `RequireAuthentication`).
-- `[TrameDataContract]` and `[TrameDataContract(Exclude = true)]` — stable.
-- `[TrameDocumentation("...")]` / `[TrameExample("...")]` — stable (additive; new optional
+- `[SleipnirAnonymous]` — stable (method-level opt-out from `RequireAuthentication`).
+- `[SleipnirDataContract]` and `[SleipnirDataContract(Exclude = true)]` — stable.
+- `[SleipnirDocumentation("...")]` / `[SleipnirExample("...")]` — stable (additive; new optional
   constructor arguments may be added in minor versions, existing ones keep meaning).
 
 ### 1.3 Builder and options
-- `TrameCall.Init(controller, method)` fluent builder: `.With(...)`, `.With(name, value)`,
+- `SleipnirCall.Init(controller, method)` fluent builder: `.With(...)`, `.With(name, value)`,
   `.Named(...)`, `.Exposes(jsonPath, alias)`, `.WithAlias(alias)`, `.ToRequest()` — stable.
-- `TrameMultiRequest` with `ExecutionMode.Parallel` / `ExecutionMode.Serial` — stable.
-- `TrameOptions` — all properties present in 1.0.0 are stable; new properties may be added in
+- `SleipnirMultiRequest` with `ExecutionMode.Parallel` / `ExecutionMode.Serial` — stable.
+- `SleipnirOptions` — all properties present in 1.0.0 are stable; new properties may be added in
   minor versions (with backward-compatible defaults), existing property names and defaults do
   not change within 1.x. Cardinality caps (`MaxParameterArrayLength`, `MaxResultElementCount`,
   `MaximumBatchSize`, `MaxDependencyPathLength`, `AllowRecursiveDescent`) keep their defaults
   within 1.x.
-- `TrameOptions.AliasBindingMode` (`Weak` / `Strict` / `Paranoid`) — the three modes and their
+- `SleipnirOptions.AliasBindingMode` (`Weak` / `Strict` / `Paranoid`) — the three modes and their
   semantics (`DEPENDENCY_BINDING.md` §7) are stable. `Weak` remains the default.
-- **`TrameOptions.Interceptors` / `TrameOptions.BatchInterceptors` (Phase 1, additive)** —
+- **`SleipnirOptions.Interceptors` / `SleipnirOptions.BatchInterceptors` (Phase 1, additive)** —
   collections for user interceptors; `RegisterBuiltInInterceptors` (default `true`) toggles the
   built-in Auth/Telemetry/Logging interceptors. Additive properties with safe defaults.
-- **`ITrameInterceptor` + `TrameInvocationContext` (Phase 1)** — stable in the single-call
-  path. The signature `InvokeAsync(TrameInvocationContext, TrameInvocationDelegate)` is stable;
-  `TrameInvocationContext` carries `Request`, `HttpContext`, `InvokeInfo`, `Response`,
+- **`ISleipnirInterceptor` + `SleipnirInvocationContext` (Phase 1)** — stable in the single-call
+  path. The signature `InvokeAsync(SleipnirInvocationContext, SleipnirInvocationDelegate)` is stable;
+  `SleipnirInvocationContext` carries `Request`, `HttpContext`, `InvokeInfo`, `Response`,
   `Activity`, `CancellationToken`. New context properties may be added additively. The batch
   path's use of the pipeline is experimental (see §2).
-- **Built-in interceptors** (`TrameAuthorizationInterceptor`, `TrameTelemetryInterceptor`,
-  `TrameLoggingInterceptor`) — stable in behavior and registration order (Auth → Telemetry →
-  Logging, outer to inner). `TrameAuthorizationInterceptor` evaluates `[TrameAuthorise]` +
-  `Policy` via `IAuthorizationService` (optional); `TrameTelemetryInterceptor` emits
-  `trame.*` metrics and OTel-convention logs. See `docs/design/phase-1-interceptor-pipeline.md`.
+- **Built-in interceptors** (`SleipnirAuthorizationInterceptor`, `SleipnirTelemetryInterceptor`,
+  `SleipnirLoggingInterceptor`) — stable in behavior and registration order (Auth → Telemetry →
+  Logging, outer to inner). `SleipnirAuthorizationInterceptor` evaluates `[SleipnirAuthorise]` +
+  `Policy` via `IAuthorizationService` (optional); `SleipnirTelemetryInterceptor` emits
+  `sleipnir.*` metrics and OTel-convention logs. See `docs/design/phase-1-interceptor-pipeline.md`.
 
 ### 1.4 Response and error model
-- `TrameResponse` / `TrameError` field shape and meaning — stable.
-- The Trame logical codes returned in `TrameResponse.code` (`200`, `204`, `400`, `401`, `403`,
+- `SleipnirResponse` / `SleipnirError` field shape and meaning — stable.
+- The Sleipnir logical codes returned in `SleipnirResponse.code` (`200`, `204`, `400`, `401`, `403`,
   `404`, `409`, `413`, `499`, `500`) — stable in their current mapping. See `ERROR_CATALOG.md`
   for the authoritative catalog. A future **error taxonomy** (`ROADMAP.md` Phase 1, item A)
   adds *semantic categories* on top, not replaces the existing numeric codes.
-- **`TrameError.Category` (Phase 1, additive)** — a new `TrameErrorCategory` enum field
+- **`SleipnirError.Category` (Phase 1, additive)** — a new `SleipnirErrorCategory` enum field
   (`InvalidArgument`/`Unauthenticated`/`PermissionDenied`/`NotFound`/`Conflict`/
   `FailedPrecondition`/`ResourceExhausted`/`Internal`/`Unavailable`/`Cancelled`) carried on the
   wire as `error.category` (string, default `None`). Additive per STABILITY.md §3.2 — existing
   1.0.0 clients ignore it. See `ERROR_CATALOG.md`.
-- `TrameErrorCodes` constants (Phase 1) — stable named constants for the numeric codes; replace
-  the magic numbers that were scattered across `TrameResults` and the Invoker. The numeric
+- `SleipnirErrorCodes` constants (Phase 1) — stable named constants for the numeric codes; replace
+  the magic numbers that were scattered across `SleipnirResults` and the Invoker. The numeric
   values are unchanged from 1.0.0.
-- `TrameResults.*` factory (`Ok`, `NotFound`, `BadRequest`, `Forbidden` (new, Phase 1),
+- `SleipnirResults.*` factory (`Ok`, `NotFound`, `BadRequest`, `Forbidden` (new, Phase 1),
   `Error(...)`, etc.) — stable. `Error(code, message, category, details)` takes an optional
   category; the convenience methods set it automatically.
-- `TrameException` on the client (thrown on non-2xx body `code` from `Call<T>`) — stable.
+- `SleipnirException` on the client (thrown on non-2xx body `code` from `Call<T>`) — stable.
 - `OperationCanceledException` propagation semantics (cancellation surfaces as OCE, not wrapped)
   — stable.
 - `ForbiddenAccessException` (Phase 1) — thrown by the auth path when authenticated but
@@ -111,17 +111,17 @@ requires a 2.0.0 (SemVer major).
   `UnauthorizedAccessException` (→ `401 Unauthorized` / `Unauthenticated`).
 
 ### 1.5 Client runtime
-- `ITrameClient` interface and the three implementations (`TrameRestJsonClient`,
-  `TrameWebSocketClient`, `TrameSignalrClient`) — method signatures and behaviors are stable.
-- Auto-reconnect behavior of `TrameWebSocketClient` (reject in-flight calls on drop, reconnect
+- `ISleipnirClient` interface and the three implementations (`SleipnirRestJsonClient`,
+  `SleipnirWebSocketClient`, `SleipnirSignalrClient`) — method signatures and behaviors are stable.
+- Auto-reconnect behavior of `SleipnirWebSocketClient` (reject in-flight calls on drop, reconnect
   in background, new calls wait for the in-flight connect) — stable in its current shape.
-- The TypeScript/JavaScript client `trame-client` (`clients/ts/`) public API surface
-  (`TrameRestClient`, `TrameWebSocketClient`, `TrameCall`, `rest.call(...)`,
-  `ws.call(...)`, `withBinary`, `callBinary`, `CancelledError` / `TrameError`) — stable within
+- The TypeScript/JavaScript client `sleipnir-client` (`clients/ts/`) public API surface
+  (`SleipnirRestClient`, `SleipnirWebSocketClient`, `SleipnirCall`, `rest.call(...)`,
+  `ws.call(...)`, `withBinary`, `callBinary`, `CancelledError` / `SleipnirError`) — stable within
   1.x, SemVer on the npm package.
 
 ### 1.6 Discovery
-- `GET /api/trame/discovery` returns the contract described in
+- `GET /api/sleipnir/discovery` returns the contract described in
   [`docs/discovery-schema.md`](docs/discovery-schema.md). The structured `TypeRef` model
   (`kind` ∈ `scalar | array | set | map | ref | stream | opaque | void`), the `discoveryVersion`
   field, and the additive-only rule (§1.1) are stable.
@@ -131,56 +131,56 @@ requires a 2.0.0 (SemVer major).
 ## 2. Experimental surface (may change within 1.x)
 
 These exist in 1.0.0/Phase 1 but are **not yet stability-guaranteed**. They may be renamed,
-restructured, or removed in a minor version. Pin the exact Trame version if you build on them.
+restructured, or removed in a minor version. Pin the exact Sleipnir version if you build on them.
 They are expected to *graduate* into the stable surface as the corresponding `ROADMAP.md`
 phases land.
 
-- **Codegen outputs.** Everything generated by `trame-gen` (`--lang ts | js | cs | py`) and by
-  the Roslyn `Trame.SourceGenerator`: the `TrameGeneratedClient`, per-controller `*Client`
+- **Codegen outputs.** Everything generated by `sleipnir-gen` (`--lang ts | js | cs | py`) and by
+  the Roslyn `Sleipnir.SourceGenerator`: the `SleipnirGeneratedClient`, per-controller `*Client`
   classes, `Arg<T>`, `Call`, `BatchEntry`, `Batch`, `Alias`, `Exposes` generated helpers, the
   `JsonPathOf<T>` literal-union typing. Generated code is a *projection* of the stable wire;
   when the generator's input shape changes between minor versions, regenerated output may
   change. **Pin the generator version** alongside the server version.
-- **`contract.trame.json`** as a committed contract artifact (the v1.1 build-time-contract
+- **`contract.sleipnir.json`** as a committed contract artifact (the v1.1 build-time-contract
   model, `ROADMAP.md` "v1.1 — Versioning & build-time contract"). The drift-check is a
   build-time guarantee, not yet a stable public surface — its CLI flags and target names may
   settle in 1.1.
-- **Interceptor pipeline in the batch path.** Phase 1 lands the pipeline (`ITrameInterceptor`
-  + `TrameInvocationContext`) as stable in the single-call path, and registers built-in
+- **Interceptor pipeline in the batch path.** Phase 1 lands the pipeline (`ISleipnirInterceptor`
+  + `SleipnirInvocationContext`) as stable in the single-call path, and registers built-in
   interceptors (Auth/Telemetry/Logging). The *batch path* (`ExecuteInParallel`/
   `ExecuteSequentially`/`ExecuteInDependencyBatches`) runs Auth via the serial pre-pass and
   Tracing/Metrics via direct calls in `ExecuteAuthorized`/`TraceCallError` — **not** through
   the per-element interceptor pipeline. User interceptors registered via
-  `TrameOptions.Interceptors` currently run *only* in the single-call path. Routing the batch
+  `SleipnirOptions.Interceptors` currently run *only* in the single-call path. Routing the batch
   path through the per-element pipeline (so user interceptors run for batch elements too) is a
   post-Phase-1 refactor that must preserve the serial-auth-pre-pass constraint. See
   `docs/design/phase-1-interceptor-pipeline.md` step 7.
-- **`ITrameBatchInterceptor`** (Phase 1) — the batch-level interceptor surface exists and is
-  registered via `TrameOptions.BatchInterceptors`, but no built-in batch interceptor ships yet
-  (batch metrics are emitted directly in `InvokeDi(IEnumerable)` via `TrameMetrics.RecordBatch`).
+- **`ISleipnirBatchInterceptor`** (Phase 1) — the batch-level interceptor surface exists and is
+  registered via `SleipnirOptions.BatchInterceptors`, but no built-in batch interceptor ships yet
+  (batch metrics are emitted directly in `InvokeDi(IEnumerable)` via `SleipnirMetrics.RecordBatch`).
   The interface is stable in shape; the built-in batch interceptors that will use it are
   post-Phase-1.
 - **`EnableJsonRpcCompat` adapter limitations** are documented (no `@alias` chaining, no
   execution-mode selection, no binary out-of-band, no streaming). The adapter is stable in
   what it *does*; what it *does not do* may change as it graduates.
-- **Developer UI** (`/Trame`). Its layout, tabs, history, codegen panel, and dependency builder
+- **Developer UI** (`/Sleipnir`). Its layout, tabs, history, codegen panel, and dependency builder
   are conveniences, not contract. The DevUI reflects the stable discovery; the DevUI itself is
   free to evolve.
-- **Telemetry `trame.*` metric instruments** as currently emitted (`trame.call.duration`,
-  `trame.call.count`, `trame.error.count`, `trame.batch.fan_out`, `trame.batch.count`,
-  `trame.event.dropped` (Phase 3)). The `Meter "Trame"` name and the OTel RPC span tag names
+- **Telemetry `sleipnir.*` metric instruments** as currently emitted (`sleipnir.call.duration`,
+  `sleipnir.call.count`, `sleipnir.error.count`, `sleipnir.batch.fan_out`, `sleipnir.batch.count`,
+  `sleipnir.event.dropped` (Phase 3)). The `Meter "Sleipnir"` name and the OTel RPC span tag names
   (`rpc.system`/`rpc.service`/`rpc.method`) are stable; the *metric instrument names and tag
   keys* are stable in Phase 1/3 but may gain additional instruments/tags in minor versions
   (additive). See `ERROR_CATALOG.md` §6.
-- **Events / Server-Push (Phase 3)** — `[TrameEvent]` attribute, `IObservable<T>` subscribe
-  surface, `ITrameCore.SubscribeAsync`, the WS subscribe/unsubscribe/event-frame wire
-  (`kind:"subscribe"`/`kind:"unsubscribe"`/`{type:"event",...}`), the `TrameSubscriptionManager`,
-  and `trame.event.dropped` metric. **Experimental in v1**: the wire format, subscription
+- **Events / Server-Push (Phase 3)** — `[SleipnirEvent]` attribute, `IObservable<T>` subscribe
+  surface, `ISleipnirCore.SubscribeAsync`, the WS subscribe/unsubscribe/event-frame wire
+  (`kind:"subscribe"`/`kind:"unsubscribe"`/`{type:"event",...}`), the `SleipnirSubscriptionManager`,
+  and `sleipnir.event.dropped` metric. **Experimental in v1**: the wire format, subscription
   lifecycle (pro-Connection, client-side re-subscribe, at-most-once-while-disconnected),
   and backpressure (bounded buffer + drop-oldest) are implemented but may settle in a minor
   version. WS-only in v1; SignalR and REST-Long-Polling are out of scope. `Last-Event-Id`-
   resume and server-side buffer are v1.x+. See `docs/design/phase-3-events.md`.
-- **The `samples/`, `spikes/`, `stories/`, and `Trame/` (sample app) projects.** Reference and
+- **The `samples/`, `spikes/`, `stories/`, and `Sleipnir/` (sample app) projects.** Reference and
   demo material; no stability promise.
 
 ---
@@ -189,9 +189,9 @@ phases land.
 
 1. **No silent breaking changes.** Any change that would require a consumer to update code or
    change behavior at a stable seam triggers a SemVer major (2.0.0).
-2. **Additive changes are minor (1.x.0).** New `TrameOptions` properties (with safe defaults),
-   new `[Trame*]` attributes, new `TrameResults.*` factory methods, new discovery `kind` values,
-   new `trame.*` metric instruments — all additive, all backward-compatible, all minor.
+2. **Additive changes are minor (1.x.0).** New `SleipnirOptions` properties (with safe defaults),
+   new `[Sleipnir*]` attributes, new `SleipnirResults.*` factory methods, new discovery `kind` values,
+   new `sleipnir.*` metric instruments — all additive, all backward-compatible, all minor.
 3. **`discoveryVersion` is additive-only within `"1"`.** New fields may appear; existing fields
    keep meaning. A breaking discovery-schema change bumps to `"2"` and ships in a 2.0.0.
 4. **Wire-compatibility is the contract.** A 1.x server must serve a 1.0.0 client without the
@@ -213,8 +213,8 @@ phases land.
 
 ## 4. Versioning model (routing key, not gate)
 
-Trame v1 has **no built-in API versioning mechanism** (see `README_DETAILS.md` *Known
-Limitations*). Versioning is a convention: `[TrameController("Customer.v1")]` and
+Sleipnir v1 has **no built-in API versioning mechanism** (see `README_DETAILS.md` *Known
+Limitations*). Versioning is a convention: `[SleipnirController("Customer.v1")]` and
 `Customer.v2` coexist as two dictionary entries; the client selects via the `controller`
 field. This is stable and recommended.
 
@@ -227,13 +227,13 @@ is stable.
 
 ## 5. What is explicitly out of scope for stability
 
-- **Native AOT.** Trame uses runtime reflection and `Expression.Compile`. Native AOT is not
+- **Native AOT.** Sleipnir uses runtime reflection and `Expression.Compile`. Native AOT is not
   supported in 1.x (see `ROADMAP.md` for the AOT-via-codegen strategic direction, which would
   graduate into a stability promise only after landing).
-- **Performance numbers.** Benchmark results in `TrameBench/` are measurements, not
-  guarantees. Trame's internal design (pre-compiled delegates, single-pass response parsing,
+- **Performance numbers.** Benchmark results in `SleipnirBench/` are measurements, not
+  guarantees. Sleipnir's internal design (pre-compiled delegates, single-pass response parsing,
   serial auth pre-pass) is stable; the resulting numbers are not a contract.
-- **The exact JSON property order** in serialized responses. Trame uses
+- **The exact JSON property order** in serialized responses. Sleipnir uses
   `System.Text.Json` with camelCase output; property order is not guaranteed stable. Consumers
   must not rely on field order.
 - **The DevUI's HTML/JS/CSS.** Stable in what it reflects (discovery), free to evolve in form.
@@ -242,16 +242,16 @@ is stable.
 
 ## 6. How to consume this file
 
-- **Building a Trame client (any language):** rely on §1 (stable). Pin the Trame server
+- **Building a Sleipnir client (any language):** rely on §1 (stable). Pin the Sleipnir server
   version; upgrade within 1.x without code changes.
-- **Using codegen output:** pin both the Trame server version **and** the generator version.
+- **Using codegen output:** pin both the Sleipnir server version **and** the generator version.
   Regenerate when you upgrade either. See `CLIENT_GENERATION.md`.
-- **Writing a custom interceptor:** target the 1.0.0 `ITrameInterceptor`, but expect a
+- **Writing a custom interceptor:** target the 1.0.0 `ISleipnirInterceptor`, but expect a
   possible adjustment in a 1.x minor when Phase 1 lands. Track `ROADMAP.md`.
-- **Operating Trame in production:** §1.4 (error model) and §3.6 (defaults don't tighten) are
+- **Operating Sleipnir in production:** §1.4 (error model) and §3.6 (defaults don't tighten) are
   your operational invariants. The security posture is described in `SECURITY.md`; the
   `RequireAuthentication` default-deny behavior is stable.
-- **Evaluating Trame for adoption:** §1 is the surface your code will bind to; §2 is what is
+- **Evaluating Sleipnir for adoption:** §1 is the surface your code will bind to; §2 is what is
   still moving. The asymmetry is intentional — the core is frozen, the edges are explicit.
 
 ---

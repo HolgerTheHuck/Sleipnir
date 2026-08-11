@@ -4,14 +4,14 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>TrameStories.Story03</RootNamespace>
+    <RootNamespace>SleipnirStories.Story03</RootNamespace>
   </PropertyGroup>
 
-  <!-- TrameServer aggregiert die Transporte + DevUI; TrameClient für die
+  <!-- SleipnirServer aggregiert die Transporte + DevUI; SleipnirClient für die
        Demo-Client-Snippets (REST/WebSocket/SignalR) im README und Scratch. -->
   <ItemGroup>
-    <ProjectReference Include="..\..\TrameServer\TrameServer.csproj" />
-    <ProjectReference Include="..\..\TrameClient\TrameClient.csproj" />
+    <ProjectReference Include="..\..\SleipnirServer\SleipnirServer.csproj" />
+    <ProjectReference Include="..\..\SleipnirClient\SleipnirClient.csproj" />
   </ItemGroup>
 
 </Project>

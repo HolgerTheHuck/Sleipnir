@@ -27,7 +27,7 @@
       <button class:active={appState.view === 'gallery'} onclick={() => nav('gallery')}>Gallery</button>
     </nav>
     <footer>
-      <a href="/Trame" target="_blank">Trame DevUI ↗</a>
+      <a href="/Sleipnir" target="_blank">Sleipnir DevUI ↗</a>
     </footer>
   </aside>
 

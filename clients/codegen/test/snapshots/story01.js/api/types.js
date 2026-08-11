@@ -1,4 +1,4 @@
-// Auto-generated Trame data types (JSDoc). Properties are camelCase (wire).
+// Auto-generated Sleipnir data types (JSDoc). Properties are camelCase (wire).
 
 /**
  * @typedef {Object} StockInfo

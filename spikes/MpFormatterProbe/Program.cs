@@ -1,10 +1,10 @@
-// Shared Probe-Programm: Round-Trip eines JsonElement? (und einer TrameResponse-
+// Shared Probe-Programm: Round-Trip eines JsonElement? (und einer SleipnirResponse-
 // artigen Hülle) durch MessagePack — gegen die je-projekt resolved MessagePack-Version.
 #nullable disable
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Trame.Spikes.MessagePack;
+using Sleipnir.Spikes.MessagePack;
 using MessagePack;
 
 var opts = MessagePackSerializerOptions.Standard.WithResolver(JsonElementResolver.Instance);

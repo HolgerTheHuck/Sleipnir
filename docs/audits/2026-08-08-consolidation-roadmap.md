@@ -20,7 +20,7 @@
 
 | # | Item | Train | Severity/Effort | Depends on |
 |---|------|-------|-----------------|------------|
-| R1 | Delete drifted `AddTrameCore`, route fluent overload through canonical `AddTrame` | 1.1.2 | critical / S | — |
+| R1 | Delete drifted `AddSleipnirCore`, route fluent overload through canonical `AddSleipnir` | 1.1.2 | critical / S | — |
 | R2 | Apply `_serviceRegistrations` to DI (fluent builder actually works) | 1.1.2 | critical / S | R1 |
 | R3 | WebSocket correlation: multi-without-ids hang + id-less error frames | 1.1.2 | critical / M | — |
 | R4 | `TcsHolder.SetCanceled` → `TrySetCanceled` | 1.1.2 | critical / XS | — |
@@ -43,14 +43,14 @@ Effort scale: XS < 1 h · S ≤ 1 day · M 1–3 days · L 3–5 days.
 Branch from `main` as `hotfix/1.1.2` (precedent: `hotfix/1.1.1`). All six items are
 small, independently shippable, and fix defects that are **verified in code**.
 
-## R1 — Delete drifted `AddTrameCore`; route the fluent overload through the canonical `AddTrame`
+## R1 — Delete drifted `AddSleipnirCore`; route the fluent overload through the canonical `AddSleipnir`
 
-**Why (critical).** `TrameHub/Extensions/TrameControllerBuilder.cs:136-184` re-implements
+**Why (critical).** `SleipnirHub/Extensions/SleipnirControllerBuilder.cs:136-184` re-implements
 registration and has drifted in seven load-bearing ways:
 
 1. Missing `ConfigureHttpJsonOptions` → REST wire becomes PascalCase and the
-   `TrameResponseJsonConverter` (`DataBytes` byte-identity) is absent — **the wire contract
-   depends on which `AddTrame` overload the user calls**.
+   `SleipnirResponseJsonConverter` (`DataBytes` byte-identity) is absent — **the wire contract
+   depends on which `AddSleipnir` overload the user calls**.
 2. `o.MaximumParallelInvocationsPerClient = options.MaximumParallelInvocationsPerClient`
    unconditionally (line 145): the default is 0 and SignalR throws at startup ("must be ≥ 1").
    The canonical path's guard exists precisely because this bug already bit once — it was
@@ -60,28 +60,28 @@ registration and has drifted in seven load-bearing ways:
 4. Missing pass-throughs: `RequireAuthentication`, `MaximumBatchSize`,
    `MaxDependencyPathLength`, `AllowRecursiveDescent`, `PolicyEvaluator` → north-bound
    hardening silently off.
-5. Built-in interceptors not registered (only `TrameLoggingInterceptor`) → no
-   `TrameAuthorizationInterceptor`.
-6. `TrameOptions` not added as DI singleton → `MapTrame` sees null options → hub never
+5. Built-in interceptors not registered (only `SleipnirLoggingInterceptor`) → no
+   `SleipnirAuthorizationInterceptor`.
+6. `SleipnirOptions` not added as DI singleton → `MapSleipnir` sees null options → hub never
    mapped, REST rate-limit/JSON-RPC toggles silently off.
 
 **Change.**
 
-- Delete the private `AddTrameCore` method entirely.
-- `AddTrame(services, options, configureControllers)` calls the canonical
-  `TrameServiceCollectionExtension.AddTrame(services, options)`, then registers the builder.
+- Delete the private `AddSleipnirCore` method entirely.
+- `AddSleipnir(services, options, configureControllers)` calls the canonical
+  `SleipnirServiceCollectionExtension.AddSleipnir(services, options)`, then registers the builder.
 - The canonical path auto-scans all AppDomain assemblies; the fluent overload's contract is
   explicit registration. Add an **additive** opt-out, e.g.
-  `TrameOptions.AutoDiscoverControllers = true` (default keeps current behavior), and have
+  `SleipnirOptions.AutoDiscoverControllers = true` (default keeps current behavior), and have
   the fluent overload set it to `false` for its call — or accept auto-scan plus explicit
   adds (registration is idempotent for the same type, and `AutoDiscover = false`
   controllers are excluded from the scan anyway). Decide at implementation: the explicit
   opt-out is cleaner and matches the fluent intent.
 
-**Files.** `TrameHub/Extensions/TrameControllerBuilder.cs`,
-`TrameHub/Extensions/TrameServiceCollectionExtension.cs`, `TrameHub/Extensions/TrameOptions.cs`.
+**Files.** `SleipnirHub/Extensions/SleipnirControllerBuilder.cs`,
+`SleipnirHub/Extensions/SleipnirServiceCollectionExtension.cs`, `SleipnirHub/Extensions/SleipnirOptions.cs`.
 
-**Tests.** Startup test: fluent `AddTrame` with `UseSignalR = true` and default options
+**Tests.** Startup test: fluent `AddSleipnir` with `UseSignalR = true` and default options
 builds the provider without throwing (covers the line-145 crash). Options-parity test:
 host built via fluent overload produces camelCase wire and honors `RequireAuthentication`.
 
@@ -93,7 +93,7 @@ behaviorally identical to the canonical one plus explicit controller registratio
 
 ## R2 — Apply `_serviceRegistrations` to DI
 
-**Why (critical).** `TrameControllerBuilder.cs:19,91-99`: `_serviceRegistrations` is
+**Why (critical).** `SleipnirControllerBuilder.cs:19,91-99`: `_serviceRegistrations` is
 write-only. `FromAssemblies()`, `Add<T>()`, `Add<T>(lifetime)`, `AddSingleton<T>()` never
 register the controller with `IServiceCollection`, so `scope.ServiceProvider.GetService`
 returns null → every call fails with "Controller not registered in DI"; `AddSingleton<T>`'s
@@ -102,7 +102,7 @@ lifetime is silently ignored. Only the factory overload works.
 **Change.** Register with DI immediately at builder-call time (the builder already holds
 `_services` — same as the factory overload does): each `Add<T>`/`FromAssemblies` does
 `_services.Add(new ServiceDescriptor(type, type, lifetime))`. Keep `_registrations` for
-the `UseTrame`-time invoker registration. Delete the now-dead `_serviceRegistrations` list.
+the `UseSleipnir`-time invoker registration. Delete the now-dead `_serviceRegistrations` list.
 
 **Tests.** Integration: a fluent-registered controller answers a call end-to-end;
 `AddSingleton<T>` yields one instance across two calls; `AutoDiscover = false` controllers
@@ -114,23 +114,23 @@ are excluded from `FromAssemblies` but register via `Add<T>`.
 
 **Why (critical — "hangs forever" class).**
 
-- Client (`TrameClient/Trame/TrameWebSocketClient.cs:240-243`): for `TrameMultiRequest`
+- Client (`SleipnirClient/Sleipnir/SleipnirWebSocketClient.cs:240-243`): for `SleipnirMultiRequest`
   the correlation id is `mr.Requests?.FirstOrDefault()?.Id ?? NextId()` — a freshly generated
   id is **never written into any request**, so the server echoes `""` and the client's
   strict dispatcher drops the response. With default `callTimeout = null` the caller hangs
   forever. REST fills ids correctly; SignalR needs none — same call, fundamentally
   different behavior per transport.
-- Server (`TrameWebSocket/TrameWebSocketMiddleware.cs:104,152,170,206,214,225,241,246`):
+- Server (`SleipnirWebSocket/SleipnirWebSocketMiddleware.cs:104,152,170,206,214,225,241,246`):
   every error path serializes an anonymous `{ code = 400, data = "..." }` — no `id`, no
   `error` envelope, catch-all reports internal errors as 400, message lands in `data` where
-  `TrameException` never looks.
+  `SleipnirException` never looks.
 
 **Change.**
 
 - Client: mirror the REST logic — before serializing, assign `NextId()` to every request
   in a multi that lacks an id (documents the caller-object mutation, R10).
 - Middleware: extract `id` (and `kind`) up-front from the already-parsed `JsonDocument`;
-  build all error frames as a real `TrameResponse { Code, Error = new TrameError { Message }, Id }`.
+  build all error frames as a real `SleipnirResponse { Code, Error = new SleipnirError { Message }, Id }`.
   Use 500 for the catch-all. Keep messages generic unless detailed errors are on.
 - Note: the client mutates caller-owned requests — acceptable, but document it on `Call`.
 
@@ -139,7 +139,7 @@ catch-all 400→500 is a bug fix against the stable error catalog (500 is in the
 mapping); note in CHANGELOG.
 
 **Tests.** WS multi without ids completes (this is the regression that would have caught
-the bug). Server-side parse error reaches the awaiting caller as `TrameException` with the
+the bug). Server-side parse error reaches the awaiting caller as `SleipnirException` with the
 message instead of hanging (use a short call timeout in the test to fail loud on
 regression). Batch-cap exceeded → immediate correlated 400.
 
@@ -148,7 +148,7 @@ existing real-Kestrel fixture pattern.
 
 ## R4 — `TcsHolder.SetCanceled` → `TrySetCanceled`
 
-**Why.** `TrameClient/Trame/TrameWebSocketClient.cs:94`: `Tcs.SetCanceled()` (non-Try)
+**Why.** `SleipnirClient/Sleipnir/SleipnirWebSocketClient.cs:94`: `Tcs.SetCanceled()` (non-Try)
 races with the reader thread's `TrySetResult` (line 397). The loser throws
 `InvalidOperationException` inside a thread-pool cancellation callback — unobserved,
 potentially process-terminating. `SetResult`/`SetException` already use `Try*`.
@@ -157,24 +157,24 @@ potentially process-terminating. `SetResult`/`SetException` already use `Try*`.
 the cancellation token so `OperationCanceledException.CancellationToken` is faithful.
 
 **Tests.** Hard to race deterministically; at minimum a cancellation test through the
-existing disposed-socket `socketFactory` hook (pattern from `TrameWebSocketClientReconnectTests`).
+existing disposed-socket `socketFactory` hook (pattern from `SleipnirWebSocketClientReconnectTests`).
 
 **Effort.** XS.
 
 ## R5 — Interceptor batch-bypass: loud documentation + startup warning
 
-**Why (high footgun).** `ITrameInterceptor` is documented as the seam "for ... validation,
+**Why (high footgun).** `ISleipnirInterceptor` is documented as the seam "for ... validation,
 auth, rate-limiting" but never runs on any batch path (`/json/multi`, WS multi, JSON-RPC
-batch). `ITrameBatchInterceptor` has no consumer at all. A user building tenant isolation
+batch). `ISleipnirBatchInterceptor` has no consumer at all. A user building tenant isolation
 on the seam sees green single-call tests and silent bypass on batches. STABILITY.md §2 is
 honest about it; the interface docs and security guide are not.
 
 **Change (1.1.2 scope — the real fix is R7).**
 
-- Rewrite the `ITrameInterceptor`/`ITrameBatchInterceptor` XML docs to state exactly where
+- Rewrite the `ISleipnirInterceptor`/`ISleipnirBatchInterceptor` XML docs to state exactly where
   they run today.
 - Add the limitation to `SECURITY_GUIDE.md` and `SECURITY.md`.
-- At `UseTrame` time: if `options.Interceptors.Count > 0`, log a **warning** once —
+- At `UseSleipnir` time: if `options.Interceptors.Count > 0`, log a **warning** once —
   "user interceptors currently run on single calls only, not batch elements (tracked for
   1.2)". Do **not** hard-fail (would be a breaking behavior change).
 
@@ -183,13 +183,13 @@ honest about it; the interface docs and security guide are not.
 ## R6 — Regression tests for the 1.1.1 "kritisch" fixes + fluent overload
 
 **Why (process).** CHANGELOG calls both 1.1.1 fixes critical, yet: `PolicyEvaluator` appears
-nowhere in `TrameTests` (the batch pre-pass policy fix is untested), and the single-sender
+nowhere in `SleipnirTests` (the batch pre-pass policy fix is untested), and the single-sender
 WS channel has no concurrency test. A security hotfix without a regression test is the
 repo's biggest process gap.
 
 **Tests to add.**
 
-1. `BatchPolicyAuthTests`: invoker with a `PolicyEvaluator` fixture; `[TrameAuthorise(Policy=…)]`
+1. `BatchPolicyAuthTests`: invoker with a `PolicyEvaluator` fixture; `[SleipnirAuthorise(Policy=…)]`
    methods called in Parallel batch and in a topological batch — assert per-request
    401/403, that successful siblings still run, and that dependents of a denied provider
    get the propagation 400.
@@ -209,9 +209,9 @@ write it into `CONTRIBUTING.md`.
 
 **Why.** The framework's flagship path (parallel batch + dependency chaining) bypasses the
 extension seam; single calls emit no metrics with the default interceptor set; auth truth
-is split between a dead `TrameAuthorizationInterceptor` (`context.InvokeInfo` is only ever
-set in tests) and `TrameInvoker.CheckAuthorisation`. This is the central architectural
-tension the analysis found: the feature Trame sells has the thinnest pipeline coverage.
+is split between a dead `SleipnirAuthorizationInterceptor` (`context.InvokeInfo` is only ever
+set in tests) and `SleipnirInvoker.CheckAuthorisation`. This is the central architectural
+tension the analysis found: the feature Sleipnir sells has the thinnest pipeline coverage.
 
 **Design decisions (make first, in `docs/design/phase-1-interceptor-pipeline.md`).**
 
@@ -221,16 +221,16 @@ tension the analysis found: the feature Trame sells has the thinnest pipeline co
    context-free by construction. Document the contract: batch-element interceptors run
    serially, before execution, and must not wrap long-running work. Interceptors that need
    to wrap actual execution (timing) execute a no-op continuation that defers to
-   `ExecuteAuthorized` — measure via `TrameInvocationContext` timestamps instead of
+   `ExecuteAuthorized` — measure via `SleipnirInvocationContext` timestamps instead of
    delegate wrapping.
 2. **Single auth enforcement point.** Extract the logic of `CheckAuthorisation` into one
-   internal evaluator used by both the invoker and `TrameAuthorizationInterceptor`;
-   populate `TrameInvocationContext.InvokeInfo` on all paths so the interceptor is live
+   internal evaluator used by both the invoker and `SleipnirAuthorizationInterceptor`;
+   populate `SleipnirInvocationContext.InvokeInfo` on all paths so the interceptor is live
    code, then delete the duplicated policy logic (the 500-on-missing-evaluator path must
    fire in exactly one place).
-3. **Metrics symmetry.** Emit `trame.call.*` in the single-call path too (either a real
+3. **Metrics symmetry.** Emit `sleipnir.call.*` in the single-call path too (either a real
    telemetry interceptor in the default set or direct emission mirroring `ExecuteAuthorized`).
-4. **`ITrameBatchInterceptor`:** wire a consumer (batch metrics/logging move into built-in
+4. **`ISleipnirBatchInterceptor`:** wire a consumer (batch metrics/logging move into built-in
    batch interceptors) or remove the interface. STABILITY.md §2 allows settling in a minor
    with a CHANGELOG note; prefer wiring.
 5. **Binary parity:** either route `InjectBinaryParameters` through the batch paths or
@@ -249,21 +249,21 @@ keep the structure that exists today and slide the pipeline into it, do not re-a
 
 ## R8 — Security hardening set
 
-Sub-items, all in `TrameWebSocket`/`TrameHub`/`TrameCore`/`TrameServer` + docs + templates.
+Sub-items, all in `SleipnirWebSocket`/`SleipnirHub`/`SleipnirCore`/`SleipnirServer` + docs + templates.
 
 | # | Item | Detail | Effort |
 |---|------|--------|--------|
-| 8a | **Origin allowlist on WS upgrade (CSWSH)** | New `TrameOptions.WebSocketAllowedOrigins` (null = accept all, current behavior); reject upgrade with 403 when `Origin` present and not listed. `SECURITY_GUIDE.md`: "cookie auth + WS requires this" — CORS does not protect WebSockets. Add the SignalR equivalent note. Tests: allowed/rejected origin upgrades. | M |
+| 8a | **Origin allowlist on WS upgrade (CSWSH)** | New `SleipnirOptions.WebSocketAllowedOrigins` (null = accept all, current behavior); reject upgrade with 403 when `Origin` present and not listed. `SECURITY_GUIDE.md`: "cookie auth + WS requires this" — CORS does not protect WebSockets. Add the SignalR equivalent note. Tests: allowed/rejected origin upgrades. | M |
 | 8b | **`MaximumBatchSize` posture** | STABILITY §3.6 forbids tightening the default within 1.x → keep 0, but: set an explicit value (e.g. 64) in the **template** and **samples**, elevate the recommendation in `SECURITY.md`, record "non-zero default" as a 2.0 candidate in `ROADMAP.md`. | XS |
 | 8c | **JsonPath O(M·N) fix** | Parse the provider result `JsonNode` **once per response** and evaluate all mappings against it (`DependencyResolver.ExtractValue` overload taking a parsed node). New additive option `MaxDependencyMappingsPerRequest` — default **0 (unlimited)** in 1.x per §3.6, documented recommendation 16; non-zero default is a 2.0 candidate. Test: N mappings against one large result — assert single parse (via counter seam or benchmark). | M |
 | 8d | **SignalR hub batch-cap gate** | Early 400-style rejection on `DoWorkMany` like REST/WS/JSON-RPC (uniform entrance semantics); also fix the uncaught backstop exception path. | XS |
-| 8e | **`MaxSubscriptionsPerConnection`** | New additive option, default 0 (unlimited) + docs in 1.x (`TrameSubscriptionManager.cs:72-112`); a proxy cannot cap this, so the option matters. Test: cap rejection. | S |
-| 8f | **Never drop RPC responses** | `TrameSubscriptionManager` send channel is `DropOldest` — a hot event subscription can evict queued call *responses* → client hangs. Give responses a bypass/separate writer path; only event frames may drop. Test: hot subscription + slow reader, response still delivered. | M |
-| 8g | **Revive the drop metric** | With `DropOldest`, `Writer.TryWrite` always succeeds → `trame.event.dropped` and the "buffer full" warning are dead code. Detect saturation (reader count vs capacity) before write, or switch events to `DropWrite` where failure is observable. Keep the metric honest or remove the claim from STABILITY §2. | S |
-| 8h | **Gate event `OnError` messages** | `TrameSubscriptionManager.cs:241` serializes raw `Exception.Message` to all subscribers regardless of `EnableDetailedErrors`. Plumb the flag in; generic "subscription error" otherwise. Test: throwing observable leaks nothing in production mode. | S |
+| 8e | **`MaxSubscriptionsPerConnection`** | New additive option, default 0 (unlimited) + docs in 1.x (`SleipnirSubscriptionManager.cs:72-112`); a proxy cannot cap this, so the option matters. Test: cap rejection. | S |
+| 8f | **Never drop RPC responses** | `SleipnirSubscriptionManager` send channel is `DropOldest` — a hot event subscription can evict queued call *responses* → client hangs. Give responses a bypass/separate writer path; only event frames may drop. Test: hot subscription + slow reader, response still delivered. | M |
+| 8g | **Revive the drop metric** | With `DropOldest`, `Writer.TryWrite` always succeeds → `sleipnir.event.dropped` and the "buffer full" warning are dead code. Detect saturation (reader count vs capacity) before write, or switch events to `DropWrite` where failure is observable. Keep the metric honest or remove the claim from STABILITY §2. | S |
+| 8h | **Gate event `OnError` messages** | `SleipnirSubscriptionManager.cs:241` serializes raw `Exception.Message` to all subscribers regardless of `EnableDetailedErrors`. Plumb the flag in; generic "subscription error" otherwise. Test: throwing observable leaks nothing in production mode. | S |
 | 8i | **WS binary frames & oversize close** | Count/reject binary frames deliberately (they're currently silently swallowed); on oversize, send `CloseAsync(1009 MessageTooBig)` before returning instead of aborting. | S |
-| 8j | **Obsolete `TrameWebAppExtension.AddTrame(IEndpointRouteBuilder)`** | Maps the hub without `RequireAuthorization`/rate limiting — mark `[Obsolete("Use MapTrame...")]`, removal in 2.0. | XS |
-| 8k | **Rate-limiting footgun** | `MapTrame` cannot reliably detect a missing `UseRateLimiter` middleware → log a loud warning when `RateLimitPermitLimit > 0`; templates get `UseRateLimiter`/`UseAuthentication`/`UseAuthorization` stubs matching `samples/server` . | S |
+| 8j | **Obsolete `SleipnirWebAppExtension.AddSleipnir(IEndpointRouteBuilder)`** | Maps the hub without `RequireAuthorization`/rate limiting — mark `[Obsolete("Use MapSleipnir...")]`, removal in 2.0. | XS |
+| 8k | **Rate-limiting footgun** | `MapSleipnir` cannot reliably detect a missing `UseRateLimiter` middleware → log a loud warning when `RateLimitPermitLimit > 0`; templates get `UseRateLimiter`/`UseAuthentication`/`UseAuthorization` stubs matching `samples/server` . | S |
 | 8l | **Sample cert trap** | `#if DEBUG` guard around `ServerCertificateCustomValidationCallback => true` in `samples/01-notification-chat`, plus a warning comment block. | XS |
 | 8m | **WS rate-limit gap documented** | WS (the primary channel) is never rate-limited; either implement a per-connection token bucket or document the gap prominently in `SECURITY.md` (decision at implementation; documenting is the 1.2 floor). | S |
 
@@ -271,7 +271,7 @@ Sub-items, all in `TrameWebSocket`/`TrameHub`/`TrameCore`/`TrameServer` + docs +
 checklist updated; no default tightened within 1.x (all tightenings queued for 2.0 in
 `ROADMAP.md`).
 
-## R9 — Core consolidation (`TrameInvoker` + duplication + caches)
+## R9 — Core consolidation (`SleipnirInvoker` + duplication + caches)
 
 **Why.** 2054-line god class kept alive by commentary; the analysis found per-request
 reflection, double JSON round-trips, and five copies of route lookup with drift already
@@ -280,7 +280,7 @@ present. Do **after R7** so the invoker is restructured once, not twice.
 **Items.**
 
 1. **English wire messages.** Replace the German client-facing strings
-   (`DependencyGraphBuilder.cs:91-92`; `TrameInvoker.cs:1521-1523,1814,1868-1870,1231`).
+   (`DependencyGraphBuilder.cs:91-92`; `SleipnirInvoker.cs:1521-1523,1814,1868-1870,1231`).
    Own convention compliance; international clients see them.
 2. **Extract seams** (no behavior change): `AliasResolver` (~lines 686-1233),
    `ParameterBinder` (~1409-1566), `ResponseFactory` (~1838-2023). One commit per seam,
@@ -302,11 +302,11 @@ present. Do **after R7** so the invoker is restructured once, not twice.
 6. **Alias replacement without string round-trip:** `JsonNode.DeepClone()` instead of
    `ToJsonString()`+`Parse`; replace in place where the parent slot is already known.
 7. **Config shape:** introduce an immutable options record passed at construction
-   (mirroring `TrameOptions`); keep the existing settable properties as bridges but document
+   (mirroring `SleipnirOptions`); keep the existing settable properties as bridges but document
    "set before first use"; the setters become the migration path, removed in 2.0.
 
 **Tests.** Existing suite is the safety net (66 invoker tests); add micro-benchmarks or
-allocation counters for items 5-6 (`TrameBench` entries) so the perf claim is measured.
+allocation counters for items 5-6 (`SleipnirBench` entries) so the perf claim is measured.
 
 **Acceptance.** No method >100 lines in the hot path; zero per-request reflection; one
 implementation of alias grammar, route key, and request-id logic; all wire text English.
@@ -318,32 +318,32 @@ breaks in at least seven rows of the consistency matrix.
 
 **Items.**
 
-1. **REST client hygiene** (`TrameRestJsonClient.cs`): never set `Timeout` on a
+1. **REST client hygiene** (`SleipnirRestJsonClient.cs`): never set `Timeout` on a
    caller-owned `HttpClient` (owned path only; otherwise per-request linked CTS);
-   `using var response`; wrap transport failures in `TrameException` with
+   `using var response`; wrap transport failures in `SleipnirException` with
    `OperationCanceledException` passthrough (mirrors WS/SignalR — the promised uniform
    surface); multi-HTTP-error returns one error element **per request** (not a single
    synthetic one) or throws — decide, document; `_disposed` guard on all public methods.
-2. **Read-loop teardown race** (`TrameWebSocketClient.cs:310-375`): only run
+2. **Read-loop teardown race** (`SleipnirWebSocketClient.cs:310-375`): only run
    `CancelAllPending`/`StartReconnect` on transport termination (flag it), not on ordered
    reader replacement; `ReconnectLoopAsync` sets `Connected` when it early-returns on an
    already-open socket. Test: manual reconnect during pending call — no spurious
    cancellation, state converges to `Connected`.
 3. **One set of JSON options.** Consolidate the four copies (base instance, WS static
-   shadow, `TrameResponseParser.SubOptions`, `TrameMultiCallResponse.JsonOptions`) into one
+   shadow, `SleipnirResponseParser.SubOptions`, `SleipnirMultiCallResponse.JsonOptions`) into one
    `internal static` wire-options object; either honor or delete the dead
-   `TrameClientBase(options)` configurability.
-4. **Reconnect delays:** single shared constant (TrameCommon), plus jitter to avoid
+   `SleipnirClientBase(options)` configurability.
+4. **Reconnect delays:** single shared constant (SleipnirCommon), plus jitter to avoid
    thundering-herd reconnects.
-5. **`TrameInMemoryClient`:** match production failure semantics (`Call<T>` throws
-   `TrameException` on non-2xx; no `.Result` blocking) — a test double that diverges
+5. **`SleipnirInMemoryClient`:** match production failure semantics (`Call<T>` throws
+   `SleipnirException` on non-2xx; no `.Result` blocking) — a test double that diverges
    silently undermines its purpose. Breaking for consumers' tests: CHANGELOG migration note.
-6. **`TrameSubscription<T>`:** add `IAsyncDisposable` (unsubscribe with
+6. **`SleipnirSubscription<T>`:** add `IAsyncDisposable` (unsubscribe with
    `CancellationToken.None`); sync `Dispose` stays documented best-effort without
    sync-over-async blocking on a possibly-dead token.
-7. **`TrameResponse` lazy `JsonDocument`:** implement `IDisposable` (documented, opt-in) or
+7. **`SleipnirResponse` lazy `JsonDocument`:** implement `IDisposable` (documented, opt-in) or
    materialize owned data; pooled parse buffers must not be pinned for the response's life.
-8. **`TrameCall` nits:** use the shared wire options in `SerializeToNode`; test positional
+8. **`SleipnirCall` nits:** use the shared wire options in `SerializeToNode`; test positional
    naming (`param{i}`) explicitly.
 9. **SignalR:** propagate caller ct into `Connect()`/`StartAsync`; preserve inner exception
    on transient connect failures; `_disposed` guard on `Call`.
@@ -370,7 +370,7 @@ has no red rows; tests per row where a divergence existed.
    (Codecov or artifact) — coverlet is referenced but never exercised; either wire it up or
    drop the package.
 5. **Pack hygiene:** `dotnet pack -o artifacts`, push only from that dir; include
-   `Trame.Templates` in the release train (packed & published, version aligned with the
+   `Sleipnir.Templates` in the release train (packed & published, version aligned with the
    packages, not pinned at 1.0.0) or document manual publishing.
 6. **Version source of truth:** derive the package version from the tag (already) and make
    `Directory.Build.props`'s `<Version>` either follow (MinVer/`git describe`) or drop it
@@ -381,8 +381,8 @@ has no red rows; tests per row where a divergence existed.
 1. `<GenerateDocumentationFile>true</GenerateDocumentationFile>` in `Directory.Build.props`
    — 53 production files carry XML docs that never reach NuGet consumers. Sequence with the
    language decision (R13): enable now, migrate German XML docs incrementally (tracked list:
-   TrameCommon 14, TrameCore 13, TrameClient 10, TrameHub 5, TrameRest 4, TrameWebSocket 4,
-   TrameTelemetry 2, TrameServer 1).
+   SleipnirCommon 14, SleipnirCore 13, SleipnirClient 10, SleipnirHub 5, SleipnirRest 4, SleipnirWebSocket 4,
+   SleipnirTelemetry 2, SleipnirServer 1).
 2. **SourceLink.GitHub + `ContinuousIntegrationBuild` + embed untracked sources** —
    replaces the current snupkg-without-SourceLink approach (PDBs with local absolute paths,
    no source stepping).
@@ -390,16 +390,16 @@ has no red rows; tests per row where a divergence existed.
    versions (MessagePack ×3, SignalR ×2, Swashbuckle ×2, STJ ×2); resolve the deliberate
    MessagePack 2.5.302/3.1.8 diamond with an automated test (today "proven" only by a
    spike).
-4. Delete the stub `Program.cs` (`Main() => 0`) + `launchSettings.json` in `TrameHub` and
-   `TrameRest`; harmonize `LangVersion` in props; add `PackageTags`/icon/project URL.
-5. `Trame.csproj` (sample host): remove the duplicate `Grpc\` folder item; consider moving
+4. Delete the stub `Program.cs` (`Main() => 0`) + `launchSettings.json` in `SleipnirHub` and
+   `SleipnirRest`; harmonize `LangVersion` in props; add `PackageTags`/icon/project URL.
+5. `Sleipnir.csproj` (sample host): remove the duplicate `Grpc\` folder item; consider moving
    the integration-test host out of the gRPC-bearing sample (widens the test dependency
    surface).
 
 ## R13 — Documentation & release process
 
-1. **Version drift fix (high user impact):** templates and samples pin `Trame.Server
-   1.0.0` — `dotnet new trame-server` today produces a project without the 1.1.1 security
+1. **Version drift fix (high user impact):** templates and samples pin `Sleipnir.Server
+   1.0.0` — `dotnet new sleipnir-server` today produces a project without the 1.1.1 security
    fixes. Introduce a release checklist/script that bumps README.md, README_DETAILS.md, the
    ten package READMEs, `CODEGEN_ONBOARDING.md`, `samples/**`, and `templates/**` in one
    pass (or templatize the version placeholder).
@@ -424,7 +424,7 @@ Insert this track **between Phase 1 and Phase 2** of the Benutzbarkeit-Roadmap:
 
 - Phase 1 (interceptor pipeline / policies / error taxonomy) is only complete after
   **R5 + R7**; until then Phase 2 (Secure Store) has no reliable auth seam to build on and
-  Phase 3 (Events) would institutionalize the `TrameSubscriptionManager` defects (8f-8h).
+  Phase 3 (Events) would institutionalize the `SleipnirSubscriptionManager` defects (8f-8h).
 - The three "wenn nur drei Dinge" picks stay valid; this roadmap adds the missing zeroth
   step: **fix what the audit proved broken (R1-R6), then complete the seam (R7).**
 - Phase 4 polish (P1 NuGet-first sample, P3 idempotency) lands naturally in the 1.3 train

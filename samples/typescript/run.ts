@@ -1,5 +1,5 @@
 // ==============================================================================
-// Trame TypeScript-Client-Samples — Runner.
+// Sleipnir TypeScript-Client-Samples — Runner.
 //
 // Startet die Szenarien 1–4 gegen den laufenden Sample-Server (samples/server).
 // Läuft per Node Type-Stripping (kein Build, kein tsx nötig — Node >= 22.6).
@@ -9,7 +9,7 @@
 //   node --experimental-strip-types run.ts 4   # direkter Aufruf
 //
 // Voraussetzung:
-//   npm install                 # einmalig (installiert lokalen trame-client + ws)
+//   npm install                 # einmalig (installiert lokalen sleipnir-client + ws)
 //   Der Sample-Server läuft auf https://localhost:5001
 //   dotnet run --project samples/server/SampleServer.csproj
 // ==============================================================================
@@ -21,7 +21,7 @@
 // Produktion niemals verwenden — dort ein echtes Zertifikat / eine eigene CA.
 process.env.NODE_TLS_REJECT_UNAUTHORIZED ??= "0";
 
-import { TrameRestClient } from "trame-client";
+import { SleipnirRestClient } from "sleipnir-client";
 import { run as scenario1 } from "./01-single-call.ts";
 import { run as scenario2 } from "./02-batch-parallel.ts";
 import { run as scenario3 } from "./03-batch-serial.ts";
@@ -30,7 +30,7 @@ import { run as scenario4 } from "./04-dependency-chain.ts";
 const baseUrl = "https://localhost:5001";
 const which = process.argv[2] ?? "all";
 
-const scenarios: Record<string, { title: string; run: (rest: TrameRestClient) => Promise<void> }> = {
+const scenarios: Record<string, { title: string; run: (rest: SleipnirRestClient) => Promise<void> }> = {
   "1": { title: "01 — Single Call", run: scenario1 },
   "2": { title: "02 — Batch Parallel", run: scenario2 },
   "3": { title: "03 — Batch Serial", run: scenario3 },
@@ -48,7 +48,7 @@ for (const key of keys) {
   console.log("\n" + "=".repeat(78));
   console.log(`  ${s.title}`);
   console.log("=".repeat(78));
-  const rest = new TrameRestClient(baseUrl);
+  const rest = new SleipnirRestClient(baseUrl);
   try {
     await s.run(rest);
     console.log(`  -> Szenario '${key}' OK`);

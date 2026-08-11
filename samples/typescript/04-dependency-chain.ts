@@ -15,25 +15,25 @@
 //     ohnehin auf topologische Batch-Ausführung — mode wird dann ignoriert).
 // ==============================================================================
 
-import { TrameRestClient, TrameCall, ExecutionMode, type TrameRequest } from "trame-client";
+import { SleipnirRestClient, SleipnirCall, ExecutionMode, type SleipnirRequest } from "sleipnir-client";
 
 type Customer = { id: number; name: string; email: string };
 type Order = { id: number; customerId: number; total: number; createdAt: string };
 
-export async function run(rest: TrameRestClient): Promise<void> {
+export async function run(rest: SleipnirRestClient): Promise<void> {
   // -----------------------------------------------------------------------------
   // Variante A — Fluent Builder (einfach, 2-Step, Ein-Parameter-@alias)
   // -----------------------------------------------------------------------------
   // AddCustomer → liefert neue Id (int) → weiter als @newId an GetCustomerById.
-  const batch = TrameCall.batch(
+  const batch = SleipnirCall.batch(
     [
-      TrameCall.init("Customer", "AddCustomer")
+      SleipnirCall.init("Customer", "AddCustomer")
         .named("step1")
         .with({ name: "Carol", email: "carol@x.com" })
         .exposes("$", "newId") // ganzer int-Rückgabewert → Alias "newId"
         .toRequest(),
 
-      TrameCall.init("Customer", "GetCustomerById")
+      SleipnirCall.init("Customer", "GetCustomerById")
         .named("step2")
         .withAlias("@newId") // data: "@newId", parameterName: "newId"
         .toRequest(),
@@ -56,7 +56,7 @@ export async function run(rest: TrameRestClient): Promise<void> {
   // → GetOrder(@orderId). CreateOrder hat ZWEI Parameter, davon einer @alias —
   // deshalb setzen wir parameterName auf den echten Parameternamen ("customerId"),
   // damit der Server nach Name bindet (sicherer als positional).
-  const chain: TrameRequest[] = [
+  const chain: SleipnirRequest[] = [
     {
       controller: "Customer",
       method: "AddCustomer",

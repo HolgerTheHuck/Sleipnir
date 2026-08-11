@@ -1,7 +1,7 @@
 # Story 02 — One Button, Seven Commands
 
 > **One user click, seven downstream writes, one of them refuses. The REST way aborts the loop
-> and never contacts the rest. The Trame way runs all seven in one roundtrip with per-command
+> and never contacts the rest. The Sleipnir way runs all seven in one roundtrip with per-command
 > isolation — the unrelated commands still ran, and the one failure is named.**
 
 The write-side companion to Story 01. Where Story 01 was *reading* a screen with a dependency
@@ -11,15 +11,15 @@ its own outcome, and a single failure must not silently kill the rest.
 ## Run it (F5 → DevUI)
 
 1. Open **`Story02.sln`** in Visual Studio (or `dotnet build && dotnet run --project Story02.csproj`).
-2. Press **F5**. The browser opens at **`http://localhost:5002/Trame`** — the DevUI.
+2. Press **F5**. The browser opens at **`http://localhost:5002/Sleipnir`** — the DevUI.
 3. Seven controllers from `Domain.cs`: `Order`, `Inventory`, `Billing`, `Loyalty`,
    `Notification`, `Audit`, `Shipping`. Customer **7** is deliberately over its credit limit —
-   `Billing.Charge(customerId=7)` returns `402` (a business error via `TrameResults.Error`, never
+   `Billing.Charge(customerId=7)` returns `402` (a business error via `SleipnirResults.Error`, never
    a throw).
 
-## The Trame Way — one batch, seven commands, per-command isolation
+## The Sleipnir Way — one batch, seven commands, per-command isolation
 
-Paste into the DevUI batch sender (`POST /api/trame/json/multi`). Seven of seven attempted;
+Paste into the DevUI batch sender (`POST /api/sleipnir/json/multi`). Seven of seven attempted;
 `Billing`'s 402 is isolated; the three `@orderId` consumers (Notification, Audit, Shipping) hang
 off `Order.Create`, **not** off Billing, so they still run.
 
@@ -67,31 +67,31 @@ they did **not** wait on Billing and were not aborted by it.
 
 ### The REST Way (for contrast)
 
-Sequential loop, abort on the first `TrameException`. Billing's 402 throws and the loop jumps
+Sequential loop, abort on the first `SleipnirException`. Billing's 402 throws and the loop jumps
 to the catch — Notification, Audit, Shipping are never contacted:
 
 ```csharp
-var o  = await client.Call<CommandAck>(TrameCall.Init("Order","Create").With(7,101,articleIds));
-var iv = await client.Call<CommandAck>(TrameCall.Init("Inventory","Reserve").With(articleIds));
-var b  = await client.Call<CommandAck>(TrameCall.Init("Billing","Charge").With(7,52.42));   // ← throws (402)
+var o  = await client.Call<CommandAck>(SleipnirCall.Init("Order","Create").With(7,101,articleIds));
+var iv = await client.Call<CommandAck>(SleipnirCall.Init("Inventory","Reserve").With(articleIds));
+var b  = await client.Call<CommandAck>(SleipnirCall.Init("Billing","Charge").With(7,52.42));   // ← throws (402)
 // Loyalty, Notification, Audit, Shipping never reached.
 ```
 
-|                       | The REST Way            | The Trame Way              |
+|                       | The REST Way            | The Sleipnir Way              |
 |-----------------------|-------------------------|---------------------------|
 | Commands attempted    | 3 of 7 (loop aborted)   | **7 of 7**                |
 | Failure visibility    | exception, rest unknown | every outcome in one pass |
 | Unrelated commands    | never contacted         | ran, isolated             |
 
-## The boundary — Trame is dispatch, not saga
+## The boundary — Sleipnir is dispatch, not saga
 
-Both ways reserved Inventory before Billing refused; **neither rolls back**. Trame did not
+Both ways reserved Inventory before Billing refused; **neither rolls back**. Sleipnir did not
 compensate. It showed all seven outcomes in one roundtrip, kept the unrelated commands running,
 and named the one failure. **Your job:** decide the compensation with the full picture.
 
-This is deliberate. Trame resolves **data dependencies within one request**. It does not run
+This is deliberate. Sleipnir resolves **data dependencies within one request**. It does not run
 long-lived workflows, it does not schedule, and it does not roll back. "Approve → debit → bill
-→ notify" is a command fan-out; if one fails, Trame tells you *which one* and *why* — it does not
+→ notify" is a command fan-out; if one fails, Sleipnir tells you *which one* and *why* — it does not
 undo the ones that already ran. A saga engine is a different tool.
 
 ## Files

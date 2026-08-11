@@ -20,7 +20,7 @@
 
   async function sendDemoWhatsApp() {
     try {
-      await api.sendWhatsApp('+491511111111', 'Hello from the Trame dashboard!');
+      await api.sendWhatsApp('+491511111111', 'Hello from the Sleipnir dashboard!');
       notificationState.unreadCount += 1;
     } catch (e) {
       setError(`WhatsApp could not be sent: ${(e as Error).message}`);
@@ -29,7 +29,7 @@
 
   async function sendDemoMail() {
     try {
-      await api.sendMail('demo@trame.test', 'Trame test mail', 'This is a test mail from the Svelte SPA.');
+      await api.sendMail('demo@sleipnir.test', 'Sleipnir test mail', 'This is a test mail from the Svelte SPA.');
       notificationState.unreadCount += 1;
     } catch (e) {
       setError(`Mail could not be sent: ${(e as Error).message}`);
@@ -68,7 +68,7 @@
   </div>
 
   <p class="hint">
-    All data comes from a single parallel Trame batch (Notification.GetUnreadCount + Chat.GetChats + Media.GetGallery).
+    All data comes from a single parallel Sleipnir batch (Notification.GetUnreadCount + Chat.GetChats + Media.GetGallery).
   </p>
 </div>
 

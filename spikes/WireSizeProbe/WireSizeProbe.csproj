@@ -11,13 +11,13 @@
   <ItemGroup>
     <!-- MessagePack ist schon im Stack (SignalR-Kanal nutzt es); hier explizit, damit die
          MessagePackSerializer-API im Spike direkt verfügbar ist. Google.Protobuf kommt
-         transitiv via Grpc.AspNetCore aus dem Trame-Projekt. -->
+         transitiv via Grpc.AspNetCore aus dem Sleipnir-Projekt. -->
     <PackageReference Include="MessagePack" Version="3.1.8" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\TrameCommon\TrameCommon.csproj" />
-    <ProjectReference Include="..\..\Trame\Trame.csproj" />
+    <ProjectReference Include="..\..\SleipnirCommon\SleipnirCommon.csproj" />
+    <ProjectReference Include="..\..\Sleipnir\Sleipnir.csproj" />
   </ItemGroup>
 
 </Project>

@@ -4,7 +4,7 @@
 // model. JSON-kind mapping mirrors System.Text.Json:
 //   numbers → number, bool → boolean, string/Guid/DateTime/Uri/char/bytes → string,
 //   object/dynamic/JsonElement/opaque → unknown (acceptsAny), enums → number
-//   (Trame serializes enums as their underlying integer), maps → object (acceptsAny),
+//   (Sleipnir serializes enums as their underlying integer), maps → object (acceptsAny),
 //   sets/streams → array (JSON materializes both as arrays).
 //
 // Sourced from the producer's structured `TypeRef` (docs/discovery-schema.md),
@@ -17,7 +17,7 @@ import type {
   PropertyMeta,
   TypeMeta,
   TypeRef,
-} from "trame-client";
+} from "sleipnir-client";
 import { toCamelCase } from "./casing.js";
 import {
   BOOL_NAMES,

@@ -1,7 +1,7 @@
 // Casing helpers — the load-bearing wire-correctness layer.
 //
 // `toCamelCase` mirrors `System.Text.Json.JsonNamingPolicy.CamelCase` exactly
-// (ported verbatim from TrameDeveloperUi/src/lib/utils/params.ts:46-56). Trame
+// (ported verbatim from SleipnirDeveloperUi/src/lib/utils/params.ts:46-56). Sleipnir
 // writes object value properties camelCase on the wire, so generated property
 // names MUST match this transform or deserialization silently binds nothing.
 

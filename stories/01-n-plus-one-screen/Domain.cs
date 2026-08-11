@@ -1,10 +1,10 @@
 using System.Text.Json;
-using TrameCore.Attributes;
+using SleipnirCore.Attributes;
 
-namespace TrameStories.Story01;
+namespace SleipnirStories.Story01;
 
 // === Story 01 Domain — code-first contract (no IDL, no .proto) =====================
-// Die Klassen SIND der Vertrag. Der Trame-Server entdeckt sie per [TrameController]
+// Die Klassen SIND der Vertrag. Der Sleipnir-Server entdeckt sie per [SleipnirController]
 // und exponiert sie 1:1. camelCase-Wire (id, customerId, articleId, …) — die JsonPath-
 // Exposes im Batch müssen daher camelCase sein ($.customerId, $[*].articleId).
 
@@ -115,12 +115,12 @@ internal static class Store
         => ids.Distinct().Select(id => new StockInfo { ArticleId = id, InStock = Stock.GetValueOrDefault(id, -1) }).ToList();
 }
 
-// === Controller — der Trame-Vertrag =================================================
+// === Controller — der Sleipnir-Vertrag =================================================
 
-[TrameController("Order")]
+[SleipnirController("Order")]
 public class OrderController
 {
-    [TrameMethod("GetById")]
+    [SleipnirMethod("GetById")]
     public async Task<Order?> GetById(int id)
     {
         await StoryLatency.Wait();
@@ -128,11 +128,11 @@ public class OrderController
     }
 }
 
-[TrameController("Customer")]
+[SleipnirController("Customer")]
 public class CustomerController
 {
     // Parametername `customerId` entspricht dem Alias-Namen → Bindung nach Name.
-    [TrameMethod("GetById")]
+    [SleipnirMethod("GetById")]
     public async Task<Customer?> GetById(int customerId)
     {
         await StoryLatency.Wait();
@@ -140,10 +140,10 @@ public class CustomerController
     }
 }
 
-[TrameController("OrderLine")]
+[SleipnirController("OrderLine")]
 public class OrderLineController
 {
-    [TrameMethod("GetByOrder")]
+    [SleipnirMethod("GetByOrder")]
     public async Task<List<OrderLine>> GetByOrder(int orderId)
     {
         await StoryLatency.Wait();
@@ -151,13 +151,13 @@ public class OrderLineController
     }
 }
 
-[TrameController("Article")]
+[SleipnirController("Article")]
 public class ArticleController
 {
     // List<int> wird aus dem Multi-Match-Pfad $[*].articleId injiziert (ein Parameter,
     // nie Fan-out in N Requests). Bulk-nach-Primärschlüssel — heißt GetByIds, symmetrisch
     // zu GetById (Finder nach Fremdschlüssel heißen GetBy*, s. Stock.GetByArticles).
-    [TrameMethod("GetByIds")]
+    [SleipnirMethod("GetByIds")]
     public async Task<List<Article>> GetByIds(List<int> articleIds)
     {
         await StoryLatency.Wait();
@@ -165,10 +165,10 @@ public class ArticleController
     }
 }
 
-[TrameController("Address")]
+[SleipnirController("Address")]
 public class AddressController
 {
-    [TrameMethod("GetById")]
+    [SleipnirMethod("GetById")]
     public async Task<Address?> GetById(int addressId)
     {
         await StoryLatency.Wait();
@@ -176,11 +176,11 @@ public class AddressController
     }
 }
 
-[TrameController("Stock")]
+[SleipnirController("Stock")]
 public class StockController
 {
     // Zweiter Consumer desselben `articleIds`-Alias → Diamond im Dependency-Graph.
-    [TrameMethod("GetByArticles")]
+    [SleipnirMethod("GetByArticles")]
     public async Task<List<StockInfo>> GetByArticles(List<int> articleIds)
     {
         await StoryLatency.Wait();

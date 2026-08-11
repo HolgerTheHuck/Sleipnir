@@ -42,11 +42,11 @@ const testFn = python ? it : it.skip;
 const harness = `from __future__ import annotations
 
 from types import Order, Customer, OrderLine, Article, Address, StockInfo
-from client import TrameClient, Batch, TrameCall
+from client import SleipnirClient, Batch, SleipnirCall
 
 
 async def main() -> None:
-    client = TrameClient("http://localhost:5001")
+    client = SleipnirClient("http://localhost:5001")
 
     # Single typed call: call_typed deserializes data into the dataclass.
     order = await client.call_typed(client.order.get_by_id(42), Order)

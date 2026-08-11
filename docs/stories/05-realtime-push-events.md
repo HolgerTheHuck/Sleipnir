@@ -1,39 +1,39 @@
 # Story 05 — Realtime Push Events
 
 > **A chat where new messages appear instantly on every connected client — no polling, no
-> client-side orchestration, no separate SignalR hub. Trame's `[TrameEvent]` turns a controller
+> client-side orchestration, no separate SignalR hub. Sleipnir's `[SleipnirEvent]` turns a controller
 > method into a server-pushed subscription, on the same WebSocket that carries the calls.**
 
 ## The problem
 
 Stories 01–04 covered request/response: a client calls, the server answers. But the
-notification-chat domain that Trame's samples are built around has a second shape —
+notification-chat domain that Sleipnir's samples are built around has a second shape —
 **server→client push**. A new chat message, a notification arriving, a participant typing: the
 server knows first, and every connected client needs to see it *immediately*, without polling.
 
-Before 1.1.0, Trame had no answer for this. You'd fall back to raw SignalR (`IHubContext`,
-manual hub methods, a separate contract outside `[TrameController]`) — splitting your codebase
-into "Trame for calls" and "SignalR for push", with separate typing, separate auth, separate
+Before 1.1.0, Sleipnir had no answer for this. You'd fall back to raw SignalR (`IHubContext`,
+manual hub methods, a separate contract outside `[SleipnirController]`) — splitting your codebase
+into "Sleipnir for calls" and "SignalR for push", with separate typing, separate auth, separate
 observability. Or you'd poll `GetMessages` every few seconds — latency, wasted requests.
 
-## The solution: `[TrameEvent]` — push as a first-class surface
+## The solution: `[SleipnirEvent]` — push as a first-class surface
 
 1.1.0 adds **server-pushed events** alongside calls. A controller method marked with
-`[TrameEvent]` returns an `IObservable<T>`; the server subscribes and pushes every `T` as an
+`[SleipnirEvent]` returns an `IObservable<T>`; the server subscribes and pushes every `T` as an
 event frame over the WebSocket. The client subscribes and gets an `IObservable<T>` back —
 typed, on the same connection, with the same auth and discovery.
 
 ```csharp
-[TrameController("Chat")]
+[SleipnirController("Chat")]
 public class ChatController(IChatService service)
 {
-    [TrameMethod("SendMessage")]
+    [SleipnirMethod("SendMessage")]
     public Task<Message> SendMessage(int chatId, string sender, string text, CancellationToken ct)
         => service.SendAsync(chatId, sender, text, ct);
 
     // NEW: a subscription, not a call. Returns IObservable<Message>; the server
     // pushes every new message for this chatId to every subscribed client.
-    [TrameEvent("MessageReceived")]
+    [SleipnirEvent("MessageReceived")]
     public IObservable<Message> Subscribe(int chatId, CancellationToken ct)
         => service.SubscribeMessages(chatId, ct);
 }
@@ -42,7 +42,7 @@ public class ChatController(IChatService service)
 The client subscribes — and gets a typed `IObservable<Message>`:
 
 ```csharp
-await using var ws = new TrameWebSocketClient("https://localhost:5001");
+await using var ws = new SleipnirWebSocketClient("https://localhost:5001");
 await ws.ConnectAsync();
 
 var subscription = await ws.SubscribeAsync<Message>("Chat", "MessageReceived", args: [42]);
@@ -56,7 +56,7 @@ subscription.Subscribe(message =>
 ## The wire: a separate frame type, not a response
 
 Subscribe/Unsubscribe are requests (`kind:"subscribe"` / `kind:"unsubscribe"`); the server
-responds with a `subscriptionId`. Events are a **separate frame type** — not a `TrameResponse`:
+responds with a `subscriptionId`. Events are a **separate frame type** — not a `SleipnirResponse`:
 
 ```json
 // Client → Server: subscribe
@@ -93,13 +93,13 @@ Calls (without `kind`) are unchanged — 1.0.0 clients keep working.
 ## Backpressure: bounded buffer + drop-oldest
 
 If the client is slow (bad connection), the server buffers per subscription (bounded, default
-100). When full, the oldest event is dropped and `trame.event.dropped` is incremented —
+100). When full, the oldest event is dropped and `sleipnir.event.dropped` is incremented —
 deterministic, DoS-safe. No blocking, no disconnect.
 
 ## Auth, discovery, codegen — same as calls
 
-- **Auth**: the subscribe request runs through the same `[TrameAuthorise]` / `RequireAuthentication`
-  / `[TrameAnonymous]` path as any call (Phase 1 interceptor pipeline). Auth at subscribe time;
+- **Auth**: the subscribe request runs through the same `[SleipnirAuthorise]` / `RequireAuthentication`
+  / `[SleipnirAnonymous]` path as any call (Phase 1 interceptor pipeline). Auth at subscribe time;
   re-check on reconnect is v1.x+.
 - **Discovery**: `IObservable<T>` is declared as `kind:"event"` (analog to `kind:"stream"` for
   `IAsyncEnumerable<T>`). The element type is in `ReturnType.Element`.
@@ -115,7 +115,7 @@ deterministic, DoS-safe. No blocking, no disconnect.
 
 ## Try it
 
-The `samples/01-notification-chat` sample demonstrates the full Trame surface — calls, batches,
+The `samples/01-notification-chat` sample demonstrates the full Sleipnir surface — calls, batches,
 chaining, and (with 1.1.0) events. See `samples/01-notification-chat/server/Controllers/` for
 the controllers and `samples/01-notification-chat/web/` for the Svelte SPA client.
 

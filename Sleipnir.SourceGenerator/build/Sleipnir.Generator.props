@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+
+  <!--
+    Sleipnir.Generator build props — auto-imported when this package is referenced.
+
+    Marks the Sleipnir discovery contract as an AdditionalFile so the Roslyn source generator
+    (Sleipnir.SourceGenerator) can read it at compile time and emit a typed C# client.
+
+    Contract file selection (in priority order):
+      1. $(SleipnirContractFile) — an explicit path (project-relative or absolute).
+      2. contract.sleipnir.json in the project directory (the default convention).
+
+    Set SleipnirContractEnabled=false to disable the generator for a project (opt-out).
+
+    The SleipnirContractFile property is surfaced to the generator via the build_property analyzer
+    option so it can match the AdditionalFile by name (see SleipnirClientGenerator.Initialize).
+  -->
+
+  <PropertyGroup>
+    <SleipnirContractFile Condition="'$(SleipnirContractFile)' == '' AND Exists('$(MSBuildProjectDirectory)\contract.sleipnir.json')">contract.sleipnir.json</SleipnirContractFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(SleipnirContractEnabled)' != 'false' AND '$(SleipnirContractFile)' != ''">
+    <AdditionalFiles Include="$(SleipnirContractFile)" />
+    <CompilerVisibleProperty Include="SleipnirContractFile" />
+  </ItemGroup>
+
+</Project>

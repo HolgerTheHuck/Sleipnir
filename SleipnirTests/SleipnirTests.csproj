@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Test-only nullable suppression. The vast majority of CS8602/CS8629 fire on
+         FluentAssertions assertion chains over SleipnirResponse? / JsonElement? values that
+         are demonstrably non-null per test setup (InvokeDi returns SleipnirResponse?, so the
+         dictionary indexer and .Data.Value yield nullable annotations the compiler can't
+         prove). A genuine null surfaces immediately as a failing assertion or NullRef, so
+         no real safety is lost; sprinkling null-forgiving `!` across ~340 assertion sites
+         would be pure noise. Production code stays fully nullable-clean (0 warnings). -->
+    <NoWarn>CS8602;CS8629</NoWarn>
+    <!-- Test-Projekt, keine ausführbare Web-App: keinen Inhalt/Kein wwwroot scannen. -->
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="FluentAssertions" Version="6.12.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.13" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="coverlet.collector" Version="6.0.2" />
+    <!-- The source-generator diagnostic test (SourceGeneratorDiagnosticsTests) references
+         Sleipnir.SourceGenerator, which is a Roslyn generator and thus depends on Microsoft.CodeAnalysis.
+         SleipnirTests loads the generator assembly to call CodegenSeam.TryEmit; the integration
+         transport fixtures run the Sleipnir sample host in-process, whose UseSleipnir does an
+         AppDomain-wide [SleipnirController] scan (GetTypes() over every loaded assembly). Reflecting
+         the generator assembly needs Microsoft.CodeAnalysis present at runtime — without it the
+         scan throws ReflectionTypeLoadException and every transport fixture fails. Common (not
+         .CSharp/.Workspaces) is the minimal dep the generator's own types need (DiagnosticDescriptor,
+         SourceText, IIncrementalGenerator all live in Microsoft.CodeAnalysis.dll). We do NOT cast
+         ISourceGenerator (the seam returns plain strings), so the per-TFM type-identity problem
+         that originally forced this package's removal does not apply — we only need the assembly
+         resolvable for reflection. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="4.8.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SleipnirCore\SleipnirCore.csproj" />
+    <ProjectReference Include="..\SleipnirTelemetry\SleipnirTelemetry.csproj" />
+    <ProjectReference Include="..\SleipnirClient\SleipnirClient.csproj" />
+    <ProjectReference Include="..\SleipnirCommon\SleipnirCommon.csproj" />
+    <ProjectReference Include="..\SleipnirHub\SleipnirHub.csproj" />
+    <ProjectReference Include="..\SleipnirRest\SleipnirRest.csproj" />
+    <ProjectReference Include="..\SleipnirWebSocket\SleipnirWebSocket.csproj" />
+    <ProjectReference Include="..\Sleipnir\Sleipnir.csproj" />
+    <ProjectReference Include="..\Sleipnir.Codegen.Core\Sleipnir.Codegen.Core.csproj" />
+    <!-- Referenced as a normal ProjectReference (NOT as an analyzer) so the diagnostic test can
+         call SleipnirClientGenerator.TryEmit directly. Aliased because the generator LINKS the
+         Sleipnir.Codegen.Core sources into its own assembly (the Roslyn analyzer load context can't
+         resolve a ProjectReference dep) — without the alias, the linked Sleipnir.Codegen.Core.SleipnirCodegen
+         would collide with the standalone Sleipnir.Codegen.Core reference above (CS0433). The alias
+         isolates the generator's types (incl. the linked duplicates) from the default namespace. -->
+    <ProjectReference Include="..\Sleipnir.SourceGenerator\Sleipnir.SourceGenerator.csproj" Aliases="Generator" />
+    <!-- NOTE: Story 01 is NOT a ProjectReference here. The no-drift gate
+         (DiscoveryContractTests.cs) runs Story 01 out-of-process so its assembly never
+         loads into the test AppDomain — UseSleipnir's unscoped AppDomain auto-discovery scan
+         would otherwise collide Story 01's [SleipnirController("Customer")] with the Sleipnir
+         sample's CustomerHandler and break every integration fixture. Story 01 is built
+         by `dotnet build Sleipnir.sln` (it is in the solution); the test locates its DLL. -->
+  </ItemGroup>
+
+</Project>

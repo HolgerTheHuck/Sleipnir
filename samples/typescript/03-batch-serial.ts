@@ -9,13 +9,13 @@
 // dependencyMapping (siehe 04).
 // ==============================================================================
 
-import { TrameRestClient, TrameCall, ExecutionMode } from "trame-client";
+import { SleipnirRestClient, SleipnirCall, ExecutionMode } from "sleipnir-client";
 
-export async function run(rest: TrameRestClient): Promise<void> {
-  const batch = TrameCall.batch(
+export async function run(rest: SleipnirRestClient): Promise<void> {
+  const batch = SleipnirCall.batch(
     [
-      TrameCall.init("Customer", "GetCustomerById").with({ id: 1 }).named("a").toRequest(),
-      TrameCall.init("Customer", "GetCustomerById").with({ id: 2 }).named("b").toRequest(),
+      SleipnirCall.init("Customer", "GetCustomerById").with({ id: 1 }).named("a").toRequest(),
+      SleipnirCall.init("Customer", "GetCustomerById").with({ id: 2 }).named("b").toRequest(),
     ],
     ExecutionMode.Serial,
   );

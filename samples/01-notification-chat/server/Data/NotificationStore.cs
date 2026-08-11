@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
-using Trame.Samples.NotificationChat.Server.Models;
+using Sleipnir.Samples.NotificationChat.Server.Models;
 
-namespace Trame.Samples.NotificationChat.Server.Data;
+namespace Sleipnir.Samples.NotificationChat.Server.Data;
 
 public sealed class NotificationStore : INotificationStore
 {
@@ -25,9 +25,9 @@ public sealed class NotificationStore : INotificationStore
         AddNotification(new Notification
         {
             Type = NotificationType.Mail,
-            Title = "Welcome to Trame",
+            Title = "Welcome to Sleipnir",
             Body = "Your notification chat sample is ready.",
-            Sender = "team@trame.test",
+            Sender = "team@sleipnir.test",
             IsRead = false
         });
 
@@ -51,7 +51,7 @@ public sealed class NotificationStore : INotificationStore
 
         var chat = AddChat(new Chat
         {
-            Name = "Trame Team",
+            Name = "Sleipnir Team",
             Participants = new List<string> { "Alice", "Bob" }
         });
 

@@ -7,18 +7,18 @@
 //    deployment detail, not a design decision.
 //
 //    In Visual Studio: open Story03.sln, press F5 → browser lands in the DevUI
-//    at /Trame (REST wire). The README shows the identical call over WebSocket
+//    at /Sleipnir (REST wire). The README shows the identical call over WebSocket
 //    and SignalR against the same running server.
 // =============================================================================
 
-using TrameHub.Extensions;
-using TrameServer;
+using SleipnirHub.Extensions;
+using SleipnirServer;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.UseStaticWebAssets();
 
-builder.Services.AddTrame(new TrameOptions
+builder.Services.AddSleipnir(new SleipnirOptions
 {
     EnableDetailedErrors = builder.Environment.IsDevelopment(),
     UseSignalR = true,            // dritter Wire — REST + WS sind immer an, SignalR opt-in
@@ -30,9 +30,9 @@ var app = builder.Build();
 
 app.UseStaticFiles();
 app.UseRouting();
-app.UseTrameTransports();   // REST + WS + Controller-Registrierung
-app.MapTrame();              // REST-Endpunkte + DevUI + SignalR-Hub (UseSignalR=true)
+app.UseSleipnirTransports();   // REST + WS + Controller-Registrierung
+app.MapSleipnir();              // REST-Endpunkte + DevUI + SignalR-Hub (UseSignalR=true)
 
-app.MapGet("/", ctx => { ctx.Response.Redirect("/Trame"); return Task.CompletedTask; });
+app.MapGet("/", ctx => { ctx.Response.Redirect("/Sleipnir"); return Task.CompletedTask; });
 
 app.Run();

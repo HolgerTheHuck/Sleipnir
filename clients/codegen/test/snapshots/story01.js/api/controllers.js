@@ -1,13 +1,13 @@
-// Auto-generated Trame controllers (JSDoc-typed JS).
-import { TrameCall } from "trame-client";
+// Auto-generated Sleipnir controllers (JSDoc-typed JS).
+import { SleipnirCall } from "sleipnir-client";
 export class StockClient {
-  /** @param {(controller: string, method: string) => TrameCall} build */
+  /** @param {(controller: string, method: string) => SleipnirCall} build */
   constructor(build) {
     this._build = build;
   }
   /**
    * @param {number[]} articleIds
-   * @returns {Promise<TrameResponse<StockInfo[] | null>>}
+   * @returns {Promise<SleipnirResponse<StockInfo[] | null>>}
    */
   async getByArticles(articleIds) {
     const call = this._build("Stock", "GetByArticles").with({ articleIds: articleIds });
@@ -16,13 +16,13 @@ export class StockClient {
 }
 
 export class OrderLineClient {
-  /** @param {(controller: string, method: string) => TrameCall} build */
+  /** @param {(controller: string, method: string) => SleipnirCall} build */
   constructor(build) {
     this._build = build;
   }
   /**
    * @param {number} orderId
-   * @returns {Promise<TrameResponse<OrderLine[] | null>>}
+   * @returns {Promise<SleipnirResponse<OrderLine[] | null>>}
    */
   async getByOrder(orderId) {
     const call = this._build("OrderLine", "GetByOrder").with({ orderId: orderId });
@@ -31,13 +31,13 @@ export class OrderLineClient {
 }
 
 export class ArticleClient {
-  /** @param {(controller: string, method: string) => TrameCall} build */
+  /** @param {(controller: string, method: string) => SleipnirCall} build */
   constructor(build) {
     this._build = build;
   }
   /**
    * @param {number[]} articleIds
-   * @returns {Promise<TrameResponse<Article[] | null>>}
+   * @returns {Promise<SleipnirResponse<Article[] | null>>}
    */
   async getByIds(articleIds) {
     const call = this._build("Article", "GetByIds").with({ articleIds: articleIds });
@@ -46,13 +46,13 @@ export class ArticleClient {
 }
 
 export class OrderClient {
-  /** @param {(controller: string, method: string) => TrameCall} build */
+  /** @param {(controller: string, method: string) => SleipnirCall} build */
   constructor(build) {
     this._build = build;
   }
   /**
    * @param {number} id
-   * @returns {Promise<TrameResponse<Order | null>>}
+   * @returns {Promise<SleipnirResponse<Order | null>>}
    */
   async getById(id) {
     const call = this._build("Order", "GetById").with({ id: id });
@@ -61,13 +61,13 @@ export class OrderClient {
 }
 
 export class CustomerClient {
-  /** @param {(controller: string, method: string) => TrameCall} build */
+  /** @param {(controller: string, method: string) => SleipnirCall} build */
   constructor(build) {
     this._build = build;
   }
   /**
    * @param {number} customerId
-   * @returns {Promise<TrameResponse<Customer | null>>}
+   * @returns {Promise<SleipnirResponse<Customer | null>>}
    */
   async getById(customerId) {
     const call = this._build("Customer", "GetById").with({ customerId: customerId });
@@ -76,13 +76,13 @@ export class CustomerClient {
 }
 
 export class AddressClient {
-  /** @param {(controller: string, method: string) => TrameCall} build */
+  /** @param {(controller: string, method: string) => SleipnirCall} build */
   constructor(build) {
     this._build = build;
   }
   /**
    * @param {number} addressId
-   * @returns {Promise<TrameResponse<Address | null>>}
+   * @returns {Promise<SleipnirResponse<Address | null>>}
    */
   async getById(addressId) {
     const call = this._build("Address", "GetById").with({ addressId: addressId });

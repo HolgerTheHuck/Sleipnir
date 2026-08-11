@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { assertDiscoveryShape } from "../../src/core/discovery.js";
-import type { DiscoveryInfo } from "trame-client";
+import type { DiscoveryInfo } from "sleipnir-client";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturePath = join(here, "..", "fixtures", "story01-discovery.json");

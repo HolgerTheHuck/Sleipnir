@@ -1,5 +1,5 @@
 // Python emitter — emits a self-contained async client (types.py / client.py /
-// __init__.py) that depends only on `httpx` (no Trame Python runtime exists).
+// __init__.py) that depends only on `httpx` (no Sleipnir Python runtime exists).
 //
 // Headline value: a typed batch builder mirroring the TS runtime. `@dataclass`
 // types carry camelCase fields matching the wire (response-only shapes;
@@ -7,7 +7,7 @@
 // `exposes`/`alias` mirror TS: `alias(name)` returns the "@x" placeholder
 // string, `exposes` strips the leading "@" for the `dependencyMapping` key
 // (the server strips "@" from a consumer's "@alias" placeholder before lookup
-// — see TrameInvoker.ReplaceDependencyByAliasCore). Method names are
+// — see SleipnirInvoker.ReplaceDependencyByAliasCore). Method names are
 // snake_case (`get_by_id`) while the wire `method` stays the discovery
 // `methodName` verbatim ("GetById"); parameter names are verbatim
 // (case-sensitive wire binding). The batch `mode` is the integer 1 (Serial)
@@ -53,7 +53,7 @@ function snakeCase(name: string): string {
 // ---------------------------------------------------------------------------
 
 function emitTypes(input: EmitterInput, resolver: NamingResolver): string {
-  const header = `# Auto-generated Trame data types. Fields are camelCase (wire) and
+  const header = `# Auto-generated Sleipnir data types. Fields are camelCase (wire) and
 # default to None (discovery carries no nullability; callers narrow).
 # DateTime is emitted as str (parse with datetime.fromisoformat if needed).
 from __future__ import annotations
@@ -99,7 +99,7 @@ ${assigns}
 // ---------------------------------------------------------------------------
 
 function emitClient(input: EmitterInput, resolver: NamingResolver, baseUrl?: string): string {
-  const header = `# Auto-generated Trame async client. Requires: pip install httpx
+  const header = `# Auto-generated Sleipnir async client. Requires: pip install httpx
 # (httpx is imported lazily at call time so \`py_compile\` passes without it).
 # Method names are snake_case; the wire method is the discovery methodName verbatim.
 # Parameter names are verbatim (case-sensitive wire binding). The batch mode is
@@ -122,14 +122,14 @@ ${urlHint}${imports}
 ${runtime}
 ${controllerClasses}
 
-class TrameClient:
-    """Root generated Trame client. Async; backed by httpx.
+class SleipnirClient:
+    """Root generated Sleipnir client. Async; backed by httpx.
 
     Use \`call\` / \`call_typed\` for a single call, \`call_batch\` for a
     dependency-chained batch (Serial). Per-controller accessors are below.
     """
 
-    def __init__(self, base_url: str, *, api_path: str = "api/trame", bearer: Optional[str] = None) -> None:
+    def __init__(self, base_url: str, *, api_path: str = "api/sleipnir", bearer: Optional[str] = None) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_path = api_path.strip("/")
         self._bearer = bearer
@@ -140,7 +140,7 @@ ${accessors.join("\n")}
         return f"{self._base_url}/{self._api_path}/{path}"
 
     async def discover(self) -> dict:
-        """GET /api/trame/discovery."""
+        """GET /api/sleipnir/discovery."""
         import httpx
         headers = self._headers()
         async with httpx.AsyncClient() as client:
@@ -149,7 +149,7 @@ ${accessors.join("\n")}
             return r.json()
 
     async def call(self, controller: str, method: str, **params: Any) -> dict:
-        """POST /api/trame/json with named params; return the raw TrameResponse dict."""
+        """POST /api/sleipnir/json with named params; return the raw SleipnirResponse dict."""
         import httpx
         body = _build_single(controller, method, params)
         headers = self._headers()
@@ -157,11 +157,11 @@ ${accessors.join("\n")}
             r = await client.post(self._url("json"), json=body, headers=headers)
             return _parse_response(r)
 
-    async def call_typed(self, call: "TrameCall", cls: type) -> Optional[Any]:
-        """Execute a single TrameCall and deserialize data into \`cls\` (via from_dict)."""
+    async def call_typed(self, call: "SleipnirCall", cls: type) -> Optional[Any]:
+        """Execute a single SleipnirCall and deserialize data into \`cls\` (via from_dict)."""
         resp = await self._post_call(call)
         if not _is_success(resp):
-            raise TrameError(resp.get("error") or {"code": resp.get("code", 0), "message": "non-2xx"})
+            raise SleipnirError(resp.get("error") or {"code": resp.get("code", 0), "message": "non-2xx"})
         data = resp.get("data")
         if data is None:
             return None
@@ -170,7 +170,7 @@ ${accessors.join("\n")}
         return data
 
     async def call_batch(self, batch: "Batch") -> list:
-        """POST /api/trame/json/multi; return the list of TrameResponse dicts.
+        """POST /api/sleipnir/json/multi; return the list of SleipnirResponse dicts.
 
         Responses return in topological order (the server runs the topological
         path whenever any request carries a dependencyMapping). Fetch results
@@ -192,7 +192,7 @@ ${accessors.join("\n")}
             parsed = r.json()
             return parsed if isinstance(parsed, list) else []
 
-    async def _post_call(self, call: "TrameCall") -> dict:
+    async def _post_call(self, call: "SleipnirCall") -> dict:
         import httpx
         body = call.to_request()
         headers = self._headers()
@@ -231,7 +231,7 @@ def _build_single(controller: str, method: str, params: dict, *,
 
 
 def _parse_response(r: Any) -> dict:
-    """Parse a TrameResponse; on non-2xx HTTP, synthesize an error response."""
+    """Parse a SleipnirResponse; on non-2xx HTTP, synthesize an error response."""
     text = r.text
     if not r.is_success:
         return {
@@ -254,18 +254,18 @@ def _is_success(resp: dict) -> bool:
     return 200 <= code <= 299
 
 
-class TrameError(Exception):
-    """Raised when a Trame call returns a non-2xx logical response."""
+class SleipnirError(Exception):
+    """Raised when a Sleipnir call returns a non-2xx logical response."""
 
     def __init__(self, error: dict) -> None:
         self.code = error.get("code", 0)
-        self.message = error.get("message", "Trame error")
+        self.message = error.get("message", "Sleipnir error")
         self.details = error.get("details")
         super().__init__(f"[{self.code}] {self.message}")
 
 
-class TrameCall:
-    """A single Trame call built by a generated controller method."""
+class SleipnirCall:
+    """A single Sleipnir call built by a generated controller method."""
 
     def __init__(self, controller: str, method: str, params: dict) -> None:
         self._controller = controller
@@ -274,11 +274,11 @@ class TrameCall:
         self._id: Optional[str] = None
         self._dependency_mapping: dict = {}
 
-    def named(self, id: str) -> "TrameCall":
+    def named(self, id: str) -> "SleipnirCall":
         self._id = id
         return self
 
-    def exposes(self, path: str, alias: str) -> "TrameCall":
+    def exposes(self, path: str, alias: str) -> "SleipnirCall":
         # The wire dependencyMapping key is the alias WITHOUT the leading '@'
         # (the server strips '@' from a consumer's '@alias' placeholder before lookup).
         key = alias[1:] if alias.startswith("@") else alias
@@ -295,7 +295,7 @@ class TrameCall:
 class _BatchEntry:
     """A call enrolled in a batch. exposes/alias mirror the TS runtime."""
 
-    def __init__(self, call: TrameCall) -> None:
+    def __init__(self, call: SleipnirCall) -> None:
         self._call = call
 
     def exposes(self, path: str, alias: str) -> "_BatchEntry":
@@ -315,9 +315,9 @@ class Batch:
     """
 
     def __init__(self) -> None:
-        self._calls: list[TrameCall] = []
+        self._calls: list[SleipnirCall] = []
 
-    def add(self, call: TrameCall) -> _BatchEntry:
+    def add(self, call: SleipnirCall) -> _BatchEntry:
         self._calls.append(call)
         return _BatchEntry(call)
 
@@ -327,12 +327,12 @@ class Batch:
 
 
 // ---------------------------------------------------------------------------
-// Per-controller classes — snake_case methods returning TrameCall.
+// Per-controller classes — snake_case methods returning SleipnirCall.
 // ---------------------------------------------------------------------------
 
 function emitControllerClass(ctrl: ResolvedController, resolver: NamingResolver): string {
   const methods = ctrl.methods.map((m) => emitMethod(ctrl, m, resolver));
-  return `class ${ctrl.className}:\n    def __init__(self, owner: "TrameClient") -> None:\n        self._owner = owner\n\n${methods.join("\n\n")}`;
+  return `class ${ctrl.className}:\n    def __init__(self, owner: "SleipnirClient") -> None:\n        self._owner = owner\n\n${methods.join("\n\n")}`;
 }
 
 function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: NamingResolver): string {
@@ -346,8 +346,8 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
     ? `    # TODO: return type "${m.returnType.nativeName ?? "?"}" is an opaque framework/BCL type not modelled in discovery.\n`
     : "";
   const snake = snakeCase(m.methodName);
-  return `${todo}${doc}    def ${snake}(self${params.length ? ", " + params.join(", ") : ""}) -> TrameCall:
-        return TrameCall("${ctrl.name}", "${m.methodName}", {${paramDict}})`;
+  return `${todo}${doc}    def ${snake}(self${params.length ? ", " + params.join(", ") : ""}) -> SleipnirCall:
+        return SleipnirCall("${ctrl.name}", "${m.methodName}", {${paramDict}})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -357,6 +357,6 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
 function emitInit(): string {
   return `# Auto-generated barrel.
 from .types import *  # noqa: F401,F403
-from .client import TrameClient, TrameCall, Batch, TrameError  # noqa: F401
+from .client import SleipnirClient, SleipnirCall, Batch, SleipnirError  # noqa: F401
 `;
 }

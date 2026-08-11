@@ -1,10 +1,10 @@
 name: Deploy DevUI (Standalone)
 
-# Baut die Sleipnir DevUI im Standalone-Modus (relative Asset-Base) und deployt sie
-# als statische Site auf GitHub Pages. Die Site liegt unter der Repo-Pages-URL
-# und ist über das Settings-Panel auf jeden Sleipnir-Server richtbar.
+# Builds the Sleipnir DevUI in standalone mode (relative asset base) and deploys
+# it as a static site to GitHub Pages. The site lives at the repo Pages URL and
+# can point at any Sleipnir-Server via its settings panel.
 #
-# Voraussetzung (manuell, einmalig): Repo → Settings → Pages → Source = GitHub Actions.
+# Prerequisite (manual, one-time): Repo → Settings → Pages → Source = GitHub Actions.
 
 on:
   push:
@@ -38,8 +38,17 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # Der TS-Client liegt als file:-Dependency (../clients/ts) vor; npm install
-      # baut ihn via dessen prepare-Skript, falls vorhanden — sonst explizit bauen.
+      # The DevUI depends on the local TS client packages (file:../clients/ts and
+      # file:../clients/codegen). Their dist/ is gitignored, so build them first
+      # (clients/ts before clients/codegen, which depends on it).
+      - name: Build TS client (clients/ts)
+        working-directory: clients/ts
+        run: npm install && npm run build
+
+      - name: Build codegen client (clients/codegen)
+        working-directory: clients/codegen
+        run: npm install && npm run build
+
       - name: Install DevUI dependencies
         working-directory: SleipnirDeveloperUi
         run: npm ci || npm install

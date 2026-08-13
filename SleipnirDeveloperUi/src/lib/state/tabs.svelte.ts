@@ -38,6 +38,10 @@ export interface DepStep {
   method: string;
   params: DepParam[];
   exposes: DepExpose[];
+  /** Canvas-Position des Knotens (Query-Designer). Optional → alte localStorage-Tabs
+   *  deserialisieren ohne Migration; positionslose Knoten werden per autoLayout platziert. */
+  x?: number;
+  y?: number;
 }
 
 export interface Tab {

@@ -1,7 +1,14 @@
 <script lang="ts">
   // Dependency Builder — visuelle Editor-Seite für @alias-Abhängigkeitsketten.
-  // baut aus DepStep[] → SleipnirRequest[] (Serial-Modus), zeigt den Graphen live,
-  // generiert kopierbaren TS/C#/JSON-Code und führt den Batch aus.
+  // Baut aus DepStep[] → SleipnirRequest[] (Serial-Modus), zeigt den Graphen live
+  // als Canvas (Knoten + @alias-Kanten), generiert kopierbaren TS/C#/JSON-Code und
+  // führt den Batch aus.
+  //
+  // Layout: Toolbar | (Canvas + Inspector-Split) | kollabierbares Bottom-Panel
+  // (Validierung + Typ-Check + Ergebnis + Codegen). Ein Raw-Editor-Toggle blendet
+  // bei Bedarf die alte lineare Step-Liste ein (Sicherheitsnetz / Power-User). Die
+  // Kernlogik (buildRequest, validation, typeIssues, codegen, run) ist unverändert;
+  // nur die Autoring-Oberfläche ist vom Step-Liste-Canvas migriert.
 
   import { onDestroy } from 'svelte';
   import { tabState, type Tab, type DepStep, type DepParam } from '../../state/tabs.svelte.ts';
@@ -9,10 +16,13 @@
   import { executeBatch } from '../../api/client';
   import { formatJson } from '../../utils/json';
   import { checkSteps, methodMetaFor, type AliasProvider } from '../../utils/dependencyCheck';
+  import { nextDefaultStepId } from '../../utils/canvasGraph';
   import { ExecutionMode, type SleipnirRequest, type SleipnirParameter } from 'sleipnir-client';
   import { isObjectParam, isCollectionRef, isBoolParam, isNumberParam } from '../../utils/params';
   import DependencyStep from './DependencyStep.svelte';
-  import DependencyGraph from './DependencyGraph.svelte';
+  import DepCanvasToolbar from './DepCanvasToolbar.svelte';
+  import DepCanvas from './DepCanvas.svelte';
+  import DepInspector from './DepInspector.svelte';
 
   let { tab }: { tab: Tab } = $props();
 
@@ -21,12 +31,35 @@
   let copied = $state('');
   let copyTimer = $state<ReturnType<typeof setTimeout> | null>(null);
 
+  // Canvas/inspector-local UI state (nicht im tab-Modell — pro Editor-Session).
+  let selectedNodeId = $state<string | null>(null);
+  /** Increment to reset the canvas pan/zoom (toolbar „Neu anordnen"/„Ansicht"). */
+  let resetViewSignal = $state(0);
+  let showRaw = $state(false);
+  let bottomOpen = $state(true);
+
   onDestroy(() => {
     if (copyTimer) clearTimeout(copyTimer);
   });
 
   // Reaktive Step-Liste aus dem Tab.
   let steps = $derived(tab.steps ?? []);
+
+  // Selektion zurücksetzen, wenn der Benutzer einen anderen Tab öffnet (die Page-
+  // Instanz bleibt erhalten, selectedNodeId wäre sonst sektionsübergreifend stale).
+  // `prevTabId` ist ein plain-Closure-Counter (nicht $state) — nur der Effect liest
+  // `tab.id` reaktiv und gleicht ab.
+  let prevTabId = '';
+  $effect(() => {
+    const id = tab.id;
+    if (id !== prevTabId) {
+      prevTabId = id;
+      selectedNodeId = null;
+    }
+  });
+
+  let selectedStep = $derived(steps.find((s) => s.id === selectedNodeId) ?? null);
+  let selectedIndex = $derived(selectedStep ? steps.indexOf(selectedStep) : -1);
 
   function persist(): void {
     tabState.persist();
@@ -141,6 +174,7 @@
    *  aber kein UI-Absturz); das {#each ... (a)} in DependencyStep verträgt keine
    *  doppelten Keys (each_key_duplicate). */
   function availableAliasesFor(index: number): string[] {
+    if (index < 0) return [];
     return [
       ...new Set(
         steps
@@ -156,6 +190,7 @@
    *  Map, später Schreib überschreibt). */
   function aliasProvidersFor(index: number): Record<string, AliasProvider> {
     const map: Record<string, AliasProvider> = {};
+    if (index < 0) return map;
     for (const s of steps.slice(0, index)) {
       const mm = methodMetaFor(s, discoveryState.data);
       if (!mm) continue;
@@ -173,7 +208,7 @@
   // --- Code-Generierung -------------------------------------------------------
 
   function generateTs(): string {
-    if (steps.length === 0) return '// Noch keine Schritte — „Schritt hinzufügen" klicken.';
+    if (steps.length === 0) return '// Noch keine Aufrufe — „+ Aufruf" klicken oder Methode auf den Canvas ziehen.';
     const reqObjects = steps
       .map((s) => '    ' + JSON.stringify(toWireRequest(s), null, 2).replace(/\n/g, '\n    '))
       .join(',\n');
@@ -212,8 +247,12 @@ const results = await rest.callBatch(batch.requests, batch.mode);`;
     return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
 
+  function csStringLiteral(s: string): string {
+    return `"${csEscape(s)}"`;
+  }
+
   function generateCs(): string {
-    if (steps.length === 0) return '// Noch keine Schritte — „Schritt hinzufügen" klicken.';
+    if (steps.length === 0) return '// Noch keine Aufrufe — „+ Aufruf" klicken oder Methode auf den Canvas ziehen.';
     const reqBlocks = steps
       .map((s) => {
         const wire = toWireRequest(s);
@@ -325,126 +364,194 @@ var responses = await client.Call(multi);`;
 
   // --- Step-Operationen -------------------------------------------------------
 
+  /** Leeren Aufruf hinzufügen (Controller/Methode im Inspector wählen). Position
+   *  bleibt absent → ensurePositions auto-layoutet den Knoten. Selektiert ihn sofort,
+   *  damit der Inspector aufspringt. */
   function addStep(): void {
     if (!tab.steps) tab.steps = [];
-    const n = tab.steps.length;
+    const id = nextDefaultStepId(tab.steps);
     tab.steps.push({
-      id: `step${n + 1}`,
+      id,
       controller: '',
       method: '',
       params: [],
       exposes: [],
     });
+    selectedNodeId = id;
     persist();
   }
 
   function removeStep(index: number): void {
     if (!tab.steps) return;
+    const removed = tab.steps[index];
     tab.steps.splice(index, 1);
+    if (removed && selectedNodeId === removed.id) selectedNodeId = null;
     persist();
+  }
+
+  /** Dupliziert den selektierten Aufruf: neue Id, geklonte Params/Exposes, leicht
+   *  versetzt platziert (eigenständige Position, kein Auto-Layout-Kollisionsrisiko). */
+  function duplicateStep(step: DepStep): void {
+    if (!tab.steps) return;
+    const id = nextDefaultStepId(tab.steps);
+    const clone: DepStep = {
+      id,
+      controller: step.controller,
+      method: step.method,
+      params: step.params.map((p) => ({ ...p })),
+      exposes: step.exposes.map((e) => ({ ...e })),
+      x: typeof step.x === 'number' ? step.x + 40 : undefined,
+      y: typeof step.y === 'number' ? step.y + 40 : undefined,
+    };
+    tab.steps.push(clone);
+    selectedNodeId = id;
+    persist();
+  }
+
+  /** Alle Knoten neu anordnen: gespeicherte Positionen löschen → ensurePositions
+   *  auto-layoutet topologisch; Ansicht zurücksetzen. */
+  function relayout(): void {
+    if (!tab.steps) return;
+    for (const s of tab.steps) {
+      s.x = undefined;
+      s.y = undefined;
+    }
+    resetViewSignal += 1;
+    persist();
+  }
+
+  function zoomReset(): void {
+    resetViewSignal += 1;
   }
 
   let hasResult = $derived(tab.responseText && tab.responseText !== '{}');
 </script>
 
 <div class="dep-builder">
-  <div class="dep-toolbar">
-    <span class="pill accent">Dependency Builder</span>
-    <span class="dep-hint">@alias-Ketten visuell zusammenstellen → Code + Ausführung</span>
-    <span class="pill" title="Serial-Modus zwingend für @alias-Auflösung">Mode: Serial (locked)</span>
-    <span class="pill">{steps.length} Schritt{steps.length === 1 ? '' : 'e'}</span>
-    <span class="pill">{tab.duration}</span>
-    <div class="toolbar-actions">
-      <button class="ghost small" onclick={addStep} title="Schritt hinzufügen">+ Schritt hinzufügen</button>
-      <button class="primary small" onclick={run} disabled={!isValid || running}>
-        {running ? 'Running…' : 'Ausführen'}
-      </button>
-    </div>
-  </div>
+  <DepCanvasToolbar
+    stepsCount={steps.length}
+    duration={tab.duration}
+    isValid={isValid}
+    running={running}
+    onadd={addStep}
+    onrelink={relayout}
+    onzoomreset={zoomReset}
+    onrun={run}
+  />
 
   {#if !discoveryState.data || discoveryState.data.controllers.length === 0}
     <div class="dep-empty">
       <p>Discovery nicht geladen — bitte Refresh klicken oder Endpoint prüfen.</p>
     </div>
   {:else}
-    <div class="dep-scroll">
-      <!-- Schritt-Liste -->
-      <div class="step-list">
-        {#each steps as step, i (i)}
-          <DependencyStep
-            {step}
-            index={i}
-            availableAliases={availableAliasesFor(i)}
-            aliasProviders={aliasProvidersFor(i)}
-            onremove={() => removeStep(i)}
-            onchange={persist}
-          />
-        {/each}
-        {#if steps.length === 0}
-          <div class="dep-empty thin">
-            <p>Noch keine Schritte. „Schritt hinzufügen" klicken, um zu starten.</p>
-          </div>
-        {/if}
+    <div class="dep-body">
+      <DepCanvas
+        {tab}
+        selectedNodeId={selectedNodeId}
+        onselectnode={(id) => (selectedNodeId = id)}
+        resetViewSignal={resetViewSignal}
+      />
+      <DepInspector
+        step={selectedStep}
+        index={selectedIndex}
+        availableAliases={availableAliasesFor(selectedIndex)}
+        aliasProviders={aliasProvidersFor(selectedIndex)}
+        onremove={() => { if (selectedIndex >= 0) removeStep(selectedIndex); }}
+        onduplicate={() => { if (selectedStep) duplicateStep(selectedStep); }}
+        onchange={persist}
+      />
+    </div>
+
+    <div class="dep-bottom" class:open={bottomOpen}>
+      <div class="bottom-header">
+        <button class="ghost small chev-btn" onclick={() => (bottomOpen = !bottomOpen)} title="Panel ein-/ausklappen">
+          {bottomOpen ? '▼' : '▲'}
+        </button>
+        <span class="bottom-title">Validierung · Typ-Check · Code</span>
+        <label class="raw-toggle" title="Lineare Step-Liste als Alternative zum Canvas anzeigen">
+          <input type="checkbox" bind:checked={showRaw} />
+          <span>Raw-Editor</span>
+        </label>
       </div>
 
-      <!-- Validierung (blockierend — strukturelle Fehler) -->
-      {#if validation.length > 0}
-        <div class="validation-box">
-          <span class="block-label error-label">Validierung</span>
-          <ul>
-            {#each validation as msg (msg)}
-              <li>{msg}</li>
-            {/each}
-          </ul>
-        </div>
-      {/if}
+      {#if bottomOpen}
+        <div class="bottom-content">
+          {#if showRaw}
+            <!-- Raw-Editor: die alte lineare Step-Liste (Sicherheitsnetz). -->
+            <div class="step-list">
+              {#each steps as step, i (i)}
+                <DependencyStep
+                  {step}
+                  index={i}
+                  availableAliases={availableAliasesFor(i)}
+                  aliasProviders={aliasProvidersFor(i)}
+                  onremove={() => removeStep(i)}
+                  onchange={persist}
+                />
+              {/each}
+              {#if steps.length === 0}
+                <div class="dep-empty thin">
+                  <p>Noch keine Aufrufe. „+ Aufruf" klicken, um zu starten.</p>
+                </div>
+              {/if}
+            </div>
+          {/if}
 
-      <!-- Typ-Check (nicht blockierend — statische Konsistenz gegen Discovery-Schemas,
-           siehe utils/dependencyCheck.ts. „Ausführen" bleibt erlaubt, da der Runtime-Shape
-           vom statischen Schema abweichen kann.) -->
-      {#if typeIssues.length > 0}
-        <div class="typecheck-box">
-          <span class="block-label typecheck-label">Typ-Check (nicht blockierend)</span>
-          <ul>
-            {#each typeIssues as iss (iss.where + iss.message)}
-              <li class:err={iss.severity === 'error'} class:warn={iss.severity === 'warn'}>
-                <span class="iss-where">{iss.where}</span> — {iss.message}
-              </li>
-            {/each}
-          </ul>
-        </div>
-      {/if}
+          <!-- Validierung (blockierend — strukturelle Fehler) -->
+          {#if validation.length > 0}
+            <div class="validation-box">
+              <span class="block-label error-label">Validierung</span>
+              <ul>
+                {#each validation as msg (msg)}
+                  <li>{msg}</li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
 
-      <!-- Live Dependency Graph -->
-      {#if steps.length > 0}
-        <DependencyGraph {requests} />
-      {/if}
+          <!-- Typ-Check (nicht blockierend — statische Konsistenz gegen Discovery-Schemas,
+               siehe utils/dependencyCheck.ts. „Ausführen" bleibt erlaubt, da der Runtime-Shape
+               vom statischen Schema abweichen kann.) -->
+          {#if typeIssues.length > 0}
+            <div class="typecheck-box">
+              <span class="block-label typecheck-label">Typ-Check (nicht blockierend)</span>
+              <ul>
+                {#each typeIssues as iss (iss.where + iss.message)}
+                  <li class:err={iss.severity === 'error'} class:warn={iss.severity === 'warn'}>
+                    <span class="iss-where">{iss.where}</span> — {iss.message}
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
 
-      <!-- Ergebnis -->
-      {#if hasResult}
-        <div class="result-box">
-          <div class="result-header">
-            <span class="block-label">Ergebnis</span>
-            <span class="pill" class:success={tab.status === 'Batch OK'} class:error={tab.status === 'Error'}>{tab.status}</span>
+          <!-- Ergebnis -->
+          {#if hasResult}
+            <div class="result-box">
+              <div class="result-header">
+                <span class="block-label">Ergebnis</span>
+                <span class="pill" class:success={tab.status === 'Batch OK'} class:error={tab.status === 'Error'}>{tab.status}</span>
+              </div>
+              <pre class="code result-pre"><code>{tab.responseText}</code></pre>
+            </div>
+          {/if}
+
+          <!-- Code-Ausgabe -->
+          <div class="codegen-section">
+            <div class="codegen-header">
+              <div class="lang-tabs">
+                <button class="ghost small" class:active={activeCodeTab === 'ts'} onclick={() => (activeCodeTab = 'ts')}>TypeScript</button>
+                <button class="ghost small" class:active={activeCodeTab === 'cs'} onclick={() => (activeCodeTab = 'cs')}>C#</button>
+                <button class="ghost small" class:active={activeCodeTab === 'json'} onclick={() => (activeCodeTab = 'json')}>JSON</button>
+              </div>
+              <button class="primary small" onclick={copy}>
+                {copied === activeCodeTab ? 'Kopiert!' : 'Code kopieren'}
+              </button>
+            </div>
+            <pre class="code codegen-output"><code>{activeCode}</code></pre>
           </div>
-          <pre class="code result-pre"><code>{tab.responseText}</code></pre>
         </div>
       {/if}
-
-      <!-- Code-Ausgabe -->
-      <div class="codegen-section">
-        <div class="codegen-header">
-          <div class="lang-tabs">
-            <button class="ghost small" class:active={activeCodeTab === 'ts'} onclick={() => (activeCodeTab = 'ts')}>TypeScript</button>
-            <button class="ghost small" class:active={activeCodeTab === 'cs'} onclick={() => (activeCodeTab = 'cs')}>C#</button>
-            <button class="ghost small" class:active={activeCodeTab === 'json'} onclick={() => (activeCodeTab = 'json')}>JSON</button>
-          </div>
-          <button class="primary small" onclick={copy}>
-            {copied === activeCodeTab ? 'Kopiert!' : 'Code kopieren'}
-          </button>
-        </div>
-        <pre class="code codegen-output"><code>{activeCode}</code></pre>
-      </div>
     </div>
   {/if}
 </div>
@@ -457,32 +564,65 @@ var responses = await client.Call(multi);`;
     min-height: 0;
     overflow: hidden;
   }
-  .dep-toolbar {
+
+  .dep-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .dep-bottom {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    max-height: 42%;
+  }
+  .dep-bottom.open {
+    flex-basis: auto;
+  }
+  .bottom-header {
     display: flex;
     align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-bottom: 8px;
+    gap: 8px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border-muted);
     flex-shrink: 0;
   }
-  .dep-hint {
-    font-size: 0.78rem;
+  .chev-btn {
+    width: 24px;
+    padding: 2px 0;
+    text-align: center;
+  }
+  .bottom-title {
+    font-size: 0.8rem;
+    font-weight: 600;
     color: var(--text-muted);
   }
-  .toolbar-actions {
-    display: flex;
+  .raw-toggle {
+    display: inline-flex;
     align-items: center;
     gap: 4px;
     margin-left: auto;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
   }
-
-  .dep-scroll {
+  .raw-toggle input {
+    cursor: pointer;
+  }
+  .bottom-content {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 8px;
+    padding: 8px;
   }
 
   .step-list {
@@ -633,6 +773,7 @@ var responses = await client.Call(multi);`;
     font-size: 0.9rem;
     border: 1px dashed var(--border);
     border-radius: var(--radius-sm);
+    margin: 12px;
   }
   .dep-empty.thin {
     padding: 16px;

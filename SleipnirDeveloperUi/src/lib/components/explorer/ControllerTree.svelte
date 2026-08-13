@@ -25,6 +25,17 @@
   function isMethodActive(controller: ControllerMeta, method: MethodMeta): boolean {
     return tabState.activeTab?.controller?.name === controller.name && tabState.activeTab?.method?.methodName === method.methodName;
   }
+
+  /** HTML5-Drag auf den Dependency-Canvas: trägt {controller, method} als
+   *  `application/sleipnir-method`-Payload. DepCanvas.onDrop erzeugt daraus einen
+   *  Aufruf-Knoten. Klick (ohne Drag) öffnet weiterhin den Einzelmethoden-Tab. */
+  function onMethodDragStart(controller: ControllerMeta, method: MethodMeta, e: DragEvent): void {
+    const payload = JSON.stringify({ controller: controller.name, method: method.methodName });
+    if (e.dataTransfer) {
+      e.dataTransfer.setData('application/sleipnir-method', payload);
+      e.dataTransfer.effectAllowed = 'copy';
+    }
+  }
 </script>
 
 <div class="tree-container">
@@ -53,7 +64,10 @@
               <button
                 class="node method"
                 class:active={isMethodActive(controller, method)}
+                draggable="true"
+                ondragstart={(e) => onMethodDragStart(controller, method, e)}
                 onclick={() => tabState.openMethodTab(controller, method)}
+                title="{method.methodName} — Klick öffnet den Tab, Drag auf den Dependency-Canvas erzeugt einen Aufruf"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>

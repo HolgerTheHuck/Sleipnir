@@ -57,6 +57,7 @@
     <Compile Include="..\Sleipnir.Codegen.Core\DiscoveryShape.cs" Link="core\DiscoveryShape.cs" />
     <Compile Include="..\Sleipnir.Codegen.Core\EmitterInput.cs" Link="core\EmitterInput.cs" />
     <Compile Include="..\Sleipnir.Codegen.Core\CsEmitter.cs" Link="core\CsEmitter.cs" />
+    <Compile Include="..\Sleipnir.Codegen.Core\CsContractsEmitter.cs" Link="core\CsContractsEmitter.cs" />
     <Compile Include="..\Sleipnir.Codegen.Core\SleipnirCodegen.cs" Link="core\SleipnirCodegen.cs" />
   </ItemGroup>
 

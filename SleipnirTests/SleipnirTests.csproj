@@ -51,6 +51,7 @@
     <ProjectReference Include="..\SleipnirWebSocket\SleipnirWebSocket.csproj" />
     <ProjectReference Include="..\Sleipnir\Sleipnir.csproj" />
     <ProjectReference Include="..\Sleipnir.Codegen.Core\Sleipnir.Codegen.Core.csproj" />
+    <ProjectReference Include="..\Sleipnir.Client.Linq\Sleipnir.Client.Linq.csproj" />
     <!-- Referenced as a normal ProjectReference (NOT as an analyzer) so the diagnostic test can
          call SleipnirClientGenerator.TryEmit directly. Aliased because the generator LINKS the
          Sleipnir.Codegen.Core sources into its own assembly (the Roslyn analyzer load context can't

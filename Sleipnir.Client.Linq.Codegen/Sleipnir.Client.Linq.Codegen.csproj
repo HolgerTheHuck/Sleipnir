@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>Sleipnir.Client.Linq.Codegen</PackageId>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>sleipnir-linq</ToolCommandName>
+    <Description>dotnet tool that generates Sleipnir.Client.Linq service-contract interfaces (SleipnirContracts.g.cs) from a discovery contract. Feeds SleipnirCodegen.EmitContracts.</Description>
+  </PropertyGroup>
+
+  <!-- Project README as the package README (PackageReadmeFile via Directory.Build.props). -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sleipnir.Codegen.Core\Sleipnir.Codegen.Core.csproj" />
+  </ItemGroup>
+
+</Project>

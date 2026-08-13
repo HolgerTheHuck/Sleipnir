@@ -1,13 +1,12 @@
 using SleipnirCommon.Models;
 
-namespace Sleipnir.Spike.LinqProvider;
+namespace Sleipnir.Client.Linq;
 
 /// <summary>
-/// Sammelt mehrere typsichere <see cref="SleipnirCallSpec"/>-Objekte zu einem Batch.
-/// Die Reihenfolge bleibt erhalten; <see cref="Dep{T}"/>-Verdrahtungen stecken
-/// bereits in den Specs (Alias + dependencyMapping), daher reicht es, sie
-/// gesammelt als Multi-Request zu senden. Der Server wählt den topologischen
-/// Batch-Pfad automatisch (anhand der dependencyMappings).
+/// Collects several type-safe <see cref="SleipnirCallSpec"/> objects into a batch. Order is preserved;
+/// <see cref="Dep{T}"/> wiring already lives in the specs (alias + dependencyMapping), so it is enough to
+/// send them together as a multi-request. The server auto-selects the topological batch path from the
+/// dependency mappings.
 /// </summary>
 public sealed class SleipnirBatch
 {
@@ -22,7 +21,7 @@ public sealed class SleipnirBatch
 
     public SleipnirBatch Add(SleipnirCallSpec spec)
     {
-        if (spec == null) throw new ArgumentNullException(nameof(spec));
+        if (spec is null) throw new ArgumentNullException(nameof(spec));
         _specs.Add(spec);
         return this;
     }

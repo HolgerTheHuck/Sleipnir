@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>Sleipnir.Client.Linq</PackageId>
+    <Description>LINQ-provider client for Sleipnir — build typed dependency-chained calls from lambdas over generated service contracts. Compile-time type safety for @alias wiring via Dep&lt;T&gt;.</Description>
+  </PropertyGroup>
+
+  <!-- Project README as the package README (PackageReadmeFile via Directory.Build.props). -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+  <!-- The JsonPathBuilder unit test reaches the internal expression→JsonPath translator directly. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="SleipnirTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SleipnirClient\SleipnirClient.csproj" />
+  </ItemGroup>
+
+</Project>

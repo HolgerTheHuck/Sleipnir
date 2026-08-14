@@ -338,13 +338,24 @@ namespace SleipnirCore.Services
             }
 
             // Properties: each property type is a TypeRef with occurrence-level nullability.
+            // A [SleipnirNavigation] on the property (server-side producer attribute) is read here and
+            // serialized as `navigation` — the first property-level attribute→discovery flow; discovery
+            // just reports it, the codegen re-emits it as the client-side [SleipnirNavigation].
             foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 bool? propNullable = ReadNullable(() => ctx.NrtCtx.Create(prop).ReadState);
+                var navAttr = prop.GetCustomAttribute<SleipnirNavigationAttribute>();
                 meta.Properties.Add(new PropertyMeta
                 {
                     PropertyName = prop.Name,
                     PropertyType = BuildTypeRef(prop.PropertyType, propNullable, ctx),
+                    Navigation = navAttr is null ? null : new NavigationMeta
+                    {
+                        Fetch = navAttr.Fetch,
+                        Key = navAttr.Key,
+                        ChildKey = navAttr.ChildKey,
+                        Param = navAttr.Param,
+                    },
                 });
             }
         }

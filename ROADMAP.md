@@ -342,10 +342,12 @@ gain (typed dependency wiring) covers only the narrowest case (batch chains). Th
 - **Pass-through** of cancellation, `IAsyncEnumerable`, `byte[]` — the untyped `ISleipnirClient` can
   already do this; the typed layer must mirror it.
 
-Details and the full decision in the spike at
-[`spikes/LinqProvider/README.md`](spikes/LinqProvider/README.md). The spike is deliberately *not*
-part of `Sleipnir.sln` — it runs isolated:
-`dotnet test spikes/LinqProvider/Sleipnir.Spike.LinqProvider.csproj`.
+Details and the full decision were captured in the `spikes/LinqProvider/` proof of concept
+(since retired — it graduated into the shipped package). The typed client model is now built out as
+the **`Sleipnir.Client.Linq`** package: `Dep<T>`/`Arg<T>` typed wiring (Tier 1) and the
+`SleipnirQuery<T>` `.Include`/`.ThenInclude` navigation façade (Tier 2), with the `sleipnir-linq`
+codegen emitting `[SleipnirNavigation]` edges from the server-side attribute through discovery.
+See [`LINQ_QUERY.md`](LINQ_QUERY.md) and [`Sleipnir.Client.Linq/README.md`](Sleipnir.Client.Linq/README.md).
 
 ---
 

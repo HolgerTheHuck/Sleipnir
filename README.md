@@ -201,6 +201,10 @@ Details: [`README_DETAILS.md#developer-ui`](README_DETAILS.md#developer-ui)
 
 - Command-oriented, code-first Web APIs
 - Server-side dependency chaining (scalar, array, object, nested graph)
+- **Typed LINQ client** — `Sleipnir.Client.Linq`: `Dep<T>`/`Arg<T>` compile-time type-safe `@alias`
+  wiring, and `SleipnirQuery<T>.Include(...).ThenInclude(...)` eager-load navigation over a known
+  return — the `[SleipnirNavigation]` edges are generated from the server DTOs through discovery
+  (no hand-annotation)
 - Runtime discovery + Developer UI
 - REST, WebSocket, SignalR — same contract
 - Batch execution (parallel, serial, topological)
@@ -232,6 +236,7 @@ Details: [`README_DETAILS.md#developer-ui`](README_DETAILS.md#developer-ui)
 | `Sleipnir.DeveloperUi` | ✅ (via Server) | — | Built-in Developer UI (served by host; included in `Sleipnir.Server`). |
 | `Sleipnir.Telemetry` | ✅ `1.0.0` | — | Optional OpenTelemetry SDK bootstrap (OTLP/Console exporters). |
 | `Sleipnir.Client` | ✅ `1.0.0` | — | C# client (REST + WebSocket + SignalR, fluent builder). |
+| `Sleipnir.Client.Linq` | ✅ (soon) | — | Typed LINQ client: `Dep<T>`/`Arg<T>` type-safe `@alias` wiring + `SleipnirQuery<T>` `.Include`/`.ThenInclude` eager-load façade. |
 | **`sleipnir-client`** | — | ✅ `sleipnir-client` | TypeScript/JavaScript client (REST + WebSocket, isomorphic). |
 | `sleipnir-codegen` | — | ✅ (soon) | CLI: typed client stubs from discovery (`sleipnir-gen --lang ts\|js\|cs\|py`). |
 | `Sleipnir.Generator` | ✅ (soon) | — | Roslyn source generator (typed C# client from `contract.sleipnir.json`). |
@@ -275,6 +280,7 @@ npm i sleipnir-client
 | [`DEPENDENCY_BINDING.md`](DEPENDENCY_BINDING.md) | Alias resolution, failure propagation, binding modes |
 | [`JSONRPC_COMPAT.md`](JSONRPC_COMPAT.md) | JSON-RPC 2.0 compatibility |
 | [`CODEGEN_ONBOARDING.md`](CODEGEN_ONBOARDING.md) | Build-time contract and typed clients |
+| [`LINQ_QUERY.md`](LINQ_QUERY.md) | `Sleipnir.Client.Linq` — typed `Dep<T>` wiring + `SleipnirQuery<T>` navigation façade |
 | [`ROADMAP.md`](ROADMAP.md) | What is planned |
 
 ---

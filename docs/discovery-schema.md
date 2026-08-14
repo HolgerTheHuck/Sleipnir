@@ -86,7 +86,25 @@ This document specifies how. The guiding invariant:
 ```jsonc
 {
   "propertyName": "Id",               // PascalCase C# name — the WIRE is camelCase (see §12)
-  "propertyType": TypeRef
+  "propertyType": TypeRef,
+  "navigation": NavigationMeta | null  // optional; from [SleipnirNavigation] on the server DTO
+                                       // property. Omitted (null) on most properties → not serialized
+                                       // (WhenWritingNull). See §13.
+}
+```
+
+`NavigationMeta` (the optional `navigation` edge — the producer half of the `Sleipnir.Client.Linq`
+one-declaration pipeline; the `sleipnir-linq` codegen re-emits it as the client-side
+`[SleipnirNavigation]`):
+
+```jsonc
+{
+  "fetch": "QueryChain.GetKontakte",  // "Controller.Method" of the fetch method
+  "key": "kontaktId",                 // per-element key on the PARENT (wire/camelCase name)
+  "childKey": "id",                   // optional: child join property (wire name); convention-
+                                       // inferred by the façade when omitted
+  "param": "kontaktIds"               // optional: fetch-method collection-parameter name; codegen-
+                                       // inferred from the single collection param when omitted
 }
 ```
 
@@ -406,3 +424,28 @@ The `propertyName` field inside `PropertyMeta` carries the **C# PascalCase** nam
 (`Id`, `CustomerId`); the generator applies the camelCase wire fix when it emits target
 properties (see `clients/codegen/src/core/model.ts` → `resolveProperty`). This casing regime
 is unchanged from the prior shape — only the type-reference representation changed.
+
+---
+
+## 13. Navigation edges (`navigation`)
+
+The optional `navigation` field on a `PropertyMeta` is the **additive** addition that carries a
+`[SleipnirNavigation]` edge from the server DTO property through discovery to the generated
+`Sleipnir.Client.Linq` contract DTO. It is governed by the §11 additive-only rule:
+
+- It is **optional and `null` by default** — a property without a `[SleipnirNavigation]` attribute
+  omits the field entirely (`WhenWritingNull`), so older consumers that do not know the field are
+  unaffected (forward-compatible; `discoveryVersion` stays `"1"`).
+- Only properties of **expanded contract types** (Weg C, §5) ever carry one — the discovery service
+  reads the attribute inside the expandable-type property loop, which is only reached for types in
+  the contract-assembly set (or force-expanded via `[SleipnirDataContract]`).
+- The `sleipnir-linq` codegen (`EmitContracts`) **drift-checks** each edge at generation time and
+  refuses to emit on a mismatch: `fetch` must resolve to a real controller+method, `param` (explicit
+  or inferred from the method's single collection parameter) must name a collection parameter, `key`
+  must name a scalar property of the parent type whose scalar type matches the fetch parameter's
+  element type, and the navigation target must be an expanded contract type (`ref` or a collection
+  of `ref`), not `opaque`. A violation is a `DiscoveryShapeException` (refuse-to-emit), never a
+  runtime failure. This gate runs only on the LINQ-contracts path (`EmitContracts`), not the
+  Tier-1 `EmitClient` source-generator path, so non-LINQ consumers are unaffected.
+
+See `LINQ_QUERY.md` §3 (server attribute) and §8 (the one-declaration pipeline) for the full design.

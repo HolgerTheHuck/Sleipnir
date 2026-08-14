@@ -40,6 +40,10 @@ public static class SleipnirCodegen
         var discovery = DiscoveryShape.Assert(node);
         var resolver = new NamingResolver();
         var input = EmitterBuilder.Build(discovery, resolver);
+        // Drift-gate the navigation edges (refuse-to-emit on a key/param/fetch mismatch). LINQ-contracts
+        // path only — never runs in EmitClient, so the Tier-1 source-generator design-time path is
+        // unaffected by Tier-2 navigation semantics.
+        EmitterBuilder.ValidateNavigation(input);
         return CsContractsEmitter.Emit(input, opts);
     }
 

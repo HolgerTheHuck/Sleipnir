@@ -1,0 +1,108 @@
+{
+  "discoveryVersion": "1",
+  "controllers": [
+    {
+      "name": "QueryChain",
+      "methods": [
+        {
+          "methodName": "SelectCustomers",
+          "returnType": { "kind": "array", "element": { "kind": "ref", "ref": "SleipnirTests.Nav.Customer" } },
+          "parameters": []
+        },
+        {
+          "methodName": "GetKontakte",
+          "returnType": { "kind": "array", "element": { "kind": "ref", "ref": "SleipnirTests.Nav.Kontakt" } },
+          "parameters": [
+            { "parameterName": "kontaktIds", "parameterType": { "kind": "array", "element": { "kind": "scalar", "name": "int" } } }
+          ]
+        },
+        {
+          "methodName": "GetAnsprechpartner",
+          "returnType": { "kind": "array", "element": { "kind": "ref", "ref": "SleipnirTests.Nav.Ansprechpartner" } },
+          "parameters": [
+            { "parameterName": "kontaktIds", "parameterType": { "kind": "array", "element": { "kind": "scalar", "name": "int" } } }
+          ]
+        },
+        {
+          "methodName": "GetBestellungen",
+          "returnType": { "kind": "array", "element": { "kind": "ref", "ref": "SleipnirTests.Nav.Bestellung" } },
+          "parameters": [
+            { "parameterName": "customerIds", "parameterType": { "kind": "array", "element": { "kind": "scalar", "name": "int" } } }
+          ]
+        },
+        {
+          "methodName": "GetPositions",
+          "returnType": { "kind": "array", "element": { "kind": "ref", "ref": "SleipnirTests.Nav.Position" } },
+          "parameters": [
+            { "parameterName": "bestellungIds", "parameterType": { "kind": "array", "element": { "kind": "scalar", "name": "int" } } }
+          ]
+        }
+      ]
+    }
+  ],
+  "types": {
+    "SleipnirTests.Nav.Customer": {
+      "kind": "object",
+      "typeName": "SleipnirTests.Nav.Customer",
+      "properties": [
+        { "propertyName": "Id", "propertyType": { "kind": "scalar", "name": "int" } },
+        { "propertyName": "Name", "propertyType": { "kind": "scalar", "name": "string" } },
+        { "propertyName": "KontaktId", "propertyType": { "kind": "scalar", "name": "int" } },
+        {
+          "propertyName": "Kontakt",
+          "propertyType": { "kind": "ref", "ref": "SleipnirTests.Nav.Kontakt" },
+          "navigation": { "fetch": "QueryChain.GetKontakte", "key": "kontaktId", "param": "kontaktIds" }
+        },
+        {
+          "propertyName": "Bestellungen",
+          "propertyType": { "kind": "array", "element": { "kind": "ref", "ref": "SleipnirTests.Nav.Bestellung" } },
+          "navigation": { "fetch": "QueryChain.GetBestellungen", "key": "id" }
+        }
+      ]
+    },
+    "SleipnirTests.Nav.Kontakt": {
+      "kind": "object",
+      "typeName": "SleipnirTests.Nav.Kontakt",
+      "properties": [
+        { "propertyName": "Id", "propertyType": { "kind": "scalar", "name": "int" } },
+        {
+          "propertyName": "Ansprechpartner",
+          "propertyType": { "kind": "array", "element": { "kind": "ref", "ref": "SleipnirTests.Nav.Ansprechpartner" } },
+          "navigation": { "fetch": "QueryChain.GetAnsprechpartner", "key": "id", "childKey": "kontaktId", "param": "kontaktIds" }
+        }
+      ]
+    },
+    "SleipnirTests.Nav.Ansprechpartner": {
+      "kind": "object",
+      "typeName": "SleipnirTests.Nav.Ansprechpartner",
+      "properties": [
+        { "propertyName": "Id", "propertyType": { "kind": "scalar", "name": "int" } },
+        { "propertyName": "KontaktId", "propertyType": { "kind": "scalar", "name": "int" } },
+        { "propertyName": "Name", "propertyType": { "kind": "scalar", "name": "string" } }
+      ]
+    },
+    "SleipnirTests.Nav.Bestellung": {
+      "kind": "object",
+      "typeName": "SleipnirTests.Nav.Bestellung",
+      "properties": [
+        { "propertyName": "Id", "propertyType": { "kind": "scalar", "name": "int" } },
+        { "propertyName": "CustomerId", "propertyType": { "kind": "scalar", "name": "int" } },
+        { "propertyName": "Art", "propertyType": { "kind": "scalar", "name": "string" } },
+        {
+          "propertyName": "Positions",
+          "propertyType": { "kind": "array", "element": { "kind": "ref", "ref": "SleipnirTests.Nav.Position" } },
+          "navigation": { "fetch": "QueryChain.GetPositions", "key": "id", "param": "bestellungIds" }
+        }
+      ]
+    },
+    "SleipnirTests.Nav.Position": {
+      "kind": "object",
+      "typeName": "SleipnirTests.Nav.Position",
+      "properties": [
+        { "propertyName": "Id", "propertyType": { "kind": "scalar", "name": "int" } },
+        { "propertyName": "BestellungId", "propertyType": { "kind": "scalar", "name": "int" } },
+        { "propertyName": "Name", "propertyType": { "kind": "scalar", "name": "string" } }
+      ]
+    }
+  }
+}

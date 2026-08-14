@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`Sleipnir.Client.Linq`** — typed client LINQ package: `Dep<T>`/`Arg<T>` compile-time type-safe
+  `@alias` wiring (Tier 1) and the `SleipnirQuery<T>` `.Include`/`.ThenInclude`/`.Where`/`.Build`/
+  `.Materialize` eager-load façade (Tier 2) over the existing `@alias`/`dependencyMapping` wire.
+- **`[SleipnirNavigation]` one-declaration pipeline** — a server-side `[SleipnirNavigation]`
+  (SleipnirCommon) on a DTO property flows through the discovery `navigation` field into the
+  `sleipnir-linq` codegen, which drift-checks each edge (fetch/key/param/opaque-target) at generation
+  time and emits the client-side `[SleipnirNavigation]` onto the generated contract DTOs. Generated
+  clients now drive `SleipnirQuery<T>.Include(...)` without hand-annotating navigation edges.
+- **Discovery `navigation` field** (additive, `discoveryVersion` stays `"1"`): optional
+  `NavigationMeta` on `PropertyMeta` (`docs/discovery-schema.md` §13).
+
 ## [1.0.0] - 2026-08-11 — Renamed from Trame
 
 The framework formerly known as **Trame** is now **Sleipnir**. The rename avoids a

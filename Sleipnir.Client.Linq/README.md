@@ -116,7 +116,11 @@ For the 3-hop chain above, the server receives exactly this (no query shape — 
 ### `[SleipnirNavigation]`
 
 Each navigation property on the contract DTO carries `[SleipnirNavigation]`, emitted by `EmitContracts`
-from the server-side model:
+from the server-side model. You never hand-author the client attribute: annotate the **server** DTO
+property with `[SleipnirNavigation(Fetch = …, Key = …, …)]` (in `SleipnirCommon.Attribute`), and the
+one-declaration pipeline carries it through — discovery serializes it as a `navigation` field, and the
+`sleipnir-linq` codegen resolves, drift-checks, and re-emits the matching client `[SleipnirNavigation]`
+onto the generated contract DTO. See [`LINQ_QUERY.md`](../LINQ_QUERY.md) §8 for the full pipeline.
 
 ```csharp
 public class Customer

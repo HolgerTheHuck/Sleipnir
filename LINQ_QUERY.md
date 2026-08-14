@@ -1,7 +1,11 @@
 # Sleipnir.Client.Linq — Tier 2: `SleipnirQuery<T>` (typed `.Include`/`.ThenInclude` over a known return)
 
-> Status: **spec** (not yet implemented). Tier 1 (`SleipnirLinqClient.Build`, `Dep<T>`, `SleipnirBatch`,
-> `EmitContracts`) is shipped. This document specifies the fluent query façade that sits on top of it.
+> Status: **implemented**. Tier 1 (`SleipnirLinqClient.Build`, `Dep<T>`, `SleipnirBatch`,
+> `EmitContracts`) and Tier 2 (`SleipnirQuery<T>` — `.From`/`.Include`/`.ThenInclude`/`.Where`/`.Build`/
+> `.Materialize`) are both shipped, and the §8 one-declaration pipeline is complete: the server-side
+> `[SleipnirNavigation]` (SleipnirCommon) flows through discovery (`navigation` field) into the
+> `sleipnir-linq` codegen, which drift-checks each edge and emits the client-side `[SleipnirNavigation]`
+> onto the contract DTOs — so generated clients drive `.Include(...)` without hand-annotation.
 > See `README_DETAILS.md` → "Dependency Chaining" and `DEPENDENCY_BINDING.md` for the underlying
 > `@alias`/`dependencyMapping` mechanism this builds on.
 

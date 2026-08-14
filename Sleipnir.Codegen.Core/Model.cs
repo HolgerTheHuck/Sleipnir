@@ -30,6 +30,22 @@ internal sealed class PropertyMeta
     public string PropertyName { get; set; } = "";
     public TypeRef PropertyType { get; set; } = new();
     public string? Documentation { get; set; }
+    /// <summary>Optional navigation edge (wire <c>navigation</c> object); null when absent.</summary>
+    public NavigationMeta? Navigation { get; set; }
+}
+
+/// <summary>
+/// Wire navigation edge (<c>{ fetch, key, childKey?, param? }</c>, camelCase). Deserialized from the
+/// discovery JSON produced by the server-side <c>[SleipnirNavigation]</c>; re-emitted by
+/// <c>CsContractsEmitter</c> as the client-side <c>[SleipnirNavigation]</c>. Mutable so the drift-gate
+/// validator can write the inferred <c>Param</c> back before emission.
+/// </summary>
+internal sealed class NavigationMeta
+{
+    public string Fetch { get; set; } = "";
+    public string Key { get; set; } = "";
+    public string? ChildKey { get; set; }
+    public string? Param { get; set; }
 }
 
 internal sealed class EnumMember
@@ -72,12 +88,13 @@ internal sealed class ControllerMeta
 
 internal sealed class ResolvedProperty
 {
-    public ResolvedProperty(string wireName, string declaredName, TypeRef typeRef, string? documentation)
+    public ResolvedProperty(string wireName, string declaredName, TypeRef typeRef, string? documentation, NavigationMeta? navigation = null)
     {
         WireName = wireName;
         DeclaredName = declaredName;
         TypeRef = typeRef;
         Documentation = documentation;
+        Navigation = navigation;
     }
     /// <summary>camelCase wire name (matches the server's CamelCase policy).</summary>
     public string WireName { get; }
@@ -85,6 +102,11 @@ internal sealed class ResolvedProperty
     public string DeclaredName { get; }
     public TypeRef TypeRef { get; }
     public string? Documentation { get; }
+    /// <summary>
+    /// Optional navigation edge. Settable so <c>EmitterBuilder.ValidateNavigation</c> can write the
+    /// inferred <c>Param</c> back after resolution; the emitter reads the finalized value.
+    /// </summary>
+    public NavigationMeta? Navigation { get; set; }
 }
 
 internal sealed class ResolvedType

@@ -19,8 +19,10 @@ internal static class CsContractsEmitter
     {
         "// Generated from Sleipnir runtime discovery. The interfaces ARE the contract.",
         "// Requires the Sleipnir.Client.Linq NuGet package (Arg<T>, Dep<T>,",
-        "// [SleipnirServiceContract], [SleipnirMethodContract]).",
+        "// [SleipnirServiceContract], [SleipnirMethodContract], [SleipnirNavigation]).",
         "// DTO properties are camelCase on the wire; [JsonPropertyName] maps them to PascalCase POCOs.",
+        "// [SleipnirNavigation] edges are emitted from the server-side [SleipnirNavigation] through",
+        "// discovery and drift-checked at generation time (fetch/key/param validated by EmitContracts).",
     };
 
     /// <summary>Emit the C# LINQ contracts as a single SleipnirContracts.g.cs string.</summary>
@@ -82,7 +84,19 @@ internal static class CsContractsEmitter
             ? "        // TODO: property \"" + p.DeclaredName + "\" type \"" + (p.TypeRef.NativeName ?? "?") + "\" is an opaque framework/BCL type not modelled in discovery; emitted as object.\n"
             : "";
         var doc = !string.IsNullOrEmpty(p.Documentation) ? "        /// <summary>" + p.Documentation + "</summary>\n" : "";
-        return doc + todo + "        [JsonPropertyName(\"" + p.WireName + "\")]\n        public " + ty + " " + propName + " { get; set; }";
+        // [SleipnirNavigation] edge (emitted from the server-side attribute via discovery). Param is
+        // always present after the EmitContracts drift-gate (explicit or inferred); ChildKey only when set.
+        var nav = "";
+        if (p.Navigation is { } n)
+        {
+            nav = "        [SleipnirNavigation(Fetch = \"" + n.Fetch + "\", Key = \"" + n.Key + "\"";
+            if (!string.IsNullOrEmpty(n.ChildKey))
+                nav += ", ChildKey = \"" + n.ChildKey + "\"";
+            if (!string.IsNullOrEmpty(n.Param))
+                nav += ", Param = \"" + n.Param + "\"";
+            nav += ")]\n";
+        }
+        return doc + todo + nav + "        [JsonPropertyName(\"" + p.WireName + "\")]\n        public " + ty + " " + propName + " { get; set; }";
     }
 
     // --- Service interfaces — one [SleipnirServiceContract] interface per controller. ---

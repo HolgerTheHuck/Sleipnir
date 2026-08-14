@@ -89,6 +89,45 @@ Full reasoning and trade-offs: [`BEST_PRACTICES.md`](BEST_PRACTICES.md).
 
 ---
 
+## Typed LINQ client (`Sleipnir.Client.Linq`)
+
+The `@alias` chain above is powerful but stringly typed — a mistyped JsonPath or a placeholder wired into the wrong parameter compiles fine and fails at runtime. `Sleipnir.Client.Linq` closes that gap at **compile time**, over **generated service-contract interfaces**.
+
+**Tier 1 — typed `@alias` wiring.** A `Dep<T>` only fits the `Arg<T>` it was built from; the JsonPath is built from a selector lambda, so it cannot be mistyped:
+
+```csharp
+using Sleipnir.Client.Linq;
+using Sleipnir.Linq.Contracts; // generated IOrderService, Order, …
+
+var linq = new SleipnirLinqClient(restClient);
+
+var create = linq.Build((IOrderService c) => c.Create(new CreateOrderDto { CustomerId = 7 }));
+Dep<int> orderId = create.Expose();                 // "$" → Dep<int>
+
+var fetch  = linq.Build((IOrderService c) => c.GetById(orderId));   // Arg<int> accepts Dep<int>
+Dep<string> status = fetch.Expose(o => o!.Status);  // "$.status" → Dep<string>
+
+var responses = await linq.SendAsync(new SleipnirBatch(create, fetch));
+var order = linq.ResultOf<Order>(fetch, responses);
+```
+
+**Tier 2 — eager-load a navigation graph.** An EF-Core-shaped façade over the *same* native wire — `.Include`/`.ThenInclude` declare edges that are compile-checked against the contract, then compiled into an ordinary `@alias`/`dependencyMapping` multi-request (the server sees no query):
+
+```csharp
+var query = linq.From((ICustomerService c) => c.SelectCustomers())
+    .Include(c => c.Kontakt)            // reference nav, checked against Customer
+        .ThenInclude(k => k.Ansprechpartner)   // checked against the Kontakt leaf
+    .Include(c => c.Bestellungen);      // sibling collection nav
+
+List<Customer> customers = linq.Materialize(query, await linq.SendAsync(query.Build()));
+```
+
+The `[SleipnirNavigation]` edges the façade navigates are **generated from your server DTOs through discovery** — annotate the server property once, and the `sleipnir-linq` codegen resolves, drift-checks, and re-emits the matching client attribute. No hand-annotation, no drift.
+
+Details: [`LINQ_QUERY.md`](LINQ_QUERY.md).
+
+---
+
 ## Sleipnir + REST — not a replacement, a complement
 
 Sleipnir doesn't replace your REST API. It **sits next to it** on the same host, sharing the

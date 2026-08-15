@@ -278,8 +278,8 @@ Details: [`README_DETAILS.md#developer-ui`](README_DETAILS.md#developer-ui)
 | `Sleipnir.Client.Linq` | ✅ `1.1.0` | — | Typed LINQ client: `Dep<T>`/`Arg<T>` type-safe `@alias` wiring + `SleipnirQuery<T>` `.Include`/`.ThenInclude` eager-load façade. |
 | **`sleipnir-client`** | — | ✅ `sleipnir-client` | TypeScript/JavaScript client (REST + WebSocket, isomorphic). |
 | `sleipnir-codegen` | — | ✅ (soon) | CLI: typed client stubs from discovery (`sleipnir-gen --lang ts\|js\|cs\|py`). |
-| `Sleipnir.Generator` | ✅ (soon) | — | Roslyn source generator (typed C# client from `contract.sleipnir.json`). |
-| `Sleipnir.Server.Codegen` | ✅ (soon) | — | Server-side contract export + drift-check (build-time). |
+| `Sleipnir.Generator` | ✅ `1.1.0` | — | Roslyn source generator (typed C# client from `contract.sleipnir.json`). |
+| `Sleipnir.Server.Codegen` | ✅ `1.1.0` | — | Server-side contract export + drift-check (build-time). |
 
 > **Pick `Sleipnir.Server` when you want everything.** Reference a single transport package
 > directly (e.g. `Sleipnir.Rest` for REST-only, `Sleipnir.WebSocket` for a non-.NET client) to skip

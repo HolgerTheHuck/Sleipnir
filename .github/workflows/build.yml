@@ -78,6 +78,9 @@ jobs:
           # .NET-native codegen trio (discovery JSON = standard contract): Roslyn source generator + server-side export/drift-check.
           dotnet pack Sleipnir.SourceGenerator/Sleipnir.SourceGenerator.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
           dotnet pack Sleipnir.Server.Codegen/Sleipnir.Server.Codegen.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          # Typed LINQ client pair: runtime Dep<T>/SleipnirQuery<T> façade + the sleipnir-linq dotnet tool that generates contracts.
+          dotnet pack Sleipnir.Client.Linq/Sleipnir.Client.Linq.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          dotnet pack Sleipnir.Client.Linq.Codegen/Sleipnir.Client.Linq.Codegen.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
 
       - name: Publish to NuGet
         run: dotnet nuget push "**/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

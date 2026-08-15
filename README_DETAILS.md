@@ -414,19 +414,19 @@ Sleipnir v1 is intentionally focused. The following are deliberate scope decisio
 
 ```xml
 <!-- Server: all transports (hub + REST + WebSocket + DevUI) -->
-<PackageReference Include="Sleipnir.Server" Version="1.0.0" />
+<PackageReference Include="Sleipnir.Server" Version="1.1.0" />
 
 <!-- Optional: OpenTelemetry SDK bootstrap -->
-<PackageReference Include="Sleipnir.Telemetry" Version="1.0.0" />
+<PackageReference Include="Sleipnir.Telemetry" Version="1.1.0" />
 
 <!-- Or individual transports -->
-<PackageReference Include="Sleipnir.Core" Version="1.0.0" />
-<PackageReference Include="Sleipnir.Hub" Version="1.0.0" />
-<PackageReference Include="Sleipnir.Rest" Version="1.0.0" />
-<PackageReference Include="Sleipnir.WebSocket" Version="1.0.0" />
+<PackageReference Include="Sleipnir.Core" Version="1.1.0" />
+<PackageReference Include="Sleipnir.Hub" Version="1.1.0" />
+<PackageReference Include="Sleipnir.Rest" Version="1.1.0" />
+<PackageReference Include="Sleipnir.WebSocket" Version="1.1.0" />
 
 <!-- Client -->
-<PackageReference Include="Sleipnir.Client" Version="1.0.0" />
+<PackageReference Include="Sleipnir.Client" Version="1.1.0" />
 ```
 
 ### Distributed Tracing

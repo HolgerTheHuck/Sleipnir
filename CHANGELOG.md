@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-15
+
 ### Added
 - **`Sleipnir.Client.Linq`** — typed client LINQ package: `Dep<T>`/`Arg<T>` compile-time type-safe
   `@alias` wiring (Tier 1) and the `SleipnirQuery<T>` `.Include`/`.ThenInclude`/`.Where`/`.Build`/

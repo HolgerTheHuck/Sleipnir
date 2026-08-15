@@ -55,7 +55,7 @@ curl -k -X POST https://localhost:5001/api/sleipnir/json \
 ```
 
 > Want a full server + Svelte SPA? Use `dotnet new sleipnir-server-spa` instead.  
-> Want a drop-in sample that uses Sleipnir from NuGet (no repo clone needed)? See [`samples/HelloSleipnir`](samples/HelloSleipnir) — a minimal server with `<PackageReference Include="Sleipnir.Server" Version="1.0.0" />`.
+> Want a drop-in sample that uses Sleipnir from NuGet (no repo clone needed)? See [`samples/HelloSleipnir`](samples/HelloSleipnir) — a minimal server with `<PackageReference Include="Sleipnir.Server" Version="1.1.0" />`.
 
 ---
 
@@ -267,15 +267,15 @@ Details: [`README_DETAILS.md#developer-ui`](README_DETAILS.md#developer-ui)
 
 | Package | NuGet | npm | What |
 |---|---|---|---|
-| **`Sleipnir.Server`** | ✅ `1.0.0` | — | All-in-one server meta-package (all transports + DevUI). Pulls Core/Hub/Rest/WebSocket/DeveloperUi transitively. |
-| `Sleipnir.Core` | ✅ `1.0.0` | — | Execution engine (invoker, discovery, dependency resolver). |
-| `Sleipnir.Hub` | ✅ `1.0.0` | — | SignalR transport + `AddSleipnir`/`UseSleipnir` host. |
-| `Sleipnir.Rest` | ✅ `1.0.0` | — | REST / JSON minimal-API transport. |
-| `Sleipnir.WebSocket` | ✅ `1.0.0` | — | RFC 6455 WebSocket transport. |
+| **`Sleipnir.Server`** | ✅ `1.1.0` | — | All-in-one server meta-package (all transports + DevUI). Pulls Core/Hub/Rest/WebSocket/DeveloperUi transitively. |
+| `Sleipnir.Core` | ✅ `1.1.0` | — | Execution engine (invoker, discovery, dependency resolver). |
+| `Sleipnir.Hub` | ✅ `1.1.0` | — | SignalR transport + `AddSleipnir`/`UseSleipnir` host. |
+| `Sleipnir.Rest` | ✅ `1.1.0` | — | REST / JSON minimal-API transport. |
+| `Sleipnir.WebSocket` | ✅ `1.1.0` | — | RFC 6455 WebSocket transport. |
 | `Sleipnir.DeveloperUi` | ✅ (via Server) | — | Built-in Developer UI (served by host; included in `Sleipnir.Server`). |
-| `Sleipnir.Telemetry` | ✅ `1.0.0` | — | Optional OpenTelemetry SDK bootstrap (OTLP/Console exporters). |
-| `Sleipnir.Client` | ✅ `1.0.0` | — | C# client (REST + WebSocket + SignalR, fluent builder). |
-| `Sleipnir.Client.Linq` | ✅ (soon) | — | Typed LINQ client: `Dep<T>`/`Arg<T>` type-safe `@alias` wiring + `SleipnirQuery<T>` `.Include`/`.ThenInclude` eager-load façade. |
+| `Sleipnir.Telemetry` | ✅ `1.1.0` | — | Optional OpenTelemetry SDK bootstrap (OTLP/Console exporters). |
+| `Sleipnir.Client` | ✅ `1.1.0` | — | C# client (REST + WebSocket + SignalR, fluent builder). |
+| `Sleipnir.Client.Linq` | ✅ `1.1.0` | — | Typed LINQ client: `Dep<T>`/`Arg<T>` type-safe `@alias` wiring + `SleipnirQuery<T>` `.Include`/`.ThenInclude` eager-load façade. |
 | **`sleipnir-client`** | — | ✅ `sleipnir-client` | TypeScript/JavaScript client (REST + WebSocket, isomorphic). |
 | `sleipnir-codegen` | — | ✅ (soon) | CLI: typed client stubs from discovery (`sleipnir-gen --lang ts\|js\|cs\|py`). |
 | `Sleipnir.Generator` | ✅ (soon) | — | Roslyn source generator (typed C# client from `contract.sleipnir.json`). |
@@ -289,13 +289,13 @@ Details: [`README_DETAILS.md#developer-ui`](README_DETAILS.md#developer-ui)
 
 ```xml
 <!-- All transports + Developer UI -->
-<PackageReference Include="Sleipnir.Server" Version="1.0.0" />
+<PackageReference Include="Sleipnir.Server" Version="1.1.0" />
 
 <!-- Optional: OpenTelemetry bootstrap -->
-<PackageReference Include="Sleipnir.Telemetry" Version="1.0.0" />
+<PackageReference Include="Sleipnir.Telemetry" Version="1.1.0" />
 
 <!-- C# client -->
-<PackageReference Include="Sleipnir.Client" Version="1.0.0" />
+<PackageReference Include="Sleipnir.Client" Version="1.1.0" />
 ```
 
 ### Client (npm)

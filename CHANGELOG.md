@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (npm: `sleipnir-codegen@1.2.3`)
+- **Added the missing package README.** `sleipnir-codegen`'s `package.json`
+  declared `"README.md"` in `files`, but the file did not exist in the package
+  root, so every published tarball (through 1.2.2) shipped without a README and
+  npmjs.com showed "This package does not have a README." Added a README
+  documenting the CLI (`sleipnir-gen --lang ts|js|cs|py --discovery …`), the four
+  emitters and their output file sets / runtime dependencies / transport support,
+  and the programmatic (browser-safe core + `sleipnir-codegen/node`) API. No
+  code change.
+
 ### Fixed (NuGet: `1.1.4` — `Sleipnir.Generator` + `Sleipnir.Codegen.Core`)
 - **`BatchEntry.Alias(name)` in the .NET-native C# emitter now ensures the leading `@`.**
   The Roslyn source generator (`Sleipnir.Generator`) and the `SleipnirCodegen.EmitClient`

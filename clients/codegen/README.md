@@ -1,0 +1,163 @@
+# sleipnir-codegen
+
+Typed client stub generator for [Sleipnir](../../README.md) — the code-first,
+multi-transport RPC framework for .NET 8+. It turns a Sleipnir **discovery
+payload** (`GET /api/sleipnir/discovery`) into typed client stubs in
+**TypeScript**, **JavaScript**, **C#**, and **Python**, so a consumer calls
+`client.order.getById(42)` instead of hand-writing `SleipnirCall.init(...)`.
+
+The discovery payload *is* the contract — there is no `.proto` / IDL. The C#
+classes decorated with `[SleipnirController]` / `[SleipnirMethod]` on the server
+are reflected at runtime into the discovery JSON, and this generator turns
+that JSON back into a typed surface on the client.
+
+## Install
+
+```bash
+# CLI (global tool, optional — `npx` works too)
+npm i -g sleipnir-codegen
+# or ad-hoc:
+npx sleipnir-gen --lang ts --discovery https://localhost:5001/api/sleipnir/discovery --out src/api
+
+# Programmatic (build tool, DevUI, custom emitter)
+npm i -D sleipnir-codegen
+```
+
+The generator depends on [`sleipnir-client`](https://www.npmjs.com/package/sleipnir-client)
+for the TS/JS transports (`rest` / `ws`) — the generated `SleipnirClient` wires
+up the matching `sleipnir-client` runtime. The `cs` and `py` emitters are
+self-contained (they call the Sleipnir REST endpoint directly; no npm runtime
+needed).
+
+## CLI
+
+```bash
+sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdout]
+             [--base-url <url>] [--bearer <token>] [--timeout <s>]
+             [--transport rest|ws|both]
+```
+
+- `--lang` (required): `ts` | `js` | `cs` | `py`.
+- `--discovery` / `-d` (required): a live `http(s)://…` URL, a file path, or
+  `-` for stdin.
+- `--out` / `-o`: output directory (one file per generated module, plus a
+  `types` module for TS/CS/PY). Mutually exclusive with `--stdout`.
+- `--stdout`: write the generated source to stdout (single concatenated
+  stream) instead of files.
+- `--base-url`: base URL hint rendered into the generated client preamble
+  (the generated client still takes a base URL at construction; this is a
+  design-time default baked into the header).
+- `--bearer`: bearer token used **only** to fetch `--discovery` over HTTP
+  (never written into the generated code).
+- `--timeout`: HTTP timeout (seconds) for fetching `--discovery` from a URL.
+- `--transport rest|ws|both` (ts|js only, default `rest`): which
+  `sleipnir-client` runtime client the generated `SleipnirClient` wires up.
+  `cs` and `py` are REST-only (no WS/SignalR runtime to wire).
+- `--help` / `-h`, `--version` / `-v`.
+
+Exit codes: `0` ok · `1` usage/runtime error · `2` discovery shape mismatch ·
+`3` I/O error.
+
+### Examples
+
+```bash
+# Live server → typed TS client into src/api/
+npx sleipnir-gen --lang ts --discovery https://localhost:5001/api/sleipnir/discovery --out src/api
+
+# WS transport for the TS client
+npx sleipnir-gen --lang ts --transport ws --discovery https://localhost:5001/api/sleipnir/discovery --out src/api
+
+# Saved contract file → self-contained Python client to stdout
+npx sleipnir-gen --lang py --discovery contract.sleipnir.json --stdout > client.py
+
+# Pipe a contract through stdin → single C# file
+cat contract.sleipnir.json | npx sleipnir-gen --lang cs --discovery - --stdout > SleipnirGenerated.cs
+
+# Authenticated discovery fetch (token never reaches the generated code)
+npx sleipnir-gen --lang ts --discovery https://api.example.com/api/sleipnir/discovery \
+  --bearer "$TOKEN" --out src/api
+```
+
+## What each emitter produces
+
+| `--lang` | Output | Runtime dependency | Transports |
+|---|---|---|---|
+| `ts` | `api/client.ts`, `api/controllers.ts`, `api/index.ts`, `api/typed-call.ts`, `api/types.ts` | `sleipnir-client` | `rest` / `ws` / `both` |
+| `js` | `api/client.js`, `api/controllers.js`, `api/index.js`, `api/types.js` (JSDoc-typed) | `sleipnir-client` | `rest` / `ws` / `both` |
+| `cs` | `SleipnirGenerated.cs` (single file) | `SleipnirClient` (.NET, referenced) | REST only |
+| `py` | `client.py`, `types.py`, `__init__.py` | `httpx` (self-contained) | REST only |
+
+The TS/JS emitters generate a **typed call surface**: a `TypedCall` /
+`TypedRequest` builder with path records (`XPaths` / `XArrayPaths`) constraining
+`exposes(jsonPath, alias)` to real JSONPaths, and a typed `alias(name)` that
+returns the `@alias` wire placeholder. The `exposes`/`alias` pair is
+`@`-normalized symmetrically — `exposes` strips a leading `@` for the wire
+`dependencyMapping` key, `alias` ensures one for the consumer placeholder —
+so both `alias("ids")` and `alias("@ids")` yield `"@ids"`. (Pre-1.2.2 `alias`
+returned the bare name and the server's `ReplaceDependencyByAlias` never
+matched; fixed in 1.2.2.)
+
+The C# and Python emitters mirror the same typed-batch runtime (`Alias` /
+`Arg<T>` / `Batch`) for their respective languages; the C# port is kept
+byte-for-byte in parity with the TS `--lang cs` snapshot by the
+`CsCodegenParityTests` gate in the .NET test suite.
+
+## Programmatic API
+
+The core is browser-safe (`sleipnir-codegen`); Node-only discovery loading
+(`node:fs`, stdin) lives in `sleipnir-codegen/node`. The DevUI imports the
+core directly.
+
+```ts
+// Browser-safe core (emitters + model)
+import {
+  buildEmitterInput, NamingResolver,
+  emitTsClient, emitJsClient, emitCsClient, emitPyClient,
+} from "sleipnir-codegen";
+
+// Node entry adds discovery loading (fs + stdin) — not browser-safe.
+import { loadDiscovery } from "sleipnir-codegen/node";
+
+// loadDiscovery asserts the shape internally and returns a typed DiscoveryInfo;
+// it throws DiscoveryShapeError on a non-conformant payload (the ingress gate).
+const discovery = await loadDiscovery(
+  "https://localhost:5001/api/sleipnir/discovery",
+  { bearer: token },
+);
+
+const input = buildEmitterInput(discovery, new NamingResolver());
+const tree = emitTsClient(input, { transport: "rest", baseUrl: "https://localhost:5001" });
+// tree: Record<relativePath, fileContent> — write each entry to disk.
+for (const [rel, content] of Object.entries(tree)) writeFileSync(join(outDir, rel), content);
+```
+
+Each `emit*Client(input, opts?)` returns a `Record<string, string>` of
+relative path → file content. The emitter input is built once from the
+`DiscoveryInfo` via `buildEmitterInput(discovery, namingResolver)`; the same
+input can be fed to all four emitters.
+
+If you already hold a parsed payload (e.g. from `sleipnir-client`'s
+`client.discover()`), validate it explicitly with
+`assertDiscoveryShape(obj)` (throws `DiscoveryShapeError`) before feeding it
+to `buildEmitterInput` — the ingress gate refuses a malformed contract at
+generation time rather than emitting a broken client.
+
+## Development
+
+```bash
+cd clients/codegen
+npm install
+npm run build        # tsc -> dist/
+npm run typecheck    # src + test, --noEmit
+npm test             # vitest unit tests (golden snapshots + compile gates)
+npm run test:e2e     # optional end-to-end (needs a running sample server)
+```
+
+Golden snapshots live under `test/snapshots/` (one folder per
+`storyNN.<lang>[.transport]` fixture). Regenerate after an intentional emitter
+change with `scripts/regen-snapshots.mjs` (all four emitters) or
+`test/gen-snapshots.mjs` (ts/js only), then review the diff.
+
+## License
+
+MIT.

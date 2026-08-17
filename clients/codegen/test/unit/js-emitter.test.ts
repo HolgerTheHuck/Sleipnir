@@ -43,4 +43,74 @@ describe("emitJsClient (golden against story01 snapshot)", () => {
     expect(tree["api/types.js"]).toContain("@typedef {Object} Order");
     expect(tree["api/types.js"]).toContain("@property {number} customerId");
   });
+
+  it("wires the REST runtime client and resolves the batch bugfix (requests+mode)", () => {
+    const c = tree["api/client.js"];
+    expect(c).toContain("SleipnirRestClient");
+    expect(c).toContain("this._rest");
+    // callBatch must be called with (requests, mode), not the multi object.
+    expect(c).toContain("this._rest.callBatch(m.requests, m.mode)");
+    expect(c).not.toContain("callBatch(b.toMulti())");
+  });
+});
+
+describe("emitJsClient --transport ws (golden against story01.ws.js snapshot)", () => {
+  const input = buildEmitterInput(readFixture(), new NamingResolver());
+  const tree = emitJsClient(input, { transport: "ws" });
+
+  it("emits the same file set as rest (only client.js differs)", () => {
+    expect(Object.keys(tree).sort()).toEqual(
+      ["api/client.js", "api/controllers.js", "api/index.js", "api/types.js"],
+    );
+  });
+
+  it("matches the committed ws snapshot byte-for-byte", () => {
+    const snapshot = readTree(join(here, "..", "snapshots", "story01.ws.js"));
+    for (const [path, content] of Object.entries(tree)) {
+      expect(snapshot[path], `snapshot missing for ${path}`).toBeDefined();
+      expect(content).toBe(snapshot[path]);
+    }
+    expect(Object.keys(snapshot).sort()).toEqual(Object.keys(tree).sort());
+  });
+
+  it("wires the WebSocket runtime client", () => {
+    const c = tree["api/client.js"];
+    expect(c).toContain("SleipnirWebSocketClient");
+    expect(c).toContain("this._ws");
+    expect(c).toContain("this._ws.callBatch(m.requests, m.mode)");
+    expect(c).not.toContain("SleipnirRestClient");
+    expect(c).not.toContain("callWs");
+  });
+});
+
+describe("emitJsClient --transport both (golden against story01.both.js snapshot)", () => {
+  const input = buildEmitterInput(readFixture(), new NamingResolver());
+  const tree = emitJsClient(input, { transport: "both" });
+
+  it("emits the same file set as rest (only client.js differs)", () => {
+    expect(Object.keys(tree).sort()).toEqual(
+      ["api/client.js", "api/controllers.js", "api/index.js", "api/types.js"],
+    );
+  });
+
+  it("matches the committed both snapshot byte-for-byte", () => {
+    const snapshot = readTree(join(here, "..", "snapshots", "story01.both.js"));
+    for (const [path, content] of Object.entries(tree)) {
+      expect(snapshot[path], `snapshot missing for ${path}`).toBeDefined();
+      expect(content).toBe(snapshot[path]);
+    }
+    expect(Object.keys(snapshot).sort()).toEqual(Object.keys(tree).sort());
+  });
+
+  it("wires both runtime clients and exposes the Ws variants", () => {
+    const c = tree["api/client.js"];
+    expect(c).toContain("SleipnirRestClient");
+    expect(c).toContain("SleipnirWebSocketClient");
+    expect(c).toContain("this._rest");
+    expect(c).toContain("this._ws");
+    expect(c).toContain("async callWs(call)");
+    expect(c).toContain("async batchWs(b)");
+    expect(c).toContain("this._rest.callBatch(m.requests, m.mode)");
+    expect(c).toContain("this._ws.callBatch(m.requests, m.mode)");
+  });
 });

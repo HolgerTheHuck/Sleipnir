@@ -10,15 +10,17 @@ import { NamingResolver } from "../core/naming.js";
 
 export interface EmitJsOptions {
   baseUrl?: string;
+  /** Same transport contract as the TS emitter (see EmitTsOptions.transport). */
+  transport?: "rest" | "ws" | "both";
 }
 
 /** Emit the full JS client as a file tree. */
-export function emitJsClient(input: EmitterInput, _opts: EmitJsOptions = {}): Record<string, string> {
+export function emitJsClient(input: EmitterInput, opts: EmitJsOptions = {}): Record<string, string> {
   const resolver = resolverFor(input);
   return {
     "api/types.js": emitTypeDefs(input, resolver),
     "api/controllers.js": emitControllers(input, resolver),
-    "api/client.js": emitClient(input),
+    "api/client.js": emitClient(input, opts),
     "api/index.js": `// Auto-generated barrel.\nexport { SleipnirClient } from "./client.js";\nexport * from "./controllers.js";\n`,
   };
 }
@@ -97,9 +99,96 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
 // client.js — root client.
 // ---------------------------------------------------------------------------
 
-function emitClient(input: EmitterInput): string {
+function emitClient(input: EmitterInput, opts: EmitJsOptions): string {
+  const transport = opts.transport ?? "rest";
   const imports = input.controllers.map((c) => `import { ${c.className} } from "./controllers.js";`).join("\n");
   const accessors = input.controllers.map((c) => `  this.${c.accessor} = new ${c.className}(build);`);
+
+  if (transport === "ws") {
+    return `// Auto-generated root Sleipnir client (JS, WebSocket transport).
+import { SleipnirCall, SleipnirWebSocketClient } from "sleipnir-client";
+${imports}
+
+export class SleipnirClient {
+  /**
+   * @param {string} baseUrl
+   * @param {SleipnirWebSocketClientOptions} [options]
+   */
+  constructor(baseUrl, options = {}) {
+    this._ws = new SleipnirWebSocketClient(baseUrl, options);
+    const build = (controller, method) => SleipnirCall.init(controller, method);
+${accessors.join("\n")}
+  }
+
+  /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
+  async call(call) {
+    return this._ws.call(call.toRequest());
+  }
+
+  /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
+  async batch(b) {
+    const m = b.toMulti();
+    return this._ws.callBatch(m.requests, m.mode);
+  }
+
+  get ws() {
+    return this._ws;
+  }
+}
+`;
+  }
+
+  if (transport === "both") {
+    return `// Auto-generated root Sleipnir client (JS, REST + WebSocket).
+import { SleipnirCall, SleipnirRestClient, SleipnirWebSocketClient } from "sleipnir-client";
+${imports}
+
+export class SleipnirClient {
+  /**
+   * @param {string} baseUrl
+   * @param {{ rest?: SleipnirRestClientOptions, ws?: SleipnirWebSocketClientOptions }} [options]
+   */
+  constructor(baseUrl, options = {}) {
+    this._rest = new SleipnirRestClient(baseUrl, options.rest ?? {});
+    this._ws = new SleipnirWebSocketClient(baseUrl, options.ws ?? {});
+    const build = (controller, method) => SleipnirCall.init(controller, method);
+${accessors.join("\n")}
+  }
+
+  /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
+  async call(call) {
+    return this._rest.call(call.toRequest());
+  }
+
+  /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
+  async batch(b) {
+    const m = b.toMulti();
+    return this._rest.callBatch(m.requests, m.mode);
+  }
+
+  /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
+  async callWs(call) {
+    return this._ws.call(call.toRequest());
+  }
+
+  /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
+  async batchWs(b) {
+    const m = b.toMulti();
+    return this._ws.callBatch(m.requests, m.mode);
+  }
+
+  get rest() {
+    return this._rest;
+  }
+
+  get ws() {
+    return this._ws;
+  }
+}
+`;
+  }
+
+  // rest (default).
   return `// Auto-generated root Sleipnir client (JS).
 import { SleipnirCall, SleipnirRestClient } from "sleipnir-client";
 ${imports}
@@ -122,7 +211,8 @@ ${accessors.join("\n")}
 
   /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
   async batch(b) {
-    return this._rest.callBatch(b.toMulti());
+    const m = b.toMulti();
+    return this._rest.callBatch(m.requests, m.mode);
   }
 
   get rest() {

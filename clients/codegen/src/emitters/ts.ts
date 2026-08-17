@@ -24,16 +24,24 @@ import { NamingResolver } from "../core/naming.js";
 export interface EmitTsOptions {
   /** Base URL hint rendered into the client header comment. */
   baseUrl?: string;
+  /**
+   * Which transport the generated `SleipnirClient` wires up.
+   * - `rest` (default): `SleipnirRestClient` + `.rest`; `call`/`batch` over REST.
+   * - `ws`: `SleipnirWebSocketClient` + `.ws`; `call`/`batch` over WebSocket.
+   * - `both`: both clients + `.rest`/`.ws`; `call`/`batch` over REST (default),
+   *   `callWs`/`batchWs` over WebSocket.
+   */
+  transport?: "rest" | "ws" | "both";
 }
 
 /** Emit the full TS client as a file tree. */
-export function emitTsClient(input: EmitterInput, _opts: EmitTsOptions = {}): Record<string, string> {
+export function emitTsClient(input: EmitterInput, opts: EmitTsOptions = {}): Record<string, string> {
   const resolver = resolverFor(input);
   return {
     "api/types.ts": emitTypes(input, resolver),
     "api/typed-call.ts": emitTypedCall(input, resolver),
     "api/controllers.ts": emitControllers(input, resolver),
-    "api/client.ts": emitClient(input, resolver),
+    "api/client.ts": emitClient(input, opts),
     "api/index.ts": emitIndex(input),
   };
 }
@@ -287,12 +295,111 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
 // client.ts — root client with per-controller accessors + call/batch helpers.
 // ---------------------------------------------------------------------------
 
-function emitClient(input: EmitterInput, _resolver: NamingResolver): string {
+function emitClient(input: EmitterInput, opts: EmitTsOptions): string {
+  const transport = opts.transport ?? "rest";
   const imports = input.controllers.map((c) => `import { ${c.className} } from "./controllers.js";`).join("\n");
   const accessors = input.controllers.map((c) => `  readonly ${c.accessor}: ${c.className};`);
   const inits = input.controllers.map((c) => `    this.${c.accessor} = new ${c.className}(build);`);
+
+  if (transport === "ws") {
+    return `// Auto-generated root Sleipnir client (WebSocket transport). Compose with the sleipnir-client runtime.
+import { SleipnirCall, SleipnirWebSocketClient } from "sleipnir-client";
+import type { SleipnirWebSocketClientOptions, SleipnirResponse } from "sleipnir-client";
+import { Batch, TypedCall } from "./typed-call.js";
+${imports}
+
+/** A SleipnirResponse whose \`data\` is narrowed to T (the wire shape is unchanged). */
+export type TypedResponse<T> = SleipnirResponse & { data: T | null };
+
+export class SleipnirClient {
+  private readonly _ws: SleipnirWebSocketClient;
+${accessors.join("\n")}
+
+  constructor(baseUrl: string, options: SleipnirWebSocketClientOptions = {}) {
+    this._ws = new SleipnirWebSocketClient(baseUrl, options);
+    const build = (controller: string, method: string) => SleipnirCall.init(controller, method);
+${inits.join("\n")}
+  }
+
+  /** Execute a single typed call over WebSocket; \`response.data\` is narrowed to T. */
+  async call<T, TPaths extends Record<string, unknown>>(call: TypedCall<T, TPaths>): Promise<TypedResponse<T>> {
+    return (await this._ws.call(call.toRequest())) as TypedResponse<T>;
+  }
+
+  /** Execute a typed batch over WebSocket (Serial — required for @alias resolution). */
+  async batch<A extends Record<string, unknown>>(b: Batch<A>): Promise<SleipnirResponse[]> {
+    const multi = b.toMulti();
+    return this._ws.callBatch(multi.requests, multi.mode);
+  }
+
+  /** The underlying WebSocket client (escape hatch for raw calls / lifecycle). */
+  get ws(): SleipnirWebSocketClient { return this._ws; }
+}
+`;
+  }
+
+  if (transport === "both") {
+    return `// Auto-generated root Sleipnir client (REST + WebSocket). Compose with the sleipnir-client runtime.
+import { SleipnirCall, SleipnirRestClient, SleipnirWebSocketClient } from "sleipnir-client";
+import type { SleipnirRestClientOptions, SleipnirWebSocketClientOptions, SleipnirResponse } from "sleipnir-client";
+import { Batch, TypedCall } from "./typed-call.js";
+${imports}
+
+/** A SleipnirResponse whose \`data\` is narrowed to T (the wire shape is unchanged). */
+export type TypedResponse<T> = SleipnirResponse & { data: T | null };
+
+/** Per-transport options for the combined client. */
+export interface SleipnirClientOptions {
+  rest?: SleipnirRestClientOptions;
+  ws?: SleipnirWebSocketClientOptions;
+}
+
+export class SleipnirClient {
+  private readonly _rest: SleipnirRestClient;
+  private readonly _ws: SleipnirWebSocketClient;
+${accessors.join("\n")}
+
+  constructor(baseUrl: string, options: SleipnirClientOptions = {}) {
+    this._rest = new SleipnirRestClient(baseUrl, options.rest ?? {});
+    this._ws = new SleipnirWebSocketClient(baseUrl, options.ws ?? {});
+    const build = (controller: string, method: string) => SleipnirCall.init(controller, method);
+${inits.join("\n")}
+  }
+
+  /** Execute a single typed call over REST (default transport); \`response.data\` is narrowed to T. */
+  async call<T, TPaths extends Record<string, unknown>>(call: TypedCall<T, TPaths>): Promise<TypedResponse<T>> {
+    return (await this._rest.call(call.toRequest())) as TypedResponse<T>;
+  }
+
+  /** Execute a typed batch over REST (Serial — required for @alias resolution). */
+  async batch<A extends Record<string, unknown>>(b: Batch<A>): Promise<SleipnirResponse[]> {
+    const multi = b.toMulti();
+    return this._rest.callBatch(multi.requests, multi.mode);
+  }
+
+  /** Execute a single typed call over WebSocket; \`response.data\` is narrowed to T. */
+  async callWs<T, TPaths extends Record<string, unknown>>(call: TypedCall<T, TPaths>): Promise<TypedResponse<T>> {
+    return (await this._ws.call(call.toRequest())) as TypedResponse<T>;
+  }
+
+  /** Execute a typed batch over WebSocket (Serial — required for @alias resolution). */
+  async batchWs<A extends Record<string, unknown>>(b: Batch<A>): Promise<SleipnirResponse[]> {
+    const multi = b.toMulti();
+    return this._ws.callBatch(multi.requests, multi.mode);
+  }
+
+  /** The underlying REST client (escape hatch for raw calls). */
+  get rest(): SleipnirRestClient { return this._rest; }
+
+  /** The underlying WebSocket client (escape hatch for raw calls / lifecycle). */
+  get ws(): SleipnirWebSocketClient { return this._ws; }
+}
+`;
+  }
+
+  // rest (default).
   return `// Auto-generated root Sleipnir client. Compose with the sleipnir-client runtime.
-import { SleipnirCall, SleipnirRestClient, ExecutionMode } from "sleipnir-client";
+import { SleipnirCall, SleipnirRestClient } from "sleipnir-client";
 import type { SleipnirRestClientOptions, SleipnirResponse } from "sleipnir-client";
 import { Batch, TypedCall } from "./typed-call.js";
 ${imports}

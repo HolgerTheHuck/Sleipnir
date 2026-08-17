@@ -2,6 +2,10 @@
 // must type-check the Story-01 diamond (producer exposes camelCase paths,
 // consumer resolves the typed alias). Spawns `tsc --noEmit` against a temp
 // project under the package root so `sleipnir-client` resolves via node_modules.
+//
+// Runs once per transport (rest | ws | both); the ws harness exercises the
+// `.ws` escape hatch, the both harness exercises `callWs`/`batchWs` + both
+// escape hatches — so the transport-specific surface in client.ts is covered.
 import { describe, it, expect } from "vitest";
 import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -20,13 +24,11 @@ const compileDir = join(pkgRoot, ".tsc-compile");
 const require = createRequire(import.meta.url);
 const tscPath = require.resolve("typescript/bin/tsc");
 
-const harness = `// Story-01 diamond: compile-time-typed dependency chain.
-import { SleipnirClient } from "./api/client.js";
-import { Batch } from "./api/typed-call.js";
+type Transport = "rest" | "ws" | "both";
 
-export async function diamond(): Promise<void> {
-  const client = new SleipnirClient("http://localhost:5001");
-  const batch = new Batch();
+/** Shared Story-01 diamond body — identical across transports; only the client
+ * construction + transport-specific surface (in `harnessFor`) differ. */
+const diamondBody = `  const batch = new Batch();
 
   // Producer exposes camelCase paths (compile-checked against JsonPathOf<Order>).
   const order = batch.add(client.order.getById(42))
@@ -47,7 +49,35 @@ export async function diamond(): Promise<void> {
   batch.add(client.address.getById(order.alias("@addressId")));
 
   await client.batch(batch);
+`;
 
+function harnessFor(t: Transport): string {
+  const ctor =
+    t === "ws" ? `  const client = new SleipnirClient("ws://localhost:5001/sleipnirws");`
+    : t === "both" ? `  const client = new SleipnirClient("http://localhost:5001", { rest: {}, ws: {} });`
+    : `  const client = new SleipnirClient("http://localhost:5001");`;
+
+  const surface =
+    t === "ws"
+      ? `  // ws-only client exposes the WebSocket escape hatch.
+  void client.ws;
+`
+      : t === "both"
+      ? `  // both: REST is the default call/batch; Ws variants + both escape hatches exist.
+  await client.callWs(client.order.getById(1));
+  await client.batchWs(batch);
+  void client.rest;
+  void client.ws;
+`
+      : ``;
+
+  return `// Story-01 diamond: compile-time-typed dependency chain (transport: ${t}).
+import { SleipnirClient } from "./api/client.js";
+import { Batch } from "./api/typed-call.js";
+
+export async function diamond(): Promise<void> {
+${ctor}
+${diamondBody}${surface}
   // --- Compile-time guarantees (must error without the suppression) ---
   // @ts-expect-error — PascalCase path is not in JsonPathOf<Order> (wire is camelCase).
   order.exposes("$.CustomerId", "@badPascal");
@@ -55,6 +85,7 @@ export async function diamond(): Promise<void> {
   order.alias("@nope");
 }
 `;
+}
 
 const tsconfig = JSON.stringify({
   compilerOptions: {
@@ -71,36 +102,41 @@ const tsconfig = JSON.stringify({
   include: ["api/**/*.ts", "harness.ts"],
 });
 
-function runTsc(): { status: number; stdout: string; stderr: string } {
-  const r = spawnSync(process.execPath, [tscPath, "--noEmit", "-p", join(compileDir, "tsconfig.json")], {
+function runTsc(projectDir: string): { status: number; stdout: string; stderr: string } {
+  const r = spawnSync(process.execPath, [tscPath, "--noEmit", "-p", join(projectDir, "tsconfig.json")], {
     encoding: "utf8",
     cwd: pkgRoot,
   });
   return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
-describe("generated TS compiles + typed diamond type-checks (tsc --noEmit)", () => {
+/** Emit the tree for `t`, write it + the transport harness + tsconfig into a
+ * fresh per-transport dir, and run tsc --noEmit. */
+function compileTransport(t: Transport): { status: number; stdout: string; stderr: string } {
+  const dir = join(compileDir, t);
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(join(dir, "api"), { recursive: true });
+
+  const tree = emitTsClient(buildEmitterInput(readFixture(), new NamingResolver()), { transport: t });
+  for (const [path, content] of Object.entries(tree)) {
+    const abs = join(dir, path);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, content, "utf8");
+  }
+  writeFileSync(join(dir, "harness.ts"), harnessFor(t), "utf8");
+  writeFileSync(join(dir, "tsconfig.json"), tsconfig, "utf8");
+
+  return runTsc(dir);
+}
+
+describe.each<Transport>(["rest", "ws", "both"])("generated TS compiles + typed diamond type-checks (transport: %s)", (t) => {
   it("tsc exits 0 against the diamond harness", () => {
-    rmSync(compileDir, { recursive: true, force: true });
-    mkdirSync(join(compileDir, "api"), { recursive: true });
-
-    const tree = emitTsClient(buildEmitterInput(readFixture(), new NamingResolver()));
-    for (const [path, content] of Object.entries(tree)) {
-      const abs = join(compileDir, path);
-      mkdirSync(dirname(abs), { recursive: true });
-      writeFileSync(abs, content, "utf8");
-    }
-    writeFileSync(join(compileDir, "harness.ts"), harness, "utf8");
-    writeFileSync(join(compileDir, "tsconfig.json"), tsconfig, "utf8");
-
-    const result = runTsc();
+    const result = compileTransport(t);
     if (result.status !== 0) {
-      console.error("tsc stdout:\n" + result.stdout);
-      console.error("tsc stderr:\n" + result.stderr);
+      console.error(`tsc stdout (${t}):\n` + result.stdout);
+      console.error(`tsc stderr (${t}):\n` + result.stderr);
     }
     expect(result.status).toBe(0);
-
-    rmSync(compileDir, { recursive: true, force: true });
   }, { timeout: 60_000 });
 });
 

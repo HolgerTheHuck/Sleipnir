@@ -277,7 +277,7 @@ Details: [`README_DETAILS.md#developer-ui`](README_DETAILS.md#developer-ui)
 | `Sleipnir.Client` | ✅ `1.1.0` | — | C# client (REST + WebSocket + SignalR, fluent builder). |
 | `Sleipnir.Client.Linq` | ✅ `1.1.0` | — | Typed LINQ client: `Dep<T>`/`Arg<T>` type-safe `@alias` wiring + `SleipnirQuery<T>` `.Include`/`.ThenInclude` eager-load façade. |
 | **`sleipnir-client`** | — | ✅ `1.1.1` | TypeScript/JavaScript client (REST + WebSocket, isomorphic). |
-| `sleipnir-codegen` | — | ✅ `1.1.1` | CLI: typed client stubs from discovery (`sleipnir-gen --lang ts\|js\|cs\|py`). |
+| `sleipnir-codegen` | — | ✅ `1.2.0` | CLI: typed client stubs from discovery (`sleipnir-gen --lang ts\|js\|cs\|py --transport rest\|ws\|both`). |
 | `Sleipnir.Generator` | ✅ `1.1.1` | — | Roslyn source generator (typed C# client from `contract.sleipnir.json`). |
 | `Sleipnir.Server.Codegen` | ✅ `1.1.1` | — | Server-side contract export + drift-check (build-time). |
 

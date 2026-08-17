@@ -1,0 +1,6 @@
+# Golden snapshot files are compared byte-for-byte against emitter output,
+# which is built from template literals using LF. Force LF on every platform
+# so a Windows checkout (core.autocrlf=true) does not CRLF-ify the snapshots
+# and break the golden tests. Scope is intentionally limited to the snapshot
+# tree; the rest of the repo keeps its own line-ending conventions.
+test/snapshots/** text eol=lf

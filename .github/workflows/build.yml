@@ -25,7 +25,13 @@ env:
 jobs:
   build-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The suite spawns several `dotnet build` compile-gates (CsCodegenParityTests,
+    # ts-compile) and WebApplicationFactory integration tests; on a slow/overloaded
+    # shared runner these can push the test step well past 10 min. 15 min was too
+    # tight (observed timeout-during-Test on an overloaded runner — the suite itself
+    # finishes in ~3 min on a warm/healthy runner). 30 min gives headroom for a bad
+    # runner day without masking a genuine hang indefinitely.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 

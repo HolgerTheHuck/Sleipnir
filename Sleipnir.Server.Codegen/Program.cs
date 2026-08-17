@@ -117,6 +117,23 @@ internal static class Program
         var discovery = invoker.GetDiscoveryInfo();
         discovery.Controllers = discovery.Controllers.OrderBy(c => c.Name, StringComparer.Ordinal).ToList();
 
+        // Vacuous-green guard: a server that ships a contract.sleipnir.json is expected to expose
+        // controllers. An EMPTY discovery is almost always a tool/load failure (e.g. the export tool
+        // running on a runtime that cannot reflect the server assembly — the 1.1.2 net10 regression,
+        // where a net8-pinned tool loaded a net10 server assembly and silently found nothing), not an
+        // intentional empty contract. Without this guard the drift-check passes vacuously
+        // (empty == empty) and the broken contract ships unnoticed. Fail loudly as a tool error (exit 2)
+        // so the build breaks instead of going green on an empty contract.
+        if (discovery.Controllers.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Regenerated contract has 0 [SleipnirController] types from '{serverAssemblyPath}'. " +
+                "A server that ships a contract.sleipnir.json is expected to expose controllers; an empty " +
+                "discovery is almost certainly a tool/load failure (e.g. the export tool running on a " +
+                "runtime that cannot reflect the server assembly), not an intentional empty contract. " +
+                "Aborting so the drift-check fails loudly instead of passing vacuously (empty == empty).");
+        }
+
         return JsonSerializer.Serialize(discovery, DiscoverySerialization.Options);
     }
 

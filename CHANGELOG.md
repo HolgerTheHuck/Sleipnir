@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (npm: `sleipnir-client@1.2.0`)
+- **Dynamic bearer for rotating JWTs.** The `bearer` option on `SleipnirRestClient`,
+  `SleipnirWebSocketClient`, and `createClient` now accepts `string | (() => string)`.
+  A provider function is resolved fresh per REST call and per WS connect/reconnect, so a
+  rotating access token is used without rebuilding the client. Both clients also expose
+  `setBearer(b)` to swap the token at runtime (REST: next call; WS: next connect/reconnect
+  — an already-open WS keeps its handshake token). `string` remains fully backward
+  compatible. Exported `BearerProvider` type from `sleipnir-client`.
+
+## [1.1.3] - 2026-08-17
+
+### Fixed
+- **`Sleipnir.Server.Codegen` now discovers controllers on .NET 10 (and 9) consumers.**
+  The export tool targets `net8.0` and reflects the consumer's built server assembly via
+  `Assembly.LoadFrom`. When the MSBuild target invoked it with the bare `dotnet
+  <tool.dll>`, the tool process was pinned to the **net8 runtime** (its own
+  `runtimeconfig.json`), which cannot load/reflect a **net10** server assembly's controller
+  types — `GetTypes()` silently dropped them and discovery returned an **EMPTY contract**
+  (`{"discoveryVersion":"1","controllers":[],"types":{}}`). The drift-check then passed
+  *vacuously* (empty == empty), so the broken contract shipped unnoticed. Two fixes:
+  1. `<RollForward>LatestMajor</RollForward>` is now baked into the tool's
+     `runtimeconfig.json`, so `dotnet <tool.dll>` rolls up to the consumer's highest
+     installed runtime (net10 on a .NET 10 consumer) and the `[SleipnirController]` scan
+     succeeds. Safe for net8 consumers too (net8 is the highest runtime there).
+  2. A **zero-controller guard** in the export tool: a server that ships a
+     `contract.sleipnir.json` is expected to expose controllers, so an empty regenerated
+     discovery now throws a tool error (exit 2) — the build breaks loudly instead of going
+     green on an empty contract. Belt-and-suspenders for any future runtime-reflect failure.
+
+  Root cause was the **runtime** mismatch (net8 tool process vs net10 server assembly),
+  not an attribute-type-identity mismatch: `Sleipnir.Common`/`SleipnirCore` ship only a
+  `net8.0` build, so a net10 NuGet consumer resolves the same net8 binary the tool
+  co-locates — same assembly identity, same `[SleipnirController]` type — and the loader
+  returns the already-loaded instance. Verified end-to-end on a NuGet-consuming net10
+  server: bare `dotnet <tool.dll>` (roll-forward) finds the controller; an explicit
+  net8-pinned process finds zero and trips the guard.
+
 ## [1.1.2] - 2026-08-17
 
 ### Fixed

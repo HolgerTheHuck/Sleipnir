@@ -6,6 +6,16 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- The tool reflects the consumer's BUILT server assembly via Assembly.LoadFrom. It must run on
+         the consumer's runtime, not the net8 it was built against: a net8-pinned tool process cannot
+         load/reflect a net10 (or net9) server assembly's controller types, so discovery silently
+         returns an EMPTY contract (`{"controllers":[],"types":{}}`) — and the drift-check then passes
+         vacuously (empty == empty). LatestMajor rolls `dotnet <tool.dll>` up to the highest installed
+         runtime (net10 on a .NET 10 consumer), under which the net10 server assembly's types load and
+         the [SleipnirController] scan succeeds. Safe for net8 consumers too: net8 is the highest
+         installed runtime there, so it stays on net8. (Repro: a net10 server + the 1.1.2 package
+         produced an empty contract; with LatestMajor the Orders controller + Repro10.Order type appear.) -->
+    <RollForward>LatestMajor</RollForward>
     <PackageId>Sleipnir.Server.Codegen</PackageId>
     <IsPackable>true</IsPackable>
     <Description>Server-side Sleipnir contract export + drift-check. Regenerates the discovery contract (contract.sleipnir.json) in-process from a built server assembly via SleipnirDiscoveryService, and fails the build if the regenerated contract drifts from the committed one (SLEIPNIR_REGEN_GOLDEN=1 to regenerate). NuGet-shipped, Node-free.</Description>

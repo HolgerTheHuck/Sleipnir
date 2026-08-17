@@ -15,7 +15,7 @@
 // conditional — which would be ambiguous because all generated properties are
 // optional (every interface would be structurally assignable to every other).
 
-import type { EmitterInput, ResolvedController, ResolvedMethod, ResolvedTypeRef } from "../core/model.js";
+import type { EmitterInput, ResolvedController, ResolvedMethod, ResolvedType, ResolvedTypeRef } from "../core/model.js";
 import { toCamelCase } from "../core/casing.js";
 import { tsTypeOfRef } from "../core/model.js";
 import { tsTypeOf } from "../core/scalars.js";
@@ -78,6 +78,78 @@ function emitTypes(input: EmitterInput, _resolver: NamingResolver): string {
 
 const SCALAR_KINDS = ["number", "string", "boolean", "bigint", "unknown"] as const;
 
+/**
+ * Maximum number of nested-type descents when building path records. The root
+ * type is depth 0; each descent into a property's object type or an array
+ * property's element type costs one level. Caps path-record explosion for deep
+ * / mutually-recursive graphs; the cycle guard (`seen`) handles true cycles.
+ */
+const MAX_PATH_DEPTH = 3;
+
+type Cardinality = "single" | "array";
+
+/** Apply array cardinality to a rendered type: `number` → `number[]`. */
+function withCard(baseType: string, card: Cardinality): string {
+  return card === "array" ? `${baseType}[]` : baseType;
+}
+
+/**
+ * Recursively emit path-record entries for the properties of `type` reachable
+ * at `prefix` (a full `$`-path like `$`, `$.x`, `$[0]`, `$[*].hits[0]`).
+ *
+ * `card` is the cardinality of the path so far: `"array"` when any `[*]`
+ * segment is on the path (the leaf selects multiple matches → its type gets
+ * `[]`); `"single"` otherwise. For an array-valued property we emit both a
+ * `[0]` (one element, keeps outer cardinality) and a `[*]` (collected, always
+ * array cardinality) entry, and descend into the element type under each. For a
+ * nested object property we descend under the property name with the same
+ * cardinality. `map`-valued properties emit only the leaf (no clean path syntax
+ * for map values). Depth-capped and cycle-guarded via `seen` (fullNames on the
+ * current path).
+ */
+function descendProps(
+  prefix: string,
+  type: ResolvedType,
+  card: Cardinality,
+  depth: number,
+  seen: Set<string>,
+  entries: string[],
+  resolver: NamingResolver,
+  typesByFullName: Map<string, ResolvedType>,
+): void {
+  for (const p of type.properties) {
+    const propPrefix = `${prefix}.${p.wireName}`;
+    const ref = p.typeRef;
+    // The property itself at this path.
+    entries.push(`  "${propPrefix}": ${withCard(tsTypeOfRef(ref, resolver), card)};`);
+
+    if (ref.kind === "array" || ref.kind === "set" || ref.kind === "stream") {
+      const element = ref.element ?? { kind: "opaque" as const };
+      const elemType = tsTypeOfRef(element, resolver);
+      // [0]: one element of the inner array (outer cardinality applies).
+      entries.push(`  "${propPrefix}[0]": ${withCard(elemType, card)};`);
+      // [*]: all elements collected (always array cardinality).
+      entries.push(`  "${propPrefix}[*]": ${withCard(elemType, "array")};`);
+      // Descend into the element's properties under each selector, if the
+      // element is a structured object type and we haven't hit the caps.
+      if (element.kind === "ref" && element.ref && depth < MAX_PATH_DEPTH) {
+        const elemResolved = typesByFullName.get(element.ref);
+        if (elemResolved && !seen.has(element.ref)) {
+          const nextSeen = new Set(seen).add(element.ref);
+          descendProps(`${propPrefix}[0]`, elemResolved, card, depth + 1, nextSeen, entries, resolver, typesByFullName);
+          descendProps(`${propPrefix}[*]`, elemResolved, "array", depth + 1, nextSeen, entries, resolver, typesByFullName);
+        }
+      }
+    } else if (ref.kind === "ref" && ref.ref && depth < MAX_PATH_DEPTH) {
+      const nested = typesByFullName.get(ref.ref);
+      if (nested && !seen.has(ref.ref)) {
+        descendProps(propPrefix, nested, card, depth + 1, new Set(seen).add(ref.ref), entries, resolver, typesByFullName);
+      }
+    }
+    // scalar / opaque / void / map: leaf only, no descent.
+  }
+}
+
 function emitTypedCall(input: EmitterInput, resolver: NamingResolver): string {
   const pathRecords: string[] = [];
   // typed-call.ts references every emitted type name in path records.
@@ -85,22 +157,25 @@ function emitTypedCall(input: EmitterInput, resolver: NamingResolver): string {
     ? `import type { ${input.types.map((t) => t.emittedName).join(", ")} } from "./types.js";\n`
     : "";
 
-  // Object types: object + array path records.
+  // Object types: object + array path records. Paths descend recursively into
+  // nested object properties AND nested array-element properties (with a depth
+  // cap and a cycle guard), so a chain like `$.hits[*].articleId` is a typed key
+  // of TPaths — not just the top-level `$.hits` array. See `descendProps`.
+  const typesByFullName = new Map<string, ResolvedType>(input.types.map((t) => [t.fullName, t]));
+
   for (const t of input.types) {
     const name = t.emittedName;
-    // XPaths: "$" → X, "$.prop" → propType (one level).
+    // XPaths: "$" → X, then descend "$.prop", "$.prop.sub", "$.arr[*].sub", …
     const objEntries: string[] = [`  "$": ${name};`];
-    for (const p of t.properties) {
-      objEntries.push(`  "$.${p.wireName}": ${tsTypeOfRef(p.typeRef, resolver)};`);
-    }
+    descendProps("$", t, "single", 0, new Set([t.fullName]), objEntries, resolver, typesByFullName);
     pathRecords.push(`export interface ${name}Paths {\n${objEntries.join("\n")}\n}`);
 
-    // XArrayPaths: "$" → X[], "$[0]" → X, "$[0].prop" → propType, "$[*].prop" → propType[].
+    // XArrayPaths: "$" → X[], "$[0]" → X; descend both the single-element root
+    // ($[0].prop, single cardinality) and the collected root ($[*].prop, array
+    // cardinality → leaf types get `[]`).
     const arrEntries: string[] = [`  "$": ${name}[];`, `  "$[0]": ${name};`];
-    for (const p of t.properties) {
-      const pt = tsTypeOfRef(p.typeRef, resolver);
-      arrEntries.push(`  "$[0].${p.wireName}": ${pt};`, `  "$[*].${p.wireName}": ${pt}[];`);
-    }
+    descendProps("$[0]", t, "single", 0, new Set([t.fullName]), arrEntries, resolver, typesByFullName);
+    descendProps("$[*]", t, "array", 0, new Set([t.fullName]), arrEntries, resolver, typesByFullName);
     pathRecords.push(`export interface ${name}ArrayPaths {\n${arrEntries.join("\n")}\n}`);
   }
 

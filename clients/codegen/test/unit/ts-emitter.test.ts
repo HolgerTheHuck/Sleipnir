@@ -121,3 +121,57 @@ describe("emitTsClient --transport both (golden against story01.both snapshot)",
     expect(c).toContain("get ws(): SleipnirWebSocketClient");
   });
 });
+
+// Story-02 exercises NESTED path descent: a SearchResult with `hits: SearchHit[]`,
+// each hit carrying a scalar `articleId` and a nested object `author: Author`.
+// The generated path records must enumerate `$.hits[*].articleId`,
+// `$.hits[0].author.name`, etc. — not stop at `$.hits` — so a typed dependency
+// chain extracting from a nested array compiles.
+describe("emitTsClient story02 (nested-array path descent, golden against story02 snapshot)", () => {
+  const input = buildEmitterInput(readFixture("story02"), new NamingResolver());
+  const tree = emitTsClient(input, { transport: "rest" });
+
+  it("emits the expected file set", () => {
+    expect(Object.keys(tree).sort()).toEqual(
+      ["api/client.ts", "api/controllers.ts", "api/index.ts", "api/typed-call.ts", "api/types.ts"],
+    );
+  });
+
+  it("matches the committed story02 snapshot byte-for-byte", () => {
+    const snapshot = readTree(join(here, "..", "snapshots", "story02.ts"));
+    for (const [path, content] of Object.entries(tree)) {
+      expect(snapshot[path], `snapshot missing for ${path}`).toBeDefined();
+      expect(content).toBe(snapshot[path]);
+    }
+    expect(Object.keys(snapshot).sort()).toEqual(Object.keys(tree).sort());
+  });
+
+  it("SearchResultPaths enumerates nested array-element paths (the user's gap)", () => {
+    const tc = tree["api/typed-call.ts"];
+    // The chain the user had to fall back to raw SleipnirCall for:
+    expect(tc).toContain('"$.hits[*].articleId": number[];');
+    expect(tc).toContain('"$.hits[0].articleId": number;');
+    // Nested object UNDER an array element:
+    expect(tc).toContain('"$.hits[*].author": Author[];');
+    expect(tc).toContain('"$.hits[*].author.name": string[];');
+    expect(tc).toContain('"$.hits[0].author.name": string;');
+    // Top-level scalar still present:
+    expect(tc).toContain('"$.total": number;');
+    // The whole-array leaf is still there (not regressed):
+    expect(tc).toContain('"$.hits": SearchHit[];');
+  });
+
+  it("SearchResultArrayPaths descends two array levels (stacked [*] collected)", () => {
+    const tc = tree["api/typed-call.ts"];
+    // $[*].hits is the outer array of SearchResults, each carrying hits.
+    expect(tc).toContain('"$[*].hits": SearchHit[][];');
+    // Stacked [*][*] collects into one array (JsonPath multi-match semantics).
+    expect(tc).toContain('"$[*].hits[*].articleId": number[];');
+  });
+
+  it("wires the typed chain surface (Search + Article controllers)", () => {
+    const ctrl = tree["api/controllers.ts"];
+    expect(ctrl).toContain("semanticSearch(query: string): TypedCall<SearchResult, SearchResultPaths>");
+    expect(ctrl).toContain("getByIds(articleIds: number[]): TypedCall<Article[], ArticleArrayPaths>");
+  });
+});

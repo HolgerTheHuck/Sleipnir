@@ -23,10 +23,11 @@ import {
   SleipnirWebSocketClient,
   type SleipnirWebSocketClientOptions,
 } from "./websocket.js";
+import type { BearerProvider } from "./types.js";
 
 /** Gemeinsame Bearer/Timeout-Optionen für createClient. */
 export interface CreateClientOptions {
-  bearer?: string;
+  bearer?: BearerProvider;
   callTimeout?: number;
   rest?: Omit<SleipnirRestClientOptions, "bearer" | "callTimeout">;
   ws?: Omit<SleipnirWebSocketClientOptions, "bearer" | "callTimeout">;
@@ -35,6 +36,8 @@ export interface CreateClientOptions {
 export interface SleipnirClient {
   rest: SleipnirRestClient;
   ws: SleipnirWebSocketClient;
+  /** Tauscht den Bearer auf beiden Clients (REST pro Call, WS ab nächstem Connect). */
+  setBearer: (bearer: BearerProvider) => void;
 }
 
 /**
@@ -49,8 +52,14 @@ export interface SleipnirClient {
  */
 export function createClient(baseUrl: string, options: CreateClientOptions = {}): SleipnirClient {
   const { bearer, callTimeout, rest, ws } = options;
+  const restClient = new SleipnirRestClient(baseUrl, { ...rest, bearer, callTimeout });
+  const wsClient = new SleipnirWebSocketClient(baseUrl, { ...ws, bearer, callTimeout });
   return {
-    rest: new SleipnirRestClient(baseUrl, { ...rest, bearer, callTimeout }),
-    ws: new SleipnirWebSocketClient(baseUrl, { ...ws, bearer, callTimeout }),
+    rest: restClient,
+    ws: wsClient,
+    setBearer: (b: BearerProvider) => {
+      restClient.setBearer(b);
+      wsClient.setBearer(b);
+    },
   };
 }

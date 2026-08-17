@@ -3,6 +3,7 @@ import { SleipnirError, CancelledError } from "./errors.js";
 import { buildSingle, buildMulti, fromBase64, normalizeResponse, normalizeResponses } from "./request.js";
 import { ExecutionMode } from "./types.js";
 import type {
+  BearerProvider,
   DiscoveryInfo,
   SleipnirMultiRequest,
   SleipnirRequest,
@@ -31,8 +32,8 @@ export interface SleipnirRestClientOptions {
   fetch?: FetchLike;
   /** Standard-Header für jeden Request. */
   headers?: Record<string, string>;
-  /** Bearer-Token (Authorization-Header). */
-  bearer?: string;
+  /** Bearer-Token (Authorization-Header) — String oder Provider-Funktion (rotierende JWTs). */
+  bearer?: BearerProvider;
   /** Call-Timeout in ms. */
   callTimeout?: number;
   /** REST-Basispfad (Default "api/sleipnir"); Slashes werden abgeschnitten. */
@@ -53,7 +54,7 @@ export class SleipnirRestClient {
   private readonly _apiPath: string;
   private readonly _fetch: FetchLike;
   private readonly _headers: Record<string, string>;
-  private readonly _bearer?: string;
+  private _bearer?: BearerProvider;
   private readonly _callTimeout?: number;
 
   constructor(baseUrl: string, options: SleipnirRestClientOptions = {}) {
@@ -197,6 +198,15 @@ export class SleipnirRestClient {
     // nichts zu disposen
   }
 
+  /**
+   * Tauscht den Bearer zur Laufzeit (rotierende JWTs), ohne den Client neu zu
+   * bauen. Akzeptiert einen String oder eine Provider-Funktion; der Wert wird
+   * pro Call frisch aufgelöst.
+   */
+  setBearer(bearer: BearerProvider): void {
+    this._bearer = bearer;
+  }
+
   // --- Interna ---
 
   private async postJson(
@@ -285,9 +295,16 @@ export class SleipnirRestClient {
     }
   }
 
+  /** Löst den Bearer auf (Funktion → rufen, sonst Wert). */
+  private resolveBearer(): string | undefined {
+    const b = this._bearer;
+    return typeof b === "function" ? b() : b;
+  }
+
   private buildHeaders(extra?: Record<string, string>): Record<string, string> {
     const headers: Record<string, string> = { ...this._headers };
-    if (this._bearer) headers["Authorization"] = `Bearer ${this._bearer}`;
+    const token = this.resolveBearer();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
     if (extra) Object.assign(headers, extra);
     return headers;
   }

@@ -69,6 +69,35 @@ describe("SleipnirRestClient", () => {
     expect(captured.headers["Content-Type"]).toBe("application/json");
   });
 
+  it("löst einen Function-Bearer pro Call frisch auf (rotierende JWTs)", async () => {
+    const seen: string[] = [];
+    let token = "v1";
+    const fetch = vi.fn(async (url: string, init: any) => {
+      seen.push(init.headers["Authorization"]);
+      return okResponse({ code: 200, isSuccess: true });
+    }) as unknown as FetchImpl;
+    const c = new SleipnirRestClient("http://x", { fetch, bearer: () => token });
+    await c.call("C", "M", {});
+    token = "v2";
+    await c.call("C", "M", {});
+    expect(seen).toEqual(["Bearer v1", "Bearer v2"]);
+  });
+
+  it("setBearer tauscht den Token zur Laufzeit (String und Funktion)", async () => {
+    const seen: string[] = [];
+    const fetch = vi.fn(async (url: string, init: any) => {
+      seen.push(init.headers["Authorization"]);
+      return okResponse({ code: 200, isSuccess: true });
+    }) as unknown as FetchImpl;
+    const c = new SleipnirRestClient("http://x", { fetch, bearer: "a" });
+    await c.call("C", "M", {});
+    c.setBearer("b");
+    await c.call("C", "M", {});
+    c.setBearer(() => "c");
+    await c.call("C", "M", {});
+    expect(seen).toEqual(["Bearer a", "Bearer b", "Bearer c"]);
+  });
+
   it("discover() GETet /api/sleipnir/discovery", async () => {
     let captured: any;
     const fetch = vi.fn(async (url: string, init: any) => {

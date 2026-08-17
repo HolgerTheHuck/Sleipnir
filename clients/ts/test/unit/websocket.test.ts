@@ -96,6 +96,45 @@ describe("SleipnirWebSocketClient", () => {
     ]);
   });
 
+  it("setzt den Bearer beim Connect (Browser-Pfad: ?access_token= in der URL)", async () => {
+    const { client, ref } = makeClient({ bearer: "tok" });
+    const p = client.connect();
+    ref.ws!.fireOpen();
+    await p;
+    expect(ref.ws!.url).toContain("access_token=tok");
+    client.dispose();
+  });
+
+  it("löst einen Function-Bearer beim Connect frisch auf", async () => {
+    let token = "v1";
+    const { client, ref } = makeClient({ bearer: () => token });
+    const p = client.connect();
+    ref.ws!.fireOpen();
+    await p;
+    expect(ref.ws!.url).toContain("access_token=v1");
+    client.dispose();
+  });
+
+  it("setBearer greift beim nächsten Connect (Token-Tausch zur Laufzeit)", async () => {
+    const { client, ref } = makeClient({ bearer: "a", reconnect: false });
+    const p1 = client.connect();
+    ref.ws!.fireOpen();
+    await p1;
+    expect(ref.ws!.url).toContain("access_token=a");
+    // Tausch zur Laufzeit — bestehende Verbindung unberührt, neuer Token ab nächstem Connect.
+    client.setBearer("b");
+    ref.ws!.fireClose(1001); // Drop -> kein Reconnect (reconnect:false) -> Disconnected
+    await vi.waitFor(() => expect(client.state).toBe(SleipnirConnectionState.Disconnected), {
+      interval: 1,
+      timeout: 1000,
+    });
+    const p2 = client.connect();
+    ref.ws!.fireOpen();
+    await p2;
+    expect(ref.ws!.url).toContain("access_token=b");
+    client.dispose();
+  });
+
   it("verwirft Responses ohne passenden pending Call (B3, kein Last-Resort)", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { client, ref } = makeClient();

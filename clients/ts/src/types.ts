@@ -11,6 +11,13 @@ export enum ExecutionMode {
   Serial = 1,
 }
 
+/**
+ * Bearer-Token-Quelle: ein fester String oder eine Provider-Funktion, die pro
+ * Call (REST) bzw. pro Connect/Reconnect (WS) frisch aufgelöst wird — für
+ * rotierende JWTs ohne Client-Neubau. Zur Laufzeit tauschbar via `setBearer`.
+ */
+export type BearerProvider = string | (() => string);
+
 /** Lebenszyklus-Zustand des WebSocket-Clients (Spiegel von C# SleipnirConnectionState). */
 export enum SleipnirConnectionState {
   /** 0 — keine aktive Verbindung (vor dem ersten Connect oder nach erschöpftem Reconnect). */

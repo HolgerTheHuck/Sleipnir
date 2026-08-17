@@ -1,6 +1,6 @@
 import { SleipnirError, CancelledError } from "./errors.js";
 import { ExecutionMode, SleipnirConnectionState } from "./types.js";
-import type { SleipnirMultiRequest, SleipnirRequest, SleipnirResponse } from "./types.js";
+import type { BearerProvider, SleipnirMultiRequest, SleipnirRequest, SleipnirResponse } from "./types.js";
 import { fromBase64, normalizeResponse, normalizeResponses } from "./request.js";
 
 const READY_CONNECTING = 0;
@@ -59,8 +59,8 @@ export interface WsCallOptions {
 export interface SleipnirWebSocketClientOptions {
   /** WS-Pfad (Default "sleipnirws"). */
   wsPath?: string;
-  /** Bearer-Token (Node: als Authorization-Header; Browser: als ?access_token=). */
-  bearer?: string;
+  /** Bearer-Token (Node: als Authorization-Header; Browser: als ?access_token=) — String oder Provider-Funktion (rotierende JWTs). */
+  bearer?: BearerProvider;
   /** Call-Timeout in ms. */
   callTimeout?: number;
   /** Connect-Timeout in ms (Default 15000). */
@@ -127,7 +127,7 @@ async function resolveDefaultFactory(): Promise<WsFactory> {
 export class SleipnirWebSocketClient {
   private readonly _baseUrl: string;
   private readonly _wsPath: string;
-  private readonly _bearer?: string;
+  private _bearer?: BearerProvider;
   private readonly _callTimeout?: number;
   private readonly _connectTimeout: number;
   private readonly _wsCtor?: WsFactory;
@@ -162,6 +162,23 @@ export class SleipnirWebSocketClient {
   /** Aktueller Verbindungs-Zustand (Observer-Oberfläche für UI/Logs). */
   get state(): SleipnirConnectionState {
     return this._state;
+  }
+
+  /**
+   * Tauscht den Bearer zur Laufzeit (rotierende JWTs), ohne den Client neu zu
+   * bauen. Akzeptiert einen String oder eine Provider-Funktion. **WS:** der neue
+   * Token greift ab dem nächsten Connect/Reconnect — eine bereits offene
+   * Verbindung behält ihr Upgrade-Token (HTTP-Header sind nur beim Handshake
+   * gesetzt).
+   */
+  setBearer(bearer: BearerProvider): void {
+    this._bearer = bearer;
+  }
+
+  /** Löst den Bearer auf (Funktion → rufen, sonst Wert). */
+  private resolveBearer(): string | undefined {
+    const b = this._bearer;
+    return typeof b === "function" ? b() : b;
   }
 
   private setState(s: SleipnirConnectionState): void {
@@ -273,8 +290,9 @@ export class SleipnirWebSocketClient {
     const factory = this._wsCtor ?? (await resolveDefaultFactory());
     const isBrowserWs = typeof (globalThis as any).WebSocket !== "undefined";
     const url = this.buildUrl(isBrowserWs);
+    const token = this.resolveBearer();
     const headers =
-      !isBrowserWs && this._bearer ? { Authorization: `Bearer ${this._bearer}` } : undefined;
+      !isBrowserWs && token ? { Authorization: `Bearer ${token}` } : undefined;
     const ws = factory(url, { headers });
     this._ws = ws;
 
@@ -315,8 +333,9 @@ export class SleipnirWebSocketClient {
     let base = this._baseUrl;
     base = base.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
     let url = `${base}/${this._wsPath}`;
-    if (isBrowserWs && this._bearer) {
-      url += `?access_token=${encodeURIComponent(this._bearer)}`;
+    const token = this.resolveBearer();
+    if (isBrowserWs && token) {
+      url += `?access_token=${encodeURIComponent(token)}`;
     }
     return url;
   }

@@ -9,3 +9,4 @@ out/
 .tsc-e2e/
 .cs-compile/
 .py-compile/
+.alias-runtime/

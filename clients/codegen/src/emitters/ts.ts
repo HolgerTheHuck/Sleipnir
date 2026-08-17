@@ -242,9 +242,18 @@ export class TypedRequest<T, TPaths = PathTypes, A extends Record<string, unknow
    * value the server substitutes in Serial/topological mode (mirrors
    * \`SleipnirCall.withAlias("@x")\`, which sets \`data: "@x"\`). The compile-time type
    * is the producer's exposed type, so the consumer param typechecks.
+   *
+   * \`@\`-normalization is symmetric with \`exposes\`: \`exposes\` STRIPS a leading \`@\`
+   * (the wire \`dependencyMapping\` key is the bare name — the server strips the
+   * consumer's \`@alias\` placeholder before lookup), while \`alias\` ENSURES a leading
+   * \`@\` (the consumer sends \`data: "@alias"\`). So both call styles work:
+   * \`alias("ids")\` → \`"@ids"\` and \`alias("@ids")\` → \`"@ids"\`. Returning the bare
+   * name here (the 1.2.1 bug) sent \`"ids"\` on the wire, which the server's
+   * \`ReplaceDependencyByAlias\` never matched — the typed chain compiled but the
+   * dependent call received an unresolved literal instead of the alias value.
    */
   alias<Aname extends string & keyof A>(name: Aname): A[Aname] {
-    return name as unknown as A[Aname];
+    return (name.startsWith("@") ? name : "@" + name) as unknown as A[Aname];
   }
   /** @internal */ toRequest(): SleipnirRequest { return this._call.toRequest(); }
 }

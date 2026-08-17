@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (npm: `sleipnir-codegen@1.2.2`)
+- **`TypedRequest.alias()` now returns the `@alias` wire placeholder.** The generated
+  `alias(name)` (TS `TypedRequest`, C# `BatchEntry.Alias`, Python `_BatchEntry.alias`)
+  returned the **bare name** instead of `'@' + name`, so a typed batch chain compiled
+  but sent `"ids"` on the wire where the server expected `"@ids"` — the server's
+  `ReplaceDependencyByAlias` never matched, and the dependent call received an
+  unresolved literal instead of the alias value. The bug was invisible to the
+  existing tests because they used the `alias("@ids")` convention, where `return name`
+  happened to return `"@ids"` (correct by accident). Now `@`-normalized symmetrically
+  with `exposes` (which strips a leading `@` for the wire `dependencyMapping` key):
+  `alias("ids")` → `"@ids"` and `alias("@ids")` → `"@ids"`. Adds a runtime guard
+  importing the emitted module (both call styles) + PY/CS behavior assertions.
+
 ### Added (npm: `sleipnir-client@1.2.0`)
 - **Dynamic bearer for rotating JWTs.** The `bearer` option on `SleipnirRestClient`,
   `SleipnirWebSocketClient`, and `createClient` now accepts `string | (() => string)`.

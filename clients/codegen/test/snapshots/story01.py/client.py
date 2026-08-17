@@ -105,8 +105,16 @@ class _BatchEntry:
         return self
 
     def alias(self, name: str) -> str:
-        """Return the '@alias' wire placeholder (for a consumer parameter)."""
-        return name
+        """Return the '@alias' wire placeholder (for a consumer parameter).
+
+        '@'-normalization is symmetric with exposes(): exposes() strips a leading
+        '@' (the wire dependencyMapping key is the bare name — the server strips the
+        consumer's '@alias' placeholder before lookup), while alias() ENSURES a
+        leading '@' (the consumer sends data: "@alias"). So both call styles work:
+        alias('ids') -> '@ids' and alias('@ids') -> '@ids'. Returning the bare name
+        (the 1.2.1 bug) sent 'ids' on the wire, which the server never matched.
+        """
+        return name if name.startswith("@") else "@" + name
 
 
 class Batch:

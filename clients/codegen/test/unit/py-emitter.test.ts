@@ -56,10 +56,15 @@ describe("emitPyClient (golden against story01 snapshot)", () => {
     expect(py).toContain("def get_by_articles(self, articleIds: list[int]) -> SleipnirCall:");
   });
 
-  it("alias() returns the @placeholder and exposes strips @ for the mapping key", () => {
+  it("alias() returns the @placeholder (both call styles) and exposes strips @ for the mapping key", () => {
     const py = tree["client.py"];
     expect(py).toContain("def alias(self, name: str) -> str:");
-    expect(py).toContain('"""Return the \'@alias\' wire placeholder (for a consumer parameter)."""');
+    // Behavior (the 1.2.1 bug returned the BARE name — the docstring claimed
+    // "@placeholder" but `return name` sent "ids" on the wire for alias("ids"),
+    // which the server never matched). Both call styles now normalize to "@<bare>".
+    expect(py).toContain('return name if name.startswith("@") else "@" + name');
+    // exposes() strips a leading @ for the wire dependencyMapping key (the server
+    // strips the consumer's @alias placeholder before lookup).
     expect(py).toContain('key = alias[1:] if alias.startswith("@") else alias');
   });
 

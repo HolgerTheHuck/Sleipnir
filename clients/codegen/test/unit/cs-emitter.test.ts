@@ -47,6 +47,13 @@ describe("emitCsClient (golden against story01 snapshot)", () => {
     expect(cs).toContain("_call.Exposes(jsonPath, alias.StartsWith('@') ? alias.Substring(1) : alias);");
   });
 
+  it("alias ensures the leading @ for the placeholder (both call styles)", () => {
+    const cs = tree["SleipnirGenerated.cs"];
+    // Symmetric to exposes: Alias("ids") → "@ids" and Alias("@ids") → "@ids".
+    // The 1.2.1 bug was `new(name)` — returned the bare name on the wire.
+    expect(cs).toContain("public Alias Alias(string name) => new(name.StartsWith('@') ? name : \"@\" + name);");
+  });
+
   it("emits the root SleipnirGeneratedClient with Call<T> + Batch + per-controller accessors", () => {
     const cs = tree["SleipnirGenerated.cs"];
     expect(cs).toContain("public Task<T?> Call<T>(Call call) => _client.Call<T>(call.ToRequest());");

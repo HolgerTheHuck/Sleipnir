@@ -145,8 +145,15 @@ namespace Sleipnir.Generated
         }
 
         /// <summary>Resolve a previously-declared alias to its placeholder (for a consumer param).
-        /// Returns the "@alias" wire value; <c>Arg&lt;T&gt;</c> converts it implicitly.</summary>
-        public Alias Alias(string name) => new(name);
+        /// Returns the "@alias" wire value; <c>Arg&lt;T&gt;</c> converts it implicitly.
+        /// '@'-normalization is symmetric with <see cref="Exposes"/>: Exposes strips a
+        /// leading '@' (the wire dependencyMapping key is the bare name — the server
+        /// strips the consumer's '@alias' placeholder before lookup), while Alias
+        /// ENSURES a leading '@' (the consumer sends the "@alias" placeholder). So
+        /// both call styles work: Alias("ids") → "@ids" and Alias("@ids") → "@ids".
+        /// Returning the bare name (the 1.2.1 bug) sent "ids" on the wire, which the
+        /// server's ReplaceDependencyByAlias never matched.</summary>
+        public Alias Alias(string name) => new(name.StartsWith('@') ? name : "@" + name);
     }
 
     /// <summary>Batch builder for dependency-chained calls. Execution mode is Serial (the only

@@ -3,7 +3,7 @@ import { assertDiscoveryShape, DiscoveryShapeError } from "../../src/core/discov
 import { readFixture } from "./fixture.js";
 
 const V = "1";
-const ok = (o: unknown) => ({ discoveryVersion: V, ...o } as Record<string, unknown>);
+const ok = (o: Record<string, unknown>) => ({ discoveryVersion: V, ...o });
 
 describe("assertDiscoveryShape", () => {
   it("accepts a valid Story-01 payload", () => {

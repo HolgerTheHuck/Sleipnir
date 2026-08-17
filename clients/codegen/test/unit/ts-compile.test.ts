@@ -140,5 +140,64 @@ describe.each<Transport>(["rest", "ws", "both"])("generated TS compiles + typed 
   }, { timeout: 60_000 });
 });
 
+// Story-02 compile gate: the nested-array path descent must make a chain that
+// extracts from a NESTED array (`$.hits[*].articleId`) type-check end-to-end —
+// the exact case that was untypable in 1.2.0 and forced a raw-SleipnirCall
+// fallback. Also asserts the `keyof TPaths` constraint still rejects unknown
+// paths and a cardinality mismatch (number fed to number[]).
+describe("generated TS story02 compiles + nested-array chain type-checks", () => {
+  const story02Harness = `// Story-02: typed dependency chain extracting from a nested array.
+import { SleipnirClient } from "./api/client.js";
+import { Batch } from "./api/typed-call.js";
+
+export async function semanticChain(): Promise<void> {
+  const client = new SleipnirClient("http://localhost:5001");
+  const batch = new Batch();
+
+  // Producer: extract articleIds from a NESTED array ($.hits[*].articleId).
+  // This is the chain that was untypable in 1.2.0 — now it type-checks.
+  const search = batch.add(client.search.semanticSearch("q"))
+    .exposes("$.hits[*].articleId", "@ids");
+
+  // Consumer: getByIds(articleIds: number[]) accepts the typed number[] alias.
+  batch.add(client.article.getByIds(search.alias("@ids")));
+
+  // A nested-object-under-array extraction also type-checks (string[]).
+  const named = batch.add(client.search.semanticSearch("q2"))
+    .exposes("$.hits[*].author.name", "@authorNames");
+  void named;
+
+  await client.batch(batch);
+
+  // --- Compile-time guarantees (must error without the suppression) ---
+  // @ts-expect-error — $.hits[*].nope is not a key of SearchResultPaths.
+  search.exposes("$.hits[*].nope", "@badPath");
+  const total = batch.add(client.search.semanticSearch("q3")).exposes("$.total", "@total");
+  // @ts-expect-error — $.total is number, but getByIds expects number[].
+  batch.add(client.article.getByIds(total.alias("@total")));
+}
+`;
+
+  it("tsc exits 0 against the story02 nested-array harness", () => {
+    const dir = join(compileDir, "story02-rest");
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(join(dir, "api"), { recursive: true });
+    const tree = emitTsClient(buildEmitterInput(readFixture("story02"), new NamingResolver()), { transport: "rest" });
+    for (const [path, content] of Object.entries(tree)) {
+      const abs = join(dir, path);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, content, "utf8");
+    }
+    writeFileSync(join(dir, "harness.ts"), story02Harness, "utf8");
+    writeFileSync(join(dir, "tsconfig.json"), tsconfig, "utf8");
+    const result = runTsc(dir);
+    if (result.status !== 0) {
+      console.error("tsc stdout (story02):\n" + result.stdout);
+      console.error("tsc stderr (story02):\n" + result.stderr);
+    }
+    expect(result.status).toBe(0);
+  }, { timeout: 60_000 });
+});
+
 // keep existsSync referenced for the guard in case the dir lingers.
 void existsSync;

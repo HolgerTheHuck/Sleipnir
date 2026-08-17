@@ -114,3 +114,33 @@ describe("emitJsClient --transport both (golden against story01.both.js snapshot
     expect(c).toContain("this._ws.callBatch(m.requests, m.mode)");
   });
 });
+
+// Story-02 (nested-array fixture). The JS emitter has no path-record types
+// (JS is untyped), so this is a byte-for-byte golden + a check that the nested
+// array property renders as `SearchHit[]` in the JSDoc typedef.
+describe("emitJsClient story02 (nested-array fixture, golden against story02.js snapshot)", () => {
+  const input = buildEmitterInput(readFixture("story02"), new NamingResolver());
+  const tree = emitJsClient(input, { transport: "rest" });
+
+  it("emits the expected file set", () => {
+    expect(Object.keys(tree).sort()).toEqual(
+      ["api/client.js", "api/controllers.js", "api/index.js", "api/types.js"],
+    );
+  });
+
+  it("matches the committed story02.js snapshot byte-for-byte", () => {
+    const snapshot = readTree(join(here, "..", "snapshots", "story02.js"));
+    for (const [path, content] of Object.entries(tree)) {
+      expect(snapshot[path], `snapshot missing for ${path}`).toBeDefined();
+      expect(content).toBe(snapshot[path]);
+    }
+    expect(Object.keys(snapshot).sort()).toEqual(Object.keys(tree).sort());
+  });
+
+  it("renders the nested array + nested object properties in the typedefs", () => {
+    const types = tree["api/types.js"];
+    expect(types).toContain("@typedef {Object} SearchResult");
+    expect(types).toContain("@property {SearchHit[]} hits");
+    expect(types).toContain("@property {Author} author");
+  });
+});

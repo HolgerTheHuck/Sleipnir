@@ -18,8 +18,8 @@ export interface StockInfoArrayPaths {
   "$": StockInfo[];
   "$[0]": StockInfo;
   "$[0].articleId": number;
-  "$[*].articleId": number[];
   "$[0].inStock": number;
+  "$[*].articleId": number[];
   "$[*].inStock": number[];
 }
 
@@ -33,8 +33,8 @@ export interface OrderLineArrayPaths {
   "$": OrderLine[];
   "$[0]": OrderLine;
   "$[0].articleId": number;
-  "$[*].articleId": number[];
   "$[0].qty": number;
+  "$[*].articleId": number[];
   "$[*].qty": number[];
 }
 
@@ -49,10 +49,10 @@ export interface ArticleArrayPaths {
   "$": Article[];
   "$[0]": Article;
   "$[0].id": number;
-  "$[*].id": number[];
   "$[0].name": string;
-  "$[*].name": string[];
   "$[0].price": number;
+  "$[*].id": number[];
+  "$[*].name": string[];
   "$[*].price": number[];
 }
 
@@ -69,14 +69,14 @@ export interface OrderArrayPaths {
   "$": Order[];
   "$[0]": Order;
   "$[0].id": number;
-  "$[*].id": number[];
   "$[0].customerId": number;
-  "$[*].customerId": number[];
   "$[0].shippingAddressId": number;
-  "$[*].shippingAddressId": number[];
   "$[0].status": string;
-  "$[*].status": string[];
   "$[0].placedAt": string;
+  "$[*].id": number[];
+  "$[*].customerId": number[];
+  "$[*].shippingAddressId": number[];
+  "$[*].status": string[];
   "$[*].placedAt": string[];
 }
 
@@ -90,8 +90,8 @@ export interface CustomerArrayPaths {
   "$": Customer[];
   "$[0]": Customer;
   "$[0].id": number;
-  "$[*].id": number[];
   "$[0].name": string;
+  "$[*].id": number[];
   "$[*].name": string[];
 }
 
@@ -107,12 +107,12 @@ export interface AddressArrayPaths {
   "$": Address[];
   "$[0]": Address;
   "$[0].id": number;
-  "$[*].id": number[];
   "$[0].street": string;
-  "$[*].street": string[];
   "$[0].zip": string;
-  "$[*].zip": string[];
   "$[0].city": string;
+  "$[*].id": number[];
+  "$[*].street": string[];
+  "$[*].zip": string[];
   "$[*].city": string[];
 }
 

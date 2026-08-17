@@ -1,5 +1,6 @@
-// Shared test helper: loads + validates the committed Story-01 discovery fixture
-// once and caches it. Tests import `readFixture()` to get a typed DiscoveryInfo.
+// Shared test helper: loads + validates a committed discovery fixture once and
+// caches it. Tests import `readFixture()` (Story-01, the flat diamond) or
+// `readFixture("story02")` (nested-array shapes) to get a typed DiscoveryInfo.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -7,15 +8,19 @@ import { assertDiscoveryShape } from "../../src/core/discovery.js";
 import type { DiscoveryInfo } from "sleipnir-client";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const fixturePath = join(here, "..", "fixtures", "story01-discovery.json");
+const fixturesDir = join(here, "..", "fixtures");
 
-let cached: DiscoveryInfo | null = null;
+const cache = new Map<string, DiscoveryInfo>();
 
-export function readFixture(): DiscoveryInfo {
+/** Load + validate a discovery fixture by name (default `"story01"`). */
+export function readFixture(name: "story01" | "story02" = "story01"): DiscoveryInfo {
+  const cached = cache.get(name);
   if (cached) return cached;
-  const text = readFileSync(fixturePath, "utf8");
-  cached = assertDiscoveryShape(JSON.parse(text));
-  return cached;
+  const text = readFileSync(join(fixturesDir, `${name}-discovery.json`), "utf8");
+  const parsed = assertDiscoveryShape(JSON.parse(text));
+  cache.set(name, parsed);
+  return parsed;
 }
 
-export const fixtureLocation = fixturePath;
+/** Path to the Story-01 fixture (kept for backward compatibility). */
+export const fixtureLocation = join(fixturesDir, "story01-discovery.json");

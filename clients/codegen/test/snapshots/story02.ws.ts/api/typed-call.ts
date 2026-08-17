@@ -6,36 +6,105 @@
 // validity are compile-checked without a (structurally ambiguous) lookup over T.
 import { SleipnirCall, ExecutionMode } from "sleipnir-client";
 import type { SleipnirRequest, SleipnirMultiRequest, SleipnirResponse } from "sleipnir-client";
-import type { StockInfo, OrderLine, Article, Order, Customer, Address } from "./types.js";
+import type { SearchResult, SearchHit, Author, Article } from "./types.js";
 
-export interface StockInfoPaths {
-  "$": StockInfo;
+export interface SearchResultPaths {
+  "$": SearchResult;
+  "$.total": number;
+  "$.hits": SearchHit[];
+  "$.hits[0]": SearchHit;
+  "$.hits[*]": SearchHit[];
+  "$.hits[0].articleId": number;
+  "$.hits[0].title": string;
+  "$.hits[0].score": number;
+  "$.hits[0].author": Author;
+  "$.hits[0].author.id": number;
+  "$.hits[0].author.name": string;
+  "$.hits[*].articleId": number[];
+  "$.hits[*].title": string[];
+  "$.hits[*].score": number[];
+  "$.hits[*].author": Author[];
+  "$.hits[*].author.id": number[];
+  "$.hits[*].author.name": string[];
+}
+
+export interface SearchResultArrayPaths {
+  "$": SearchResult[];
+  "$[0]": SearchResult;
+  "$[0].total": number;
+  "$[0].hits": SearchHit[];
+  "$[0].hits[0]": SearchHit;
+  "$[0].hits[*]": SearchHit[];
+  "$[0].hits[0].articleId": number;
+  "$[0].hits[0].title": string;
+  "$[0].hits[0].score": number;
+  "$[0].hits[0].author": Author;
+  "$[0].hits[0].author.id": number;
+  "$[0].hits[0].author.name": string;
+  "$[0].hits[*].articleId": number[];
+  "$[0].hits[*].title": string[];
+  "$[0].hits[*].score": number[];
+  "$[0].hits[*].author": Author[];
+  "$[0].hits[*].author.id": number[];
+  "$[0].hits[*].author.name": string[];
+  "$[*].total": number[];
+  "$[*].hits": SearchHit[][];
+  "$[*].hits[0]": SearchHit[];
+  "$[*].hits[*]": SearchHit[];
+  "$[*].hits[0].articleId": number[];
+  "$[*].hits[0].title": string[];
+  "$[*].hits[0].score": number[];
+  "$[*].hits[0].author": Author[];
+  "$[*].hits[0].author.id": number[];
+  "$[*].hits[0].author.name": string[];
+  "$[*].hits[*].articleId": number[];
+  "$[*].hits[*].title": string[];
+  "$[*].hits[*].score": number[];
+  "$[*].hits[*].author": Author[];
+  "$[*].hits[*].author.id": number[];
+  "$[*].hits[*].author.name": string[];
+}
+
+export interface SearchHitPaths {
+  "$": SearchHit;
   "$.articleId": number;
-  "$.inStock": number;
+  "$.title": string;
+  "$.score": number;
+  "$.author": Author;
+  "$.author.id": number;
+  "$.author.name": string;
 }
 
-export interface StockInfoArrayPaths {
-  "$": StockInfo[];
-  "$[0]": StockInfo;
+export interface SearchHitArrayPaths {
+  "$": SearchHit[];
+  "$[0]": SearchHit;
   "$[0].articleId": number;
-  "$[0].inStock": number;
+  "$[0].title": string;
+  "$[0].score": number;
+  "$[0].author": Author;
+  "$[0].author.id": number;
+  "$[0].author.name": string;
   "$[*].articleId": number[];
-  "$[*].inStock": number[];
+  "$[*].title": string[];
+  "$[*].score": number[];
+  "$[*].author": Author[];
+  "$[*].author.id": number[];
+  "$[*].author.name": string[];
 }
 
-export interface OrderLinePaths {
-  "$": OrderLine;
-  "$.articleId": number;
-  "$.qty": number;
+export interface AuthorPaths {
+  "$": Author;
+  "$.id": number;
+  "$.name": string;
 }
 
-export interface OrderLineArrayPaths {
-  "$": OrderLine[];
-  "$[0]": OrderLine;
-  "$[0].articleId": number;
-  "$[0].qty": number;
-  "$[*].articleId": number[];
-  "$[*].qty": number[];
+export interface AuthorArrayPaths {
+  "$": Author[];
+  "$[0]": Author;
+  "$[0].id": number;
+  "$[0].name": string;
+  "$[*].id": number[];
+  "$[*].name": string[];
 }
 
 export interface ArticlePaths {
@@ -54,66 +123,6 @@ export interface ArticleArrayPaths {
   "$[*].id": number[];
   "$[*].name": string[];
   "$[*].price": number[];
-}
-
-export interface OrderPaths {
-  "$": Order;
-  "$.id": number;
-  "$.customerId": number;
-  "$.shippingAddressId": number;
-  "$.status": string;
-  "$.placedAt": string;
-}
-
-export interface OrderArrayPaths {
-  "$": Order[];
-  "$[0]": Order;
-  "$[0].id": number;
-  "$[0].customerId": number;
-  "$[0].shippingAddressId": number;
-  "$[0].status": string;
-  "$[0].placedAt": string;
-  "$[*].id": number[];
-  "$[*].customerId": number[];
-  "$[*].shippingAddressId": number[];
-  "$[*].status": string[];
-  "$[*].placedAt": string[];
-}
-
-export interface CustomerPaths {
-  "$": Customer;
-  "$.id": number;
-  "$.name": string;
-}
-
-export interface CustomerArrayPaths {
-  "$": Customer[];
-  "$[0]": Customer;
-  "$[0].id": number;
-  "$[0].name": string;
-  "$[*].id": number[];
-  "$[*].name": string[];
-}
-
-export interface AddressPaths {
-  "$": Address;
-  "$.id": number;
-  "$.street": string;
-  "$.zip": string;
-  "$.city": string;
-}
-
-export interface AddressArrayPaths {
-  "$": Address[];
-  "$[0]": Address;
-  "$[0].id": number;
-  "$[0].street": string;
-  "$[0].zip": string;
-  "$[0].city": string;
-  "$[*].id": number[];
-  "$[*].street": string[];
-  "$[*].zip": string[];
-  "$[*].city": string[];
 }
 
 export interface _NumberPaths {

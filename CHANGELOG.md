@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-17
+
+### Fixed
+- **`Sleipnir.Server.Codegen` nupkg now ships the full dependency closure** in `tasks/net8.0/`.
+  The 1.1.1 package contained only the tool dll + `deps.json` + `runtimeconfig.json` — no
+  runtime dependencies — while `deps.json` listed them as `type:"reference"` (expects
+  co-located). The tool crashed on the consumer's machine with `FileNotFoundException:
+  Microsoft.Extensions.DependencyInjection.Abstractions 8.0.0.0` (then SleipnirCore,
+  SleipnirCommon), which broke the build-integrated drift gate (`SleipnirExportDriftCheck`,
+  `AfterTargets="Build"`) — every `dotnet build` and `dotnet run` of a server project with
+  the PackageReference plus a `contract.sleipnir.json` failed. The pack target now runs
+  `dotnet publish --no-self-contained` into a staging dir and globs the complete,
+  self-resolving framework-dependent app (SleipnirCore, SleipnirCommon,
+  Microsoft.Extensions.DependencyInjection.Abstractions, JsonPath.Net, …) into
+  `tasks/net8.0/`, so `dotnet <tool.dll>` resolves every dependency from that folder
+  without probing the consumer's NuGet cache.
+
+### Changed
+- **`publish-npm` CI job is now `workflow_dispatch`-only** (no longer fires on `v*` tags).
+  The two npm packages (`sleipnir-client`, `sleipnir-codegen`) version independently of the
+  NuGet lockstep — a `v*` tag was stamping them to the tag version and regressing
+  `sleipnir-codegen`'s `latest` below an already-shipped independent release. NuGet
+  lockstep tags and npm dispatch are now fully decoupled.
+
 ## [1.1.1] - 2026-08-17
 
 ### Fixed

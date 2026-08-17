@@ -40,17 +40,44 @@
     <None Include="..\CODEGEN_ONBOARDING.md" Pack="true" PackagePath="docs/CODEGEN_ONBOARDING.md" />
   </ItemGroup>
 
-  <!-- Ship the export tool (dll + its runtime deps) in tasks/net8.0/ so the packaged
-       build/Sleipnir.Server.Codegen.targets can invoke `dotnet tasks/net8.0/Sleipnir.Server.Codegen.dll`.
-       Framework-dependent: the deps.json + adjacent dependency dlls let `dotnet` resolve it. -->
-  <ItemGroup>
-    <None Include="$(OutputPath)\Sleipnir.Server.Codegen.dll" Pack="true" PackagePath="tasks\net8.0\" />
-    <None Include="$(OutputPath)\Sleipnir.Server.Codegen.dll.config" Pack="true" PackagePath="tasks\net8.0\" Condition="Exists('$(OutputPath)\Sleipnir.Server.Codegen.dll.config')" />
-    <None Include="$(OutputPath)\Sleipnir.Server.Codegen.deps.json" Pack="true" PackagePath="tasks\net8.0\" />
-    <None Include="$(OutputPath)\Sleipnir.Server.Codegen.runtimeconfig.json" Pack="true" PackagePath="tasks\net8.0\" />
-    <!-- The tool's runtime deps (SleipnirCore, SleipnirCommon, Microsoft.Extensions.*) must sit next to
-         it so the isolated tool process resolves them without the MSBuild host's probing paths. -->
-    <None Include="$(OutputPath)\*.dll" Exclude="$(OutputPath)\Sleipnir.Server.Codegen.dll" Pack="true" PackagePath="tasks\net8.0\" />
-  </ItemGroup>
+  <!-- Ship the export tool as a COMPLETE, self-resolving framework-dependent app in tasks/net8.0/,
+       so the packaged build/Sleipnir.Server.Codegen.targets can invoke
+       `dotnet tasks/net8.0/Sleipnir.Server.Codegen.dll` and the isolated tool process resolves every
+       dependency from that folder: no probing of the MSBuild host's paths or the consumer's NuGet cache.
+
+       Why `dotnet publish` and not a glob over $(OutputPath):
+         * IncludeBuildOutput=false (above) detaches Build from Pack, so at pack time $(OutputPath) is
+           not populated by Pack itself.
+         * Even when built, `dotnet build` of a framework-dependent Exe does NOT copy PackageReference
+           assemblies (Microsoft.Extensions.*, JsonPath.Net, ...) into the output; they resolve from the
+           NuGet cache at runtime. A `$(OutputPath)\*.dll` glob therefore packs at most the project's
+           own + ProjectReference dlls, never the transitive closure.
+         * The 1.1.1 package shipped only the tool dll + deps.json + runtimeconfig, so the tool crashed
+           on the consumer's build with FileNotFoundException (Microsoft.Extensions.DependencyInjection.Abstractions),
+           breaking every `dotnet build`/`run` of a server project that had the PackageReference plus
+           a contract.sleipnir.json.
+       `dotnet publish` (framework-dependent) copies the FULL dependency closure co-located and rewrites
+       deps.json so `dotnet <tool>.dll` self-resolves. The consumer supplies the net8 runtime (it is
+       building a net8 project anyway). -->
+  <!-- BeforeTargets=_GetPackageFiles: the SDK collects the package file list in the _GetPackageFiles
+       target (a dependency of GenerateNuspec; GetPackageContents does not exist in this SDK and would
+       be silently ignored). Adding the None items only before GenerateNuspec is too late — they must
+       exist when _GetPackageFiles evaluates. -->
+  <Target Name="PublishExportToolForPack" BeforeTargets="_GetPackageFiles">
+    <PropertyGroup>
+      <_ToolPublishDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\publish-tool</_ToolPublishDir>
+    </PropertyGroup>
+    <!-- Clean staging so a stale publish (e.g. after a dep is removed) never leaks into the nupkg. -->
+    <RemoveDir Directories="$(_ToolPublishDir)" />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c $(Configuration) -o &quot;$(_ToolPublishDir)&quot; --no-self-contained" />
+    <ItemGroup>
+      <!-- The whole published app (flat deps + any runtimes/<rid>/native/* for native libs).
+           Exclude apphost exes (the target invokes the .dll via `dotnet`, not the .exe, and an
+           apphost is RID-specific), pdbs, and doc xml. -->
+      <None Include="$(_ToolPublishDir)\**\*"
+            Exclude="$(_ToolPublishDir)\**\*.pdb;$(_ToolPublishDir)\**\*.exe;$(_ToolPublishDir)\**\*.xml"
+            Pack="true" PackagePath="tasks\net8.0\" />
+    </ItemGroup>
+  </Target>
 
 </Project>

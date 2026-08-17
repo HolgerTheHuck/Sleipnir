@@ -68,6 +68,25 @@ public class CsCodegenParityTests
             "the .NET-native C# emitter must produce the same SleipnirGenerated.cs as the committed TS --lang cs snapshot (parity gate; newlines normalized)");
     }
 
+    [Fact]
+    public void EmitClient_AliasNormalizesLeadingAt_BothCallStyles()
+    {
+        // Behavior guard for the 1.2.1 / 1.1.3 alias() bug: BatchEntry.Alias(name) must ENSURE
+        // a leading '@' on the wire placeholder (symmetric with Exposes, which strips it for the
+        // dependencyMapping key). The pre-fix emitter emitted `new(name)` — bare name on the wire,
+        // so the server's ReplaceDependencyByAlias never matched and a typed batch chain sent
+        // "ids" where "@ids" was expected. Both call styles must normalize: Alias("ids") and
+        // Alias("@ids") both yield "@ids". The byte-for-byte parity test above already locks this
+        // line via the committed snapshot; this assertion states the intent readably and survives
+        // a snapshot regen that might reorder unrelated lines.
+        var fixture = File.ReadAllText(ResolveFixturePath());
+        var emitted = SleipnirCodegen.EmitClient(fixture);
+        emitted.Should().Contain("public Alias Alias(string name) => new(name.StartsWith('@') ? name : \"@\" + name);");
+        // Exposes must still strip the leading '@' for the wire mapping key (the server strips the
+        // consumer's '@alias' placeholder before lookup) — the symmetric half of the contract.
+        emitted.Should().Contain("_call.Exposes(jsonPath, alias.StartsWith('@') ? alias.Substring(1) : alias);");
+    }
+
     private const string Harness = @"using System.Collections.Generic;
 using System.Threading.Tasks;
 using Sleipnir.Generated;

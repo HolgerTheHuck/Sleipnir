@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (NuGet: `1.1.4` — `Sleipnir.Generator` + `Sleipnir.Codegen.Core`)
+- **`BatchEntry.Alias(name)` in the .NET-native C# emitter now ensures the leading `@`.**
+  The Roslyn source generator (`Sleipnir.Generator`) and the `SleipnirCodegen.EmitClient`
+  path in `Sleipnir.Codegen.Core` emitted `public Alias Alias(string name) => new(name);`
+  — the **bare name** — into the generated `SleipnirGenerated.cs`, so a C# consumer's typed
+  batch chain compiled but sent `"ids"` on the wire where the server expected `"@ids"`:
+  `ReplaceDependencyByAlias` never matched and the dependent call received an unresolved
+  literal. This is the .NET-side twin of the npm `sleipnir-codegen@1.2.2` fix (the
+  `CsEmitter` is a port of `clients/codegen/src/emitters/cs.ts`, "reproduced verbatim").
+  Now `@`-normalized symmetrically with `Exposes` (which strips a leading `@` for the wire
+  `dependencyMapping` key): `Alias("ids")` → `"@ids"` and `Alias("@ids")` → `"@ids"`. The
+  committed TS `--lang cs` snapshot was regenerated to match, and the
+  `CsCodegenParityTests` byte-for-byte gate stays green; a focused behavior assertion was
+  added. **Not affected:** `Sleipnir.Client.Linq.Codegen` (the `sleipnir-linq` tool uses
+  `EmitContracts`/`CsContractsEmitter`, which emits no `Alias` runtime) and
+  `Sleipnir.Client.Linq` (the runtime builds `"@" + alias` correctly at the wire sites).
+  `Sleipnir.Server.Codegen` (drift-check only) is unaffected.
+
 ### Fixed (npm: `sleipnir-codegen@1.2.2`)
 - **`TypedRequest.alias()` now returns the `@alias` wire placeholder.** The generated
   `alias(name)` (TS `TypedRequest`, C# `BatchEntry.Alias`, Python `_BatchEntry.alias`)

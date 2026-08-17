@@ -140,7 +140,7 @@ jobs:
 
       - name: Build & publish sleipnir-client
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN_1 }}
         run: |
           cd clients/ts
           npm ci --no-audit --no-fund
@@ -152,7 +152,7 @@ jobs:
 
       - name: Build, rewrite dep & publish sleipnir-codegen
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN_1 }}
         run: |
           cd clients/codegen
           # npm ci resolves the local file:../ts dependency (now built above) for

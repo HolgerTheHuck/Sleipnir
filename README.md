@@ -276,10 +276,10 @@ Details: [`README_DETAILS.md#developer-ui`](README_DETAILS.md#developer-ui)
 | `Sleipnir.Telemetry` | ✅ `1.1.0` | — | Optional OpenTelemetry SDK bootstrap (OTLP/Console exporters). |
 | `Sleipnir.Client` | ✅ `1.1.0` | — | C# client (REST + WebSocket + SignalR, fluent builder). |
 | `Sleipnir.Client.Linq` | ✅ `1.1.0` | — | Typed LINQ client: `Dep<T>`/`Arg<T>` type-safe `@alias` wiring + `SleipnirQuery<T>` `.Include`/`.ThenInclude` eager-load façade. |
-| **`sleipnir-client`** | — | ✅ `sleipnir-client` | TypeScript/JavaScript client (REST + WebSocket, isomorphic). |
-| `sleipnir-codegen` | — | ✅ (soon) | CLI: typed client stubs from discovery (`sleipnir-gen --lang ts\|js\|cs\|py`). |
-| `Sleipnir.Generator` | ✅ (soon) | — | Roslyn source generator (typed C# client from `contract.sleipnir.json`). |
-| `Sleipnir.Server.Codegen` | ✅ (soon) | — | Server-side contract export + drift-check (build-time). |
+| **`sleipnir-client`** | — | ✅ `1.1.1` | TypeScript/JavaScript client (REST + WebSocket, isomorphic). |
+| `sleipnir-codegen` | — | ✅ `1.1.1` | CLI: typed client stubs from discovery (`sleipnir-gen --lang ts\|js\|cs\|py`). |
+| `Sleipnir.Generator` | ✅ `1.1.1` | — | Roslyn source generator (typed C# client from `contract.sleipnir.json`). |
+| `Sleipnir.Server.Codegen` | ✅ `1.1.1` | — | Server-side contract export + drift-check (build-time). |
 
 > **Pick `Sleipnir.Server` when you want everything.** Reference a single transport package
 > directly (e.g. `Sleipnir.Rest` for REST-only, `Sleipnir.WebSocket` for a non-.NET client) to skip

@@ -1,7 +1,7 @@
 {
   "name": "sleipnir-codegen",
-  "version": "1.0.0",
-  "description": "Typed client stub generator for the Sleipnir RPC framework — turns /api/sleipnir/discovery into typed TS/JS (C#/Python later) clients. CLI: sleipnir-gen.",
+  "version": "1.1.1",
+  "description": "Typed client stub generator for the Sleipnir RPC framework — turns /api/sleipnir/discovery into typed TS/JS/C#/Python clients. CLI: sleipnir-gen.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -6,6 +6,15 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+  # Manual trigger for the npm publish job only (e.g. the initial npm publish
+  # of sleipnir-client / sleipnir-codegen, or a re-publish at a fixed version).
+  # The NuGet pack job stays tag-gated and will not run on dispatch.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'npm version to publish (e.g. 1.1.1)'
+        required: true
+        default: '1.1.1'
 
 env:
   DOTNET_VERSION: '8.0.x'
@@ -95,3 +104,63 @@ jobs:
           files: |
             **/*.nupkg
             **/*.snupkg
+
+  publish-npm:
+    # Publishes the isomorphic TS/JS client (sleipnir-client) and the typed stub
+    # generator (sleipnir-codegen) to npm. Tag-driven like the NuGet pack job, plus
+    # a workflow_dispatch path for the initial publish / fixed-version re-publish.
+    runs-on: ubuntu-latest
+    needs: build-test
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          # registry-url + NODE_AUTH_TOKEN (set on each `npm publish` step) is the
+          # setup-node convention for publishing to the npm registry.
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Determine version
+        id: ver
+        # Tags are v1.1.1; npm rejects a leading 'v' → strip it. On dispatch, use
+        # the explicit input version (default 1.1.1) so the first npm publish can
+        # land in lockstep with the NuGet 1.1.1 release without a new tag.
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build & publish sleipnir-client
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd clients/ts
+          npm ci --no-audit --no-fund
+          # Stamp the release version (tag or dispatch input); idempotent when it
+          # already matches package.json, and authoritative for future tag releases.
+          npm version "${{ steps.ver.outputs.VERSION }}" --no-git-tag-version --allow-same-version
+          # prepublishOnly runs `npm run build` before the tarball is packed.
+          npm publish --access public
+
+      - name: Build, rewrite dep & publish sleipnir-codegen
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd clients/codegen
+          # npm ci resolves the local file:../ts dependency (now built above) for
+          # the codegen tsc compile against the client's emitted .d.ts types.
+          npm ci --no-audit --no-fund
+          npm run build
+          npm version "${{ steps.ver.outputs.VERSION }}" --no-git-tag-version --allow-same-version
+          # Rewrite the local file: dependency to the published registry version,
+          # so consumers resolve a real package instead of an invalid file: path.
+          npm pkg set dependencies.sleipnir-client="^${{ steps.ver.outputs.VERSION }}"
+          npm publish --access public

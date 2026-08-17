@@ -341,6 +341,13 @@ is not demoted in capability — the C# it produces is byte-for-byte identical t
 generator's output, enforced by the parity gate below. It is simply not required on the .NET build
 edge.
 
+For the **ts/js** languages, `sleipnir-gen --transport rest|ws|both` (default `rest`) selects which
+`sleipnir-client` runtime client the generated `SleipnirClient` wires up: `rest` → `SleipnirRestClient`,
+`ws` → `SleipnirWebSocketClient`, `both` → both clients with `call`/`batch` over REST (default) plus
+`callWs`/`batchWs` over WebSocket and `.rest`/`.ws` escape hatches. The C# and Python runtimes ship
+REST only, so `--transport` is rejected for `--lang cs|py`. (SignalR is not yet wired — the TS runtime
+has no SignalR client.)
+
 ---
 
 ## 7. How this is verified (the gates)

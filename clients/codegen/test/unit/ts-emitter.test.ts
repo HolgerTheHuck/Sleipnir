@@ -58,3 +58,66 @@ describe("emitTsClient (golden against story01 snapshot)", () => {
     expect(tree["api/controllers.ts"]).toContain("getByArticles(articleIds: number[]): TypedCall<StockInfo[], StockInfoArrayPaths>");
   });
 });
+
+describe("emitTsClient --transport ws (golden against story01.ws snapshot)", () => {
+  const input = buildEmitterInput(readFixture(), new NamingResolver());
+  const tree = emitTsClient(input, { transport: "ws" });
+
+  it("emits the same file set as rest (only client.ts differs)", () => {
+    expect(Object.keys(tree).sort()).toEqual(
+      ["api/client.ts", "api/controllers.ts", "api/index.ts", "api/typed-call.ts", "api/types.ts"],
+    );
+  });
+
+  it("matches the committed ws snapshot byte-for-byte", () => {
+    const snapshot = readTree(join(here, "..", "snapshots", "story01.ws.ts"));
+    for (const [path, content] of Object.entries(tree)) {
+      expect(snapshot[path], `snapshot missing for ${path}`).toBeDefined();
+      expect(content).toBe(snapshot[path]);
+    }
+    expect(Object.keys(snapshot).sort()).toEqual(Object.keys(tree).sort());
+  });
+
+  it("wires the WebSocket runtime client", () => {
+    expect(tree["api/client.ts"]).toContain("SleipnirWebSocketClient");
+    expect(tree["api/client.ts"]).toContain("SleipnirWebSocketClientOptions");
+    expect(tree["api/client.ts"]).toContain("this._ws");
+    expect(tree["api/client.ts"]).toContain("get ws(): SleipnirWebSocketClient");
+    // REST surface must be absent in ws-only mode.
+    expect(tree["api/client.ts"]).not.toContain("SleipnirRestClient");
+    expect(tree["api/client.ts"]).not.toContain("callWs");
+  });
+});
+
+describe("emitTsClient --transport both (golden against story01.both snapshot)", () => {
+  const input = buildEmitterInput(readFixture(), new NamingResolver());
+  const tree = emitTsClient(input, { transport: "both" });
+
+  it("emits the same file set as rest (only client.ts differs)", () => {
+    expect(Object.keys(tree).sort()).toEqual(
+      ["api/client.ts", "api/controllers.ts", "api/index.ts", "api/typed-call.ts", "api/types.ts"],
+    );
+  });
+
+  it("matches the committed both snapshot byte-for-byte", () => {
+    const snapshot = readTree(join(here, "..", "snapshots", "story01.both.ts"));
+    for (const [path, content] of Object.entries(tree)) {
+      expect(snapshot[path], `snapshot missing for ${path}`).toBeDefined();
+      expect(content).toBe(snapshot[path]);
+    }
+    expect(Object.keys(snapshot).sort()).toEqual(Object.keys(tree).sort());
+  });
+
+  it("wires both runtime clients and exposes the Ws variants", () => {
+    const c = tree["api/client.ts"];
+    expect(c).toContain("SleipnirRestClient");
+    expect(c).toContain("SleipnirWebSocketClient");
+    expect(c).toContain("SleipnirClientOptions");
+    expect(c).toContain("this._rest");
+    expect(c).toContain("this._ws");
+    expect(c).toContain("async callWs");
+    expect(c).toContain("async batchWs");
+    expect(c).toContain("get rest(): SleipnirRestClient");
+    expect(c).toContain("get ws(): SleipnirWebSocketClient");
+  });
+});

@@ -1,5 +1,5 @@
-// Auto-generated root Sleipnir client (JS).
-import { SleipnirCall, SleipnirRestClient } from "sleipnir-client";
+// Auto-generated root Sleipnir client (JS, WebSocket transport).
+import { SleipnirCall, SleipnirWebSocketClient } from "sleipnir-client";
 import { StockClient } from "./controllers.js";
 import { OrderLineClient } from "./controllers.js";
 import { ArticleClient } from "./controllers.js";
@@ -10,10 +10,10 @@ import { AddressClient } from "./controllers.js";
 export class SleipnirClient {
   /**
    * @param {string} baseUrl
-   * @param {SleipnirRestClientOptions} [options]
+   * @param {SleipnirWebSocketClientOptions} [options]
    */
   constructor(baseUrl, options = {}) {
-    this._rest = new SleipnirRestClient(baseUrl, options);
+    this._ws = new SleipnirWebSocketClient(baseUrl, options);
     const build = (controller, method) => SleipnirCall.init(controller, method);
   this.stock = new StockClient(build);
   this.orderLine = new OrderLineClient(build);
@@ -25,16 +25,16 @@ export class SleipnirClient {
 
   /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
   async call(call) {
-    return this._rest.call(call.toRequest());
+    return this._ws.call(call.toRequest());
   }
 
   /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
   async batch(b) {
     const m = b.toMulti();
-    return this._rest.callBatch(m.requests, m.mode);
+    return this._ws.callBatch(m.requests, m.mode);
   }
 
-  get rest() {
-    return this._rest;
+  get ws() {
+    return this._ws;
   }
 }

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-17
+
+### Fixed
+- **`Sleipnir.Rest` no longer pulls `Swashbuckle.AspNetCore`** — the reference was unused in the
+  transport source but flowed transitively through `Sleipnir.Server` into consumer apps. Swashbuckle
+  7.3.1 dragged in `Microsoft.OpenApi` 1.6.22, which collided with .NET 10's
+  `Microsoft.AspNetCore.OpenApi` (requiring `Microsoft.OpenApi` 2.x) — causing restore/build
+  conflicts for .NET 10 consumers. Removed; the Sleipnir REST transport never called Swashbuckle.
+  Apps that want Swagger can add `Swashbuckle.AspNetCore` themselves.
+
 ## [1.1.0] - 2026-08-15
 
 ### Added

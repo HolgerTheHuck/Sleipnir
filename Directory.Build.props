@@ -4,7 +4,7 @@
        Pro-csproj verbleibt nur Paket-spezifisches: PackageId, Description,
        PackageReadmeFile, IsPackable, StaticWebAssetBasePath u. ä. -->
   <PropertyGroup>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Authors>Sleipnir</Authors>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

@@ -818,6 +818,95 @@ serializes enums as their underlying integer, so a ref to an enum reads as a JSO
 
 ---
 
+## Observability Endpoints (experimental, opt-in)
+
+Sleipnir exposes two optional observability surfaces. Both are **opt-in** and, when the host
+runs with `RequireAuthentication = true`, **RequireAuth-gated** like `GET /discovery` — an
+unauthenticated caller receives `401`. Per-method `[SleipnirAuthorise]`/`[SleipnirAnonymous]`
+auth is the invoker's job and does not apply to these framework endpoints; the gate is the
+transport-level `HttpContext.User.Identity.IsAuthenticated` check (populate it upstream via
+token middleware / a reverse proxy).
+
+### `GET /api/sleipnir/metrics` — Prometheus text scrape
+
+A pull-model scrape endpoint exposing the Sleipnir `Meter "Sleipnir"` instruments in
+[Prometheus text exposition format](https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md).
+Wire it from `Sleipnir.Telemetry` (a separate opt-in; `Sleipnir.Server` does not reference
+the OTel SDK):
+
+```csharp
+builder.Services.AddSleipnirPrometheusMetrics();          // subscribe the meter + Prometheus exporter
+// …
+app.UseSleipnirPrometheusScrapingEndpoint("/api/sleipnir/metrics", requireAuth: true);
+```
+
+The path defaults to `/api/sleipnir/metrics`; `requireAuth` defaults to `true`. The auth gate
+reads `ISleipnirCore.RequireAuthentication` from request-scoped DI (`ISleipnirCore` lives in
+`SleipnirCore`, so no `SleipnirHub`/`SleipnirOptions` dependency is needed). When authed, the
+response is `text/plain; version=0.0.4` with one `# HELP` / `# TYPE` pair plus sample lines per
+instrument. Instrument names map dots to underscores: `sleipnir.call.duration` →
+`sleipnir_call_duration`, `sleipnir.ws.connections` → `sleipnir_ws_connections`, etc.
+
+**Instruments** (tags follow OTel RPC semantic conventions — `rpc.system=sleipnir`,
+`rpc.service`, `rpc.method`):
+
+| Instrument | Kind | Unit | Tags |
+|---|---|---|---|
+| `sleipnir.call.duration` | histogram | `ms` | `rpc.system`, `rpc.service`, `rpc.method`, `sleipnir.error_category`, `sleipnir.success` |
+| `sleipnir.call.count` | counter | `{call}` | as above |
+| `sleipnir.error.count` | counter | `{call}` | as above (success=false subset) |
+| `sleipnir.batch.fan_out` | histogram | `{request}` | `rpc.system`, `sleipnir.batch.mode` |
+| `sleipnir.batch.count` | counter | `{batch}` | `rpc.system`, `sleipnir.batch.mode` |
+| `sleipnir.event.dropped` | counter | `{event}` | `rpc.system`, `sleipnir.subscription_id` (Phase 3) |
+| `sleipnir.ws.connections` | observable gauge | `{connection}` | — (live WebSocket connections) |
+| `sleipnir.subscriptions.active` | observable gauge | `{subscription}` | — (live event subscriptions) |
+
+`AddSleipnirPrometheusMetrics` and the push-model `AddSleipnirTelemetry` (OTLP→collector→Grafana)
+do not conflict — pull and push can both be wired. **The Prometheus-text `/metrics` interface is
+the durable contract**: any scraper (Prometheus, Grafana Agent, VictoriaMetrics, or an embedded
+stack) reads it. The OTel exporter behind it is the interim producer and may be replaced without
+changing consumers.
+
+### `GET /api/sleipnir/observability` — JSON snapshot (Developer UI)
+
+A small JSON snapshot of live transport/runtime state for the Developer UI Observability panel.
+Opt-in via `SleipnirOptions.EnableObservability = true` (default `false`); the endpoint is mapped
+only when the flag is on (otherwise `404`). RequireAuth-gated like `/discovery`.
+
+```json
+{
+  "transports": { "rest": true, "webSocket": true, "signalR": false },
+  "activeConnections": 2,
+  "activeSubscriptions": 5,
+  "eventDroppedTotal": 0,
+  "callCount": 142,
+  "errorCount": 3,
+  "batchCount": 7,
+  "uptimeMs": 183402
+}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `transports.rest` | bool | REST is on (the endpoint lives in the REST group) |
+| `transports.webSocket` | bool | WebSocket channel state from `SleipnirOptions` |
+| `transports.signalR` | bool | `SleipnirOptions.UseSignalR` |
+| `activeConnections` | int | Live WebSocket connections |
+| `activeSubscriptions` | int | Live event subscriptions across all connections |
+| `eventDroppedTotal` | long | Cumulative events dropped to backpressure |
+| `callCount` | long | Cumulative completed RPC calls (success or error) |
+| `errorCount` | long | Cumulative failed RPC calls (non-2xx) |
+| `batchCount` | long | Cumulative batches processed |
+| `uptimeMs` | long | Milliseconds since the registry was created (≈ host start) |
+
+The snapshot is produced from a process-wide lock-free `SleipnirConnectionRegistry`
+(`Interlocked` accumulators), not from the OTel SDK — so the JSON endpoint is readable without a
+subscribed `MetricReader`. The same registry backs the `sleipnir.ws.connections` /
+`sleipnir.subscriptions.active` gauges scraped at `/metrics`. See
+[`README_DETAILS.md`](README_DETAILS.md) → Distributed Tracing.
+
+---
+
 ## TypeScript Client Example
 
 > A maintained, isomorphic reference client (REST + WebSocket, fluent + functional

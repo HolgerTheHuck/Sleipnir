@@ -168,10 +168,19 @@ phases land.
   free to evolve.
 - **Telemetry `sleipnir.*` metric instruments** as currently emitted (`sleipnir.call.duration`,
   `sleipnir.call.count`, `sleipnir.error.count`, `sleipnir.batch.fan_out`, `sleipnir.batch.count`,
-  `sleipnir.event.dropped` (Phase 3)). The `Meter "Sleipnir"` name and the OTel RPC span tag names
+  `sleipnir.event.dropped` (Phase 3), and the live gauges `sleipnir.ws.connections` /
+  `sleipnir.subscriptions.active`). The `Meter "Sleipnir"` name and the OTel RPC span tag names
   (`rpc.system`/`rpc.service`/`rpc.method`) are stable; the *metric instrument names and tag
   keys* are stable in Phase 1/3 but may gain additional instruments/tags in minor versions
   (additive). See `ERROR_CATALOG.md` §6.
+- **Observability endpoints** — `GET /api/sleipnir/metrics` (Prometheus-text scrape, opt-in via
+  `Sleipnir.Telemetry`'s `AddSleipnirPrometheusMetrics` + `UseSleipnirPrometheusScrapingEndpoint`)
+  and `GET /api/sleipnir/observability` (JSON snapshot, opt-in via
+  `SleipnirOptions.EnableObservability`), plus the backing `SleipnirConnectionRegistry` and the
+  DevUI Observability panel. Both are RequireAuth-gated like `/discovery`. The **Prometheus-text
+  `/metrics` interface is the durable contract** (any scraper / embedded stack reads it); the JSON
+  snapshot shape and the DevUI panel are conveniences that may settle in a minor version.
+  Experimental in v1 — see `PROTOCOL.md` → Observability Endpoints.
 - **Events / Server-Push (Phase 3)** — `[SleipnirEvent]` attribute (the **required marker** for
   event methods as of 1.2.0 — a `[SleipnirMethod]` method returning `IObservable<T>` is rejected at
   registration with a migration message; plain calls to event methods return `400`), `IObservable<T>`

@@ -210,6 +210,7 @@ var responses = await client.Call(batch);
 - **Request** — a single method call with a parameter form + raw JSON editor.
 - **Dependency Builder** — a visual composer for serial `@alias` batches: each step is a `SleipnirRequest`, exposes become `dependencyMapping`, alias-params become `@alias` placeholders. The one place that has both the provider return schema and the consumer parameter schema (from discovery), so it runs a **static checker** — see [DevUI static checker](#devui-static-checker).
 - **Codegen** — emits TypeScript and C# client code for the current call or batch, copy-to-clipboard.
+- **Observability** — a live panel that polls `GET /api/sleipnir/observability` (opt-in `EnableObservability`) every ~2 s: transport pills (REST/WS/SignalR on/off), active connections/subscriptions with sparklines, cumulative call/error/batch counters, uptime, and a pointer to the Prometheus `/metrics` scrape for the full instrument set. RequireAuth-gated like `/discovery`.
 
 **History.** The last 100 calls (request, response, duration, error) live in `sleipnir-history` and show in a collapsible bottom panel. Replay is one click.
 
@@ -229,7 +230,8 @@ var responses = await client.Call(batch);
 - **Streaming**: IAsyncEnumerable<T> support, serialized as JSON arrays
 - **Interceptor-Pipeline**: ISleipnirInterceptor for logging, tracing, caching, validation
 - **Discovery/MEX**: GET /api/sleipnir/discovery returns full API metadata
-- **Developer-UI**: Built-in web UI at `/Sleipnir` for browsing, testing, batch-building, codegen, and saving whole worksets — see [Developer UI](#developer-ui)
+- **Observability**: opt-in `GET /api/sleipnir/metrics` (Prometheus text) + `GET /api/sleipnir/observability` (JSON snapshot for the DevUI panel); OTel metrics column wired via `AddSleipnirTelemetry`; live connection/subscription gauges — see [Metrics & observability endpoints](#metrics--observability-endpoints-experimental-opt-in)
+- **Developer-UI**: Built-in web UI at `/Sleipnir` for browsing, testing, batch-building, codegen, observability, and saving whole worksets — see [Developer UI](#developer-ui)
 - **Rate-Limiting**: Built-in fixed-window rate limiter
 - **Authorization**: [SleipnirAuthorise] attribute with role-based access
 - **Expression-Tree Invocation**: Pre-compiled method delegates for maximum performance
@@ -745,6 +747,17 @@ Spans emitted (OTel RPC semantic conventions):
 - **`SleipnirBatch`** — one per batch, started in `InvokeDi(IEnumerable<SleipnirRequest>)`. Tags: `rpc.system=sleipnir`, `sleipnir.batch.mode` (`Parallel`/`Serial`, or `DependencyBatches` when auto-detect routes to topological execution), `sleipnir.batch.count`. The per-request `SleipnirCall` spans are children via `Activity.Current` parenting — a single batch yields one parent + N children.
 
 `Sleipnir.Telemetry` is the optional package that boots the OTel SDK: `AddSleipnirTelemetry` calls `AddOpenTelemetry().WithTracing(b => b.AddSource("Sleipnir") …)` with configurable service name, OTLP/Console exporter, and AspNetCore/HttpClient instrumentation gates. `SleipnirServer` does **not** reference it, keeping the OTel SDK dependencies out of the all-in-one bundle. Consumers who need custom samplers/resources/exporters skip `AddSleipnirTelemetry` and call `AddOpenTelemetry().WithTracing(b => b.AddSource("Sleipnir"))` directly — the source name is the only integration point.
+
+### Metrics & observability endpoints (experimental, opt-in)
+
+`AddSleipnirTelemetry` also subscribes the metrics column — `WithMetrics(b => b.AddMeter("Sleipnir") …)` — so the `sleipnir.*` instruments no longer emit into the void. The instruments (OTel RPC tag conventions): `sleipnir.call.duration` (histogram, ms), `sleipnir.call.count` / `sleipnir.error.count` (counters), `sleipnir.batch.fan_out` (histogram) / `sleipnir.batch.count` (counter), `sleipnir.event.dropped` (counter, Phase 3), and two live **observable gauges** with no OTel equivalent: `sleipnir.ws.connections` and `sleipnir.subscriptions.active`. The gauges are backed by a process-wide lock-free `SleipnirConnectionRegistry` (`Interlocked` counts), wired in `AddSleipnir` and bumped from the WebSocket transport (connection accept/close, subscription add/remove, event drop).
+
+Two opt-in endpoints surface this (both **RequireAuth-gated** like `/discovery` when `RequireAuthentication = true`):
+
+- **`GET /api/sleipnir/metrics`** — a Prometheus-text scrape (`Sleipnir.Telemetry`'s `AddSleipnirPrometheusMetrics()` + `UseSleipnirPrometheusScrapingEndpoint(path, requireAuth: true)`). Any scraper — Prometheus, Grafana Agent, VictoriaMetrics, or an embedded stack — reads it. The **Prometheus-text interface is the durable contract**; the OTel exporter behind it is the interim producer and may be replaced without changing consumers.
+- **`GET /api/sleipnir/observability`** — a small JSON snapshot (`SleipnirOptions.EnableObservability = true`): transport flags, active connections/subscriptions, cumulative call/error/batch counters, dropped events, uptime. Read straight from the registry (no OTel SDK / `MetricReader` needed) — the Developer UI Observability tab polls it.
+
+See [`PROTOCOL.md`](PROTOCOL.md) → Observability Endpoints for the instrument table and the JSON shape.
 
 ## Requirements
 

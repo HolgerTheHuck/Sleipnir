@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Observability: `/metrics` scrape + `/observability` snapshot + DevUI panel (experimental)
+- **`GET /api/sleipnir/metrics`** — opt-in Prometheus-text scrape endpoint exposing the
+  `Meter "Sleipnir"` instruments (`sleipnir.call.duration/count`, `sleipnir.error.count`,
+  `sleipnir.batch.fan_out/count`, `sleipnir.event.dropped`, and the new live gauges
+  `sleipnir.ws.connections` / `sleipnir.subscriptions.active`). Wired from `Sleipnir.Telemetry`
+  via `AddSleipnirPrometheusMetrics()` + `UseSleipnirPrometheusScrapingEndpoint(path, requireAuth)`.
+  RequireAuth-gated like `/discovery`. The Prometheus-text interface is the durable contract —
+  any scraper (Prometheus, Grafana Agent, VictoriaMetrics, or an embedded OTel stack) reads it;
+  the OTel exporter behind it is the interim producer.
+- **`GET /api/sleipnir/observability`** — opt-in JSON snapshot endpoint
+  (`SleipnirOptions.EnableObservability`, default `false`) returning transport flags, active
+  WebSocket connections, active event subscriptions, cumulative call/error/batch counters,
+  dropped events, and uptime. RequireAuth-gated; not mapped when the flag is off (`404`).
+- **`SleipnirConnectionRegistry`** (SleipnirCore, process-wide lock-free `Interlocked` counts)
+  backs both the gauges and the JSON snapshot; wired eagerly in `AddSleipnir` and bumped from
+  the WebSocket transport (connection accept/close, subscription add/remove, event drop). Keeps
+  `/observability` readable without an OTel `MetricReader` (localized double-bookkeeping — the
+  OTel Counters/Histograms are write-only).
+- **`AddSleipnirTelemetry` now subscribes the metrics column** (`WithMetrics(b =>
+  b.AddMeter("Sleipnir") …)`), closing the gap where the `sleipnir.*` instruments emitted into
+  the void. Push (OTLP→collector→Grafana) and pull (Prometheus scrape) do not conflict.
+- **Developer UI Observability tab** — a live panel polling `/observability` every ~2 s:
+  transport pills, active connections/subscriptions with sparklines, cumulative counters,
+  uptime, and a pointer to `/metrics` for the full instrument set.
+
 ### Added — Events: configurable per-event backpressure (experimental surface)
 - **`SleipnirOptions.EventBufferCapacity`** (int?, fallback 100) and
   **`SleipnirOptions.EventBackpressureStrategy`** (enum, default `DropOldest`) now configure the

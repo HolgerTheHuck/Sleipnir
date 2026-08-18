@@ -48,6 +48,19 @@ namespace SleipnirHub.Extensions
             // (UseSleipnirTransports/MapSleipnir) can read UseSignalR etc. without parameters.
             services.AddSingleton(options);
 
+            // Observability registry (process-wide, lock-free): backs the
+            // sleipnir.ws.connections / sleipnir.subscriptions.active ObservableGauges
+            // (read by the Prometheus exporter at scrape time) and the JSON
+            // /observability snapshot (read directly). Created eagerly here so the
+            // static SleipnirConnectionRegistry.Instance / SleipnirMetrics gauge callbacks
+            // are wired before the first request — the registry must count calls/batches
+            // from the very first invocation, not only after a /observability GET resolves
+            // the DI singleton. See SleipnirCore.Tracing.SleipnirConnectionRegistry.
+            var connectionRegistry = new SleipnirCore.Tracing.SleipnirConnectionRegistry();
+            SleipnirCore.Tracing.SleipnirConnectionRegistry.SetInstance(connectionRegistry);
+            SleipnirCore.Tracing.SleipnirMetrics.SetConnectionRegistry(connectionRegistry);
+            services.AddSingleton(connectionRegistry);
+
             if (options.UseSignalR)
             {
                 // Add SignalR as the transport-layer.

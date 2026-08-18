@@ -41,6 +41,7 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
 {
     private readonly WebSocket _webSocket;
     private readonly ISleipnirCore _sleipnirCore;
+    private readonly SleipnirConnectionRegistry _connectionRegistry;
     private readonly ILogger? _logger;
     private readonly int _defaultBufferCapacity;
     private readonly EventBackpressureStrategy _defaultStrategy;
@@ -57,12 +58,14 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
     public SleipnirSubscriptionManager(
         WebSocket webSocket,
         ISleipnirCore sleipnirCore,
+        SleipnirConnectionRegistry connectionRegistry,
         ILogger? logger,
         int bufferCapacity = 100,
         EventBackpressureStrategy backpressureStrategy = EventBackpressureStrategy.DropOldest)
     {
         _webSocket = webSocket;
         _sleipnirCore = sleipnirCore;
+        _connectionRegistry = connectionRegistry;
         _logger = logger;
         _defaultBufferCapacity = bufferCapacity > 0 ? bufferCapacity : 100;
         _defaultStrategy = backpressureStrategy;
@@ -101,6 +104,9 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
             return SleipnirResults.Error(SleipnirErrorCodes.Conflict, "Subscription ID collision — retry.", SleipnirCommon.Results.SleipnirErrorCategory.Conflict);
         }
 
+        // Observability: count the now-active subscription (process-wide gauge + JSON snapshot).
+        _connectionRegistry.IncSubscription();
+
         // Auf dem Observable subscribieren; jedes OnNext → Event-Frame in den Send-Channel.
         state.Disposable = observable.Subscribe(new EventObserver<object?>(state, subscriptionId, _logger));
 
@@ -135,6 +141,9 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         if (_subscriptions.TryRemove(subscriptionId, out var state))
         {
             state.Dispose();
+            // Observability: the subscription ended (explicit unsubscribe). Decrement once;
+            // the DisposeAsync path only sees subscriptions still in the dict, so no double-count.
+            _connectionRegistry.DecSubscription();
             return Task.FromResult<SleipnirResponse?>(new SleipnirResponse { Code = SleipnirErrorCodes.Ok, Id = requestId ?? string.Empty });
         }
         return Task.FromResult<SleipnirResponse?>(SleipnirResults.Error(SleipnirErrorCodes.NotFound, $"Subscription '{subscriptionId}' not found.",
@@ -177,7 +186,12 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
 
         // Alle Subscriptions disposed.
         foreach (var state in _subscriptions.Values)
+        {
             state.Dispose();
+            // Observability: each subscription still in the dict at disconnect ends here.
+            // (Those already removed via explicit unsubscribe are gone — no double decrement.)
+            _connectionRegistry.DecSubscription();
+        }
         _subscriptions.Clear();
 
         try { await _sendLoopTask; } catch { /* ignore */ }

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry;
 using OpenTelemetry.Exporter;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using SleipnirCore.Tracing;
@@ -41,6 +42,32 @@ public static class SleipnirTelemetryServiceExtensions
                 builder.AddAspNetCoreInstrumentation();
             if (options.IncludeHttpClient)
                 builder.AddHttpClientInstrumentation();
+
+            if (options.Exporter == SleipnirExporter.Console)
+            {
+                builder.AddConsoleExporter();
+            }
+            else
+            {
+                builder.AddOtlpExporter(o =>
+                {
+                    if (!string.IsNullOrEmpty(options.OtlpEndpoint))
+                        o.Endpoint = new Uri(options.OtlpEndpoint);
+                });
+            }
+        });
+
+        // Metrics-Säule: abonniert den Sleipnir-Meter (SleipnirMetrics.MeterName = "Sleipnir"),
+        // sodass die Counter/Histogram/Gauge-Instrumente nicht mehr ins Leere laufen. Der
+        // Exporter folgt demselben Console/Otlp-Schema wie Traces. Für einen Pull-Scrape
+        // (Prometheus-Text) zusätzlich AddSleipnirPrometheusMetrics() + UseSleipnirPrometheusScrapingEndpoint()
+        // aufrufen — siehe SleipnirPrometheusExtensions. Push (OTLP→Collector→Grafana) und
+        // Pull (Prometheus-Scrape) schließen sich nicht aus.
+        services.AddOpenTelemetry().WithMetrics(builder =>
+        {
+            builder
+                .AddMeter(SleipnirMetrics.MeterName)
+                .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(options.ServiceName));
 
             if (options.Exporter == SleipnirExporter.Console)
             {

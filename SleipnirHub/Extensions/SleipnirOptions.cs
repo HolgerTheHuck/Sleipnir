@@ -148,6 +148,21 @@ namespace SleipnirHub.Extensions
         /// </summary>
         public bool EnableJsonRpcCompat { get; set; } = false;
 
+        /// <summary>
+        /// Enables the JSON observability snapshot endpoint
+        /// <c>GET {prefix}/observability</c> (default <c>false</c> — opt-in, like
+        /// <see cref="EnableJsonRpcCompat"/>). Returns a small JSON document with live
+        /// transport/runtime state (active WebSocket connections, active event
+        /// subscriptions, cumulative call/error/batch counters, dropped events) for the
+        /// Developer UI Observability panel. RequireAuth-gated like <c>/discovery</c>:
+        /// when <see cref="RequireAuthentication"/> is on, an unauthenticated caller
+        /// receives <c>401</c>. For a Prometheus-text scrape endpoint instead, use
+        /// <c>Sleipnir.Telemetry</c>'s <c>AddSleipnirPrometheusMetrics</c> +
+        /// <c>UseSleipnirPrometheusScrapingEndpoint</c> (separate opt-in). Experimental —
+        /// see <c>STABILITY.md</c>.
+        /// </summary>
+        public bool EnableObservability { get; set; } = false;
+
         // ───────────────────────────────────────────────────────────────────────
         // Interceptor pipeline (Phase 1, see docs/design/phase-1-interceptor-pipeline.md)
         // ───────────────────────────────────────────────────────────────────────

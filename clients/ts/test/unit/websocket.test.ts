@@ -346,3 +346,153 @@ describe("SleipnirWebSocketClient", () => {
     });
   });
 });
+
+// --- Phase 3: server-push events (subscribe / event / complete / error / unsubscribe / reconnect) ---
+
+describe("SleipnirWebSocketClient — Phase 3 subscribe", () => {
+  function subResp(id: string, subscriptionId: string): string {
+    return JSON.stringify({ code: 200, data: { subscriptionId }, id, isSuccess: true });
+  }
+  function eventFrame(sid: string, data: unknown, eventId = 1): string {
+    return JSON.stringify({ type: "event", subscriptionId: sid, eventId, data });
+  }
+  function completeFrame(sid: string): string {
+    return JSON.stringify({ type: "complete", subscriptionId: sid });
+  }
+  function errorFrame(sid: string, message: string): string {
+    return JSON.stringify({ type: "error", subscriptionId: sid, message });
+  }
+  const tick = () => new Promise<void>((r) => setTimeout(r, 10));
+
+  it("subscribe sends kind:\"subscribe\", resolves the subscriptionId, and routes event frames to onNext", async () => {
+    const { client, ref } = makeClient();
+    const seen: number[] = [];
+    const p = client.subscribe<{ value: number }>(
+      { controller: "Chat", method: "MessageReceived", params: [{ name: "chatId", data: 1 }], id: "sub1" },
+      { onNext: (m) => seen.push(m.value) },
+    );
+    const ws = ref.ws!;
+    ws.fireOpen();
+    await vi.waitFor(() => expect(ws.sent.length).toBe(1), { interval: 1, timeout: 1000 });
+    // kind:"subscribe" routes server-side; controller/method ride on the same frame.
+    const sent = JSON.parse(ws.lastSent!);
+    expect(sent.kind).toBe("subscribe");
+    expect(sent.controller).toBe("Chat");
+    expect(sent.method).toBe("MessageReceived");
+
+    ws.fireMessage(subResp("sub1", "s1"));
+    const sub = await p;
+    expect(sub.subscriptionId).toBe("s1");
+
+    // Event frames route per subscriptionId → onNext(payload).
+    ws.fireMessage(eventFrame("s1", { value: 10 }));
+    ws.fireMessage(eventFrame("s1", { value: 20 }));
+    await vi.waitFor(() => expect(seen).toEqual([10, 20]), { interval: 1, timeout: 1000 });
+    client.dispose();
+  });
+
+  it("complete frame calls onComplete and removes the subscription (later events dropped)", async () => {
+    const { client, ref } = makeClient();
+    let completed = false;
+    let next = 0;
+    const p = client.subscribe<number>(
+      { controller: "Ticker", method: "Ticks", params: [], id: "sub2" },
+      { onNext: (n) => { next = n; }, onComplete: () => { completed = true; } },
+    );
+    const ws = ref.ws!;
+    ws.fireOpen();
+    await vi.waitFor(() => expect(ws.sent.length).toBe(1), { interval: 1, timeout: 1000 });
+    ws.fireMessage(subResp("sub2", "s2"));
+    await p;
+    ws.fireMessage(eventFrame("s2", 1));
+    await vi.waitFor(() => expect(next).toBe(1), { interval: 1, timeout: 1000 });
+    ws.fireMessage(completeFrame("s2"));
+    await vi.waitFor(() => expect(completed).toBe(true), { interval: 1, timeout: 1000 });
+    // After complete the subscription is gone — a late event frame is silently dropped.
+    ws.fireMessage(eventFrame("s2", 99));
+    await tick();
+    expect(next).toBe(1); // unchanged
+    client.dispose();
+  });
+
+  it("error frame calls onError with the message and removes the subscription", async () => {
+    const { client, ref } = makeClient();
+    let errMsg: string | undefined;
+    const p = client.subscribe<number>(
+      { controller: "C", method: "M", params: [], id: "sub3" },
+      { onNext: () => {}, onError: (e) => { errMsg = e.message; } },
+    );
+    const ws = ref.ws!;
+    ws.fireOpen();
+    await vi.waitFor(() => expect(ws.sent.length).toBe(1), { interval: 1, timeout: 1000 });
+    ws.fireMessage(subResp("sub3", "s3"));
+    await p;
+    ws.fireMessage(errorFrame("s3", "boom"));
+    await vi.waitFor(() => expect(errMsg).toBe("boom"), { interval: 1, timeout: 1000 });
+    // subscription removed — a late event frame is dropped.
+    ws.fireMessage(eventFrame("s3", 5));
+    await tick();
+    client.dispose();
+  });
+
+  it("unsubscribe sends kind:\"unsubscribe\" and stops delivery (idempotent)", async () => {
+    const { client, ref } = makeClient();
+    let next = 0;
+    const p = client.subscribe<number>(
+      { controller: "C", method: "M", params: [], id: "sub4" },
+      { onNext: (n) => { next = n; } },
+    );
+    const ws = ref.ws!;
+    ws.fireOpen();
+    await vi.waitFor(() => expect(ws.sent.length).toBe(1), { interval: 1, timeout: 1000 });
+    ws.fireMessage(subResp("sub4", "s4"));
+    const sub = await p;
+    await sub.unsubscribe();
+    const unsub = ws.sent.map((s) => JSON.parse(s)).find((o) => o.kind === "unsubscribe");
+    expect(unsub).toBeDefined();
+    expect(unsub.subscriptionId).toBe("s4");
+    // Delivery stopped; a second unsubscribe is a no-op (no second frame).
+    await sub.unsubscribe();
+    const unsubs = ws.sent.map((s) => JSON.parse(s)).filter((o) => o.kind === "unsubscribe");
+    expect(unsubs).toHaveLength(1);
+    ws.fireMessage(eventFrame("s4", 7));
+    await tick();
+    expect(next).toBe(0);
+    client.dispose();
+  });
+
+  it("reconnect re-subscribes with the same request (new subscriptionId) and delivery resumes", async () => {
+    const { client, ref } = makeClient({ reconnectDelays: [10] });
+    const seen: number[] = [];
+    const p = client.subscribe<number>(
+      { controller: "C", method: "M", params: [], id: "sub5" },
+      { onNext: (n) => seen.push(n) },
+    );
+    const ws1 = ref.ws!;
+    ws1.fireOpen();
+    await vi.waitFor(() => expect(ws1.sent.length).toBe(1), { interval: 1, timeout: 1000 });
+    ws1.fireMessage(subResp("sub5", "s5a"));
+    await p;
+    ws1.fireMessage(eventFrame("s5a", 1));
+    await vi.waitFor(() => expect(seen).toEqual([1]), { interval: 1, timeout: 1000 });
+
+    // Unexpected drop → background reconnect → new socket → resubscribeAll fires.
+    ws1.fireClose(1001);
+    await vi.waitFor(() => expect(ref.created).toBe(2), { interval: 1, timeout: 1000 });
+    const ws2 = ref.ws!;
+    ws2.fireOpen(); // reconnect connect resolves; resubscribeAll runs once Connected.
+    // A re-subscribe frame (same request, kind:"subscribe") appears on the new socket.
+    await vi.waitFor(
+      () => expect(ws2.sent.some((s) => JSON.parse(s).kind === "subscribe")).toBe(true),
+      { interval: 1, timeout: 1000 },
+    );
+    const subFrame = ws2.sent.map((s) => JSON.parse(s)).find((o) => o.kind === "subscribe");
+    expect(subFrame.controller).toBe("C");
+    // Server hands out a NEW subscriptionId for the new connection.
+    ws2.fireMessage(subResp(subFrame.id, "s5b"));
+    // Delivery resumes under the new subscriptionId (at-most-once: gap events lost).
+    ws2.fireMessage(eventFrame("s5b", 2));
+    await vi.waitFor(() => expect(seen).toEqual([1, 2]), { interval: 1, timeout: 1000 });
+    client.dispose();
+  });
+});

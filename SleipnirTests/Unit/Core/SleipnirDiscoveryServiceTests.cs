@@ -280,7 +280,11 @@ public class SleipnirDiscoveryServiceTests
         method.ReturnType.Element!.Name.Should().Be("int");
     }
 
-    /// <summary>IObservable&lt;T&gt; wird als event deklariert (Phase 3), nicht als stream/array.</summary>
+    /// <summary>
+    /// IObservable&lt;T&gt; wird als event deklariert (Phase 3), nicht als stream/array.
+    /// Die Methode ist mit [SleipnirEvent] (nicht [SleipnirMethod]) markiert — Discovery
+    /// muss [SleipnirEvent]-Methoden aufnehmen und den Event-Namen als MethodName liefern.
+    /// </summary>
     [Fact]
     public void GetDiscoveryInfo_ObservableIsEvent()
     {

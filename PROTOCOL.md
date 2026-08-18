@@ -173,13 +173,26 @@ request body, `429` from the rate limiter, `499` for a cancelled request).
 | 204 | No Content – void / `Task`-without-result method completed (no `data`) |
 | 400 | Bad Request – invalid parameters, duplicate parameter name, unresolved dependency, cycle, or malformed JSON |
 | 401 | Unauthorized – `[SleipnirAuthorise]` check failed (not authenticated) |
-| 403 | Forbidden – role-based authorization failed _(roadmap: requires the auth attribute to distinguish authenticated-but-not-allowed from unauthenticated)_ |
+| 403 | Forbidden – authenticated but role/policy denied (`[SleipnirAuthorise(Role=…)]` / `[SleipnirAuthorise(Policy=…)]`; distinguished from 401 since Phase 1) |
 | 404 | Not Found – controller or method not found |
-| 429 | Too Many Requests – rate limit exceeded (transport-level) |
+| 409 | Conflict – duplicate / stale state (business) |
+| 413 | Request Entity Too Large – cardinality cap (`MaxParameterArrayLength`, `MaxResultElementCount`, `MaximumBatchSize`) or message-size limit exceeded |
+| 429 | Too Many Requests – rate limit exceeded (transport-level; mapped to the `ResourceExhausted` category) |
+| 499 | Client Closed Request – client cancelled before the method returned (transport-level; `OperationCanceledException`) |
 | 500 | Internal Server Error – method threw an exception. The generic `message` never leaks the exception; `error.details` carries the stack trace only when detailed errors are enabled (Development / `EnableDetailedErrors`). |
+| 503 | Service Unavailable – reserved (rate-limiter currently produces 429 at the transport layer; `Unavailable` category) |
 
 > `SleipnirError.requestId` is populated from the originating request `id` on every
 > non-2xx response, so clients can correlate failures even in batch calls.
+
+> **Semantic category.** Alongside the numeric `code`, every non-2xx response carries an
+> `error.category` (string, `SleipnirErrorCategory`: `InvalidArgument` / `Unauthenticated` /
+> `PermissionDenied` / `NotFound` / `Conflict` / `FailedPrecondition` / `ResourceExhausted` /
+> `Internal` / `Unavailable` / `Cancelled`, default `None`). The category is a transport-uniform
+> semantic layer mapped to gRPC equivalents and is **additive** — existing 1.0.0 clients ignore
+> it. The authoritative catalog (numeric code → category → transport/business/auth kind) is
+> [`ERROR_CATALOG.md`](ERROR_CATALOG.md); the stable logical-code set is declared in
+> [`STABILITY.md`](STABILITY.md) §1.4.
 
 ### Returning Errors from a Controller Method
 
@@ -492,6 +505,17 @@ not supported in v1). `byte[]` responses are **buffered** into `content`; a
 v1. For large or frequent binary, run a plain REST or WebSocket endpoint
 alongside Sleipnir; the v1.x+ binary-transfer plan is in [ROADMAP.md](ROADMAP.md).
 
+> **Media (images / video / downloads) is out of scope for the RPC wire.** The
+> Sleipnir wire is `POST` + JSON with a base64 binary envelope — the wrong shape
+> for browser media (`<img src>` needs `GET`, raw bytes, `Content-Type`, `Range`,
+> `ETag`/`304`, CDN caching). There is **no** `[SleipnirMethod]` raw/`GET` media
+> return, no `SleipnirResults.Raw/File/Stream`, and no media route in discovery or
+> codegen — a deliberate boundary (second dispatcher verb + transport asymmetry +
+> the HTTP-semantics slope). Serve media from a **co-hosted HTTP `GET` endpoint**
+> on the same ASP.NET host (same DI, same auth pipeline); Sleipnir acts as the
+> *authority* that returns the resource URL and gates permission. See
+> [README_DETAILS.md → Serving Media & Non-RPC Resources](README_DETAILS.md#serving-media--non-rpc-resources-images-video-downloads).
+
 ---
 
 ## Transports
@@ -561,6 +585,184 @@ Content-Type: application/json
 | `DoWorkMany` | `SleipnirMultiRequest request` | `IEnumerable<SleipnirResponse>` |
 
 **Protocol**: MessagePack binary (optional, can be JSON if configured).
+
+---
+
+## Server-Push Events (Phase 3, experimental)
+
+Sleipnir supports server→client push via `IObservable<T>` **event** methods, in addition to
+request/response **calls**. An event method is marked with `[SleipnirEvent("name")]` on the
+server (not `[SleipnirMethod]`) and returns `IObservable<T>`; a client **subscribes** to it and
+receives an unbounded stream of event frames until it unsubscribes or the observable completes.
+**WebSocket-only in v1** (no REST, no SignalR event surface). Events are **not chainable** —
+they carry no `id`/`exposes`/`@alias` semantics (a stream of push values has no single result to
+expose). See `STABILITY.md` §2 for the experimental-status scope.
+
+> **Status:** experimental in v1. The wire format, subscription lifecycle, and backpressure
+> may settle in a minor version. `Last-Event-Id` resume and a server-side disconnect buffer are
+> deferred to v1.x+. See `docs/design/phase-3-events.md`.
+
+### Routing: the `kind` field
+
+Every inbound WS text frame is a `SleipnirRequest` unless it carries a `kind` field that routes
+it elsewhere. The dispatcher (`SleipnirWebSocketMiddleware`) reads `kind` first:
+
+| `kind`            | Meaning                                  | Server entry point          |
+|-------------------|------------------------------------------|-----------------------------|
+| *(absent)*        | A request/response call (v1.0 behavior)  | `ISleipnirCore.InvokeDi`    |
+| `"subscribe"`     | Subscribe to a `[SleipnirEvent]` method  | `SubscribeAsync`            |
+| `"unsubscribe"`   | Tear down an active subscription         | `SubscriptionManager`       |
+
+`kind` is matched case-sensitively against the literal strings above. The `method` field of a
+subscribe request is the `[SleipnirEvent]` name (analogous to the `[SleipnirMethod]` name for
+calls); both share the `{Controller}_{name}` dispatch namespace, so an event name and a call
+name on the same controller must not collide (registration throws if they do).
+
+### Subscribe request (client → server)
+
+Same shape as a call request, plus `kind:"subscribe"`:
+
+```json
+{
+  "kind": "subscribe",
+  "controller": "Chat",
+  "method": "MessageReceived",
+  "params": [
+    { "parameterName": "chatId", "data": 42 }
+  ],
+  "id": "sub-1"
+}
+```
+
+`params` is the standard `SleipnirParameter[]` (`{parameterName, data}` pairs, matched by name).
+Parameters are **first-class subscription parameters** — bound once at subscribe time (e.g.
+"all events for chat 42"). `CancellationToken` is injected automatically and not sent.
+
+### Subscribe response (server → client)
+
+A standard `SleipnirResponse` echoing `id`, with the new `subscriptionId` in `data`:
+
+```json
+{ "code": 200, "data": { "subscriptionId": "7a3f9c1e8b4d4e2a9b6f0c1d2e3f4a5b" }, "id": "sub-1" }
+```
+
+Errors use the normal response error envelope. `code` follows the same semantics as calls:
+
+| `code` | Cause                                                                 |
+|--------|-----------------------------------------------------------------------|
+| `400`  | Method is not an event (no `[SleipnirEvent]`); binding/param error    |
+| `401`  | Authentication required and missing (subscribe-time auth)             |
+| `403`  | Authenticated but role/policy denied                                  |
+| `404`  | Controller or method name not found                                   |
+| `500`  | Internal error (generic message; stack only with `EnableDetailedErrors`) |
+
+**Auth runs at subscribe time**, exactly like a call (through the same auth interceptor and
+`[SleipnirAuthorise]` / `[SleipnirAnonymous]` gates). A subscription is long-lived; re-checking
+authorization on reconnect is deferred to v1.x+.
+
+### Event frames (server → client)
+
+Once subscribed, the server pushes one text frame per `IObservable<T>` element. Event frames
+are a **separate frame type** — they have **no `code` and no `id`** and are correlated by
+`subscriptionId`, not by the call `id`:
+
+```json
+{ "type": "event", "subscriptionId": "7a3f9c1e…", "eventId": 1, "data": { "from": "alice", "text": "hi" } }
+{ "type": "event", "subscriptionId": "7a3f9c1e…", "eventId": 2, "data": { "from": "bob",   "text": "yo" } }
+```
+
+- `eventId` is a **monotonically increasing integer per subscription** (starts at 1). It is
+  present today so a future `Last-Event-Id` resume can replay from a known point (v1.x+).
+- `data` is the serialized `T` (the observable's element type), using the same JSON options as
+  call results (camelCase output, case-insensitive read).
+- Frames may interleave with call responses on the same socket; a client distinguishes them by
+  presence of `type` (event/complete/error) vs. `code` (call response). A batch call response
+  is a JSON array and is never an event frame.
+
+### Completion and error frames (server → client)
+
+When the `IObservable<T>` signals `OnCompleted` or `OnError`, the server sends one terminal
+frame and tears down the subscription:
+
+```json
+{ "type": "complete", "subscriptionId": "7a3f9c1e…" }
+{ "type": "error",     "subscriptionId": "7a3f9c1e…", "message": "Upstream source failed" }
+```
+
+After either terminal frame, no further frames are sent for that `subscriptionId`. The
+subscription is disposed server-side; the client need not (and cannot) unsubscribe it
+afterwards — an unsubscribe for an already-terminated subscription returns `404`.
+
+### Unsubscribe request / response
+
+A client tears down an active subscription early (before completion) with:
+
+```json
+{ "kind": "unsubscribe", "subscriptionId": "7a3f9c1e…", "id": "unsub-1" }
+```
+
+Response — success (`200`, `id` echoed):
+
+```json
+{ "code": 200, "id": "unsub-1" }
+```
+
+Or `404` if the `subscriptionId` is unknown (already completed, already unsubscribed, or never
+subscribed on this connection):
+
+```json
+{ "code": 404, "id": "unsub-1", "error": { "code": 404, "message": "Subscription '…' not found." } }
+```
+
+### Subscription lifecycle & delivery semantics
+
+- **`subscriptionId` is per-connection.** A new WebSocket connection gets fresh ids; ids from a
+  different connection are not valid here.
+- **Auto-cleanup on disconnect.** When the socket closes, the server disposes every active
+  subscription on that connection (the observable's subscription is disposed, freeing the
+  server-side source).
+- **Reconnect → re-subscribe (client-side).** A client with auto-reconnect re-issues
+  `kind:"subscribe"` for each active subscription with the original parameters after a reconnect,
+  obtaining new `subscriptionId`s. The `SleipnirWebSocketClient` does this automatically.
+- **At-most-once-while-disconnected.** Events produced while the connection is down are **lost**
+  — there is no server-side buffer in v1. This is the documented gap semantic; `Last-Event-Id`
+  resume + server buffer are v1.x+.
+- **Backpressure.** Per subscription the server holds a buffer whose capacity and overflow
+  strategy are configurable: global defaults `SleipnirOptions.EventBufferCapacity` (fallback 100)
+  and `SleipnirOptions.EventBackpressureStrategy` (default `DropOldest`), overridable per event via
+  `[SleipnirEvent(BufferCapacity = …, BackpressureStrategy = …)]`. Strategies: `DropOldest`
+  (evict oldest — default, DoS-safe, keeps the subscription recent), `DropWrite` (drop newest —
+  preserves backlog, loses freshness), `Block` (block the producer until the consumer drains —
+  lossless but back-pressures the source), `Unbounded` (no cap, no DoS backstop). `DropOldest`
+  evictions and `DropWrite` rejections increment the `sleipnir.event.dropped` counter; `Block` and
+  `Unbounded` never drop. The counter is accurate as of 1.2.0 (the earlier `DropOldest`-channel
+  path could not detect saturation — `TryWrite` returned `true` unconditionally — so it was dead
+  code).
+- **Cold vs. hot source.** The framework is a pass-through: at subscribe time it invokes the
+  controller method **once** (in a fresh DI scope per subscription) and subscribes to the returned
+  `IObservable<T>` once. It does not wrap in `Publish`/`RefCount`/`ReplaySubject`, so cold/hot
+  behavior is entirely the producer's. A **cold** source gives each subscriber an independent
+  stream from its own start; a **hot** source (e.g. a shared `Subject<T>`) broadcasts to all
+  current subscribers and does not replay pre-subscribe events. The at-most-once-while-disconnected
+  rule applies to both: a hot source keeps producing while you are disconnected and those events
+  are lost; a cold source simply restarts on re-subscribe. Build shared-broadcast semantics in
+  the producer (a singleton subject) — the framework will not infer them.
+
+### Discovery
+
+Event methods appear in `DiscoveryInfo` like any other method; their event-ness is expressed on
+the return type (there is no method-level `kind` field):
+
+```json
+{
+  "methodName": "MessageReceived",
+  "returnType": { "kind": "event", "element": { "kind": "ref", "ref": "Message" } },
+  "parameters": [ { "parameterName": "chatId", "parameterType": { "kind": "scalar", "name": "int" } } ]
+}
+```
+
+A consumer detects a subscribable method by `returnType.kind == "event"`; the element type is
+`returnType.element`. The `[SleipnirEvent]` name is the `methodName`.
 
 ---
 

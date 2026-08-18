@@ -112,6 +112,9 @@ function normalizeRef(ref: TypeRef, enumKeys: ReadonlySet<string>): ResolvedType
     case "array":
     case "set":
     case "stream":
+    case "event":
+      // Events carry their payload as `element` (IObservable<T> → T); recurse so an
+      // enum-typed event payload also collapses to its numeric wire scalar.
       return { ...ref, element: ref.element ? normalizeRef(ref.element, enumKeys) : undefined };
     case "map":
       return {
@@ -203,6 +206,24 @@ function elementOf(ref: ResolvedTypeRef): ResolvedTypeRef {
   return (ref as { element?: ResolvedTypeRef }).element ?? { kind: "opaque" };
 }
 
+/** True for a `[SleipnirEvent]` method — `returnType.kind === "event"` (IObservable<T>). */
+export function isEventMethod(m: ResolvedMethod): boolean {
+  return m.returnType.kind === "event";
+}
+
+/**
+ * The pushed-payload TypeRef of an event method (the `T` in `IObservable<T>`).
+ * Falls back to `opaque` for a malformed event ref with no element.
+ */
+export function eventPayloadRef(m: ResolvedMethod): ResolvedTypeRef {
+  return (m.returnType as { element?: ResolvedTypeRef }).element ?? { kind: "opaque" };
+}
+
+/** True if any method across the input controllers is a server-push event. */
+export function hasEvents(input: EmitterInput): boolean {
+  return input.controllers.some((c) => c.methods.some(isEventMethod));
+}
+
 /** TS type string for a resolved ref (used by the TS + JS emitters). */
 export function tsTypeOfRef(ref: ResolvedTypeRef, resolver: NamingResolver): string {
   const base = tsTypeOfRefInner(ref, resolver);
@@ -217,6 +238,11 @@ function tsTypeOfRefInner(ref: ResolvedTypeRef, resolver: NamingResolver): strin
     case "set":
     case "stream":
       return tsTypeOfRefInner(elementOf(ref), resolver) + "[]";
+    // Event: the payload type T of IObservable<T>. The generated client emits a
+    // typed `subscribe<T>` surface (not a call), so the element is the handler's
+    // `onNext` value type — a scalar, not an array.
+    case "event":
+      return tsTypeOfRefInner(elementOf(ref), resolver);
     case "map":
       return `Record<string, ${tsTypeOfRefInner((ref as { value?: ResolvedTypeRef }).value ?? { kind: "opaque" }, resolver)}>`;
     case "ref": return resolver.resolve(ref.ref ?? "");
@@ -235,6 +261,10 @@ export function csTypeOfRef(ref: ResolvedTypeRef, resolver: NamingResolver): str
     // stream: the invoker materializes IAsyncEnumerable<T> to a list before
     // serialization, so the client receives a JSON array → List<T>.
     case "stream": return `List<${csTypeOfRef(elementOf(ref), resolver)}>`;
+    // Event: the pushed payload type T of IObservable<T>. The REST-only generated
+    // C# client cannot subscribe (events are WS-only); the payload type is still
+    // resolved so a TODO marker can name it.
+    case "event": return csTypeOfRef(elementOf(ref), resolver);
     case "map":
       return `Dictionary<${csTypeOfRef((ref as { key?: ResolvedTypeRef }).key ?? { kind: "scalar", name: "string" }, resolver)}, ${csTypeOfRef((ref as { value?: ResolvedTypeRef }).value ?? { kind: "opaque" }, resolver)}>`;
     case "ref": return resolver.resolve(ref.ref ?? "");
@@ -257,6 +287,11 @@ function pyTypeOfRefInner(ref: ResolvedTypeRef, resolver: NamingResolver): strin
     case "set":
     case "stream":
       return `list[${pyTypeOfRefInner(elementOf(ref), resolver)}]`;
+    // Event: the pushed payload type T of IObservable<T>. The REST-only generated
+    // Python client cannot subscribe (events are WS-only); the payload type is
+    // still resolved so a TODO marker can name it.
+    case "event":
+      return pyTypeOfRefInner(elementOf(ref), resolver);
     case "map":
       return `dict[${pyTypeOfRefInner((ref as { key?: ResolvedTypeRef }).key ?? { kind: "scalar", name: "string" }, resolver)}, ${pyTypeOfRefInner((ref as { value?: ResolvedTypeRef }).value ?? { kind: "opaque" }, resolver)}]`;
     case "ref": return resolver.resolve(ref.ref ?? "");

@@ -1,7 +1,15 @@
 # Phase 3 — Events / Server-Push Design
 
 > Roadmap: `ROADMAP.md` → Benutzbarkeit-Roadmap → Phase 3 (gekoppelter Durchgang).
-> Status: **entworfen**. Noch nicht implementiert.
+> Status: **geliefert (Server-Seite, v1)** — siehe „Phase 3 v1 — geliefert (Server-Seite)" unten.
+>
+> **Vertrags-Korrektur (1.2.0):** `[SleipnirEvent]` ist der erforderliche Marker für Event-Methoden
+> (wie in diesem Entwurf vorgesehen). Die ursprüngliche Implementierung (1.1.0) hat das Attribut
+> definiert, aber zur Laufzeit nie gelesen — Events wurden über `[SleipnirMethod]` + Rückgabe-Typ
+> `IObservable<T>` registriert/discoveryiert. Ab 1.2.0 scannt `Register` `[SleipnirEvent]`, validiert
+> die `IObservable<T>`-Rückgabe zur Registrierungszeit, und lehnt `IObservable<T>`-Methoden mit
+> `[SleipnirMethod]` ab. Consumer-Doku: `README_DETAILS.md` → „Server-Push Events"; Wire-Spec:
+> `PROTOCOL.md` → „Server-Push Events".
 >
 > Phase 3 baut **Server→Client-Push** als First-Class-Oberfläche und **Client-Test-Doubles**
 > (B) als kohärente Ergänzung. Beide sind gekoppelt, weil Events eine Codegen-Erweiterung
@@ -86,9 +94,14 @@ public class ChatController(IChatService service)
 
 ## Kompositionsregel (früh festnageln)
 
-- **Events sind *nicht* chainbar** (wie Streams auch). `Exposes("$.id", …)` braucht einen
-  fertigen Response; ein Event-Stream hat keinen. Einfache, konsistente Regel:
-  *Call-Results können exponiert werden; Streams/Events nicht.*
+- **Events sind *nicht* chainbar** (Streams dagegen schon). `Exposes("$.id", …)` braucht einen
+  fertigen Response; ein Event-Stream hat keinen. Streams (`IAsyncEnumerable<T>`) sind Calls,
+  die serverseitig zu einem fertigen JSON-Array materialisiert werden — deshalb läuft ihr
+  Ergebnis wie jedes Call-Result durch `ExecuteAuthorized` und kann `Exposes`/`@alias` füttern
+  (z. B. `$.hits[*].articleId` über einen paginierten Stream). Events gehen über den separaten
+  `SubscribeAsync`-Pfad, haben kein `DependencyMapping`/`ExposedDependencies` und können nicht
+  chainen. Einfache, konsistente Regel: *Call- und Stream-Results können exponiert werden;
+  Events nicht.*
 - **Events ≠ Streaming-Response**: Streaming = ein Call mit vielen Elementen (endlich, dann
   fertig). Events = unendlicher Push bis Unsubscribe. Zwei verschiedene Dinge — nicht vermischen.
 - Compile-Fehler im Codegen, wenn jemand versucht, ein Event in einer Batch-Chain zu nutzen.

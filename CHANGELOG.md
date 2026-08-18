@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Events: configurable per-event backpressure (experimental surface)
+- **`SleipnirOptions.EventBufferCapacity`** (int?, fallback 100) and
+  **`SleipnirOptions.EventBackpressureStrategy`** (enum, default `DropOldest`) now configure the
+  per-subscription event buffer globally, and **`[SleipnirEvent(BufferCapacity = …,
+  BackpressureStrategy = …)]`** overrides them per event. The four strategies:
+  `DropOldest` (evict oldest — default, DoS-safe, keeps the subscription recent), `DropWrite`
+  (drop newest — preserves the backlog, loses freshness), `Block` (block the producer until the
+  consumer drains — lossless, but back-pressures the source thread; opt in deliberately),
+  `Unbounded` (no cap, no DoS backstop). Previously every subscription used a hardcoded
+  capacity-100 `DropOldest` buffer with no per-event override.
+
+### Fixed — Events: `sleipnir.event.dropped` metric was dead code (experimental surface)
+- The per-subscription buffer used `BoundedChannel(DropOldest)`, whose `TryWrite` returns `true`
+  unconditionally (it evicts internally), so the `if (!TryWrite(...))` drop branch — the only call
+  to `SleipnirMetrics.EventDropped` — was unreachable on saturation. Replaced with a custom
+  `EventBuffer` that counts `DropOldest` evictions and `DropWrite` rejections accurately
+  (`Block`/`Unbounded` never drop). The metric now reflects actual event loss.
+
+### Changed — Events: `[SleipnirEvent]` is now the required marker (experimental surface)
+- **`[SleipnirEvent]` is the required marker for server-push event methods.** In 1.1.0 the
+  attribute was defined but never read at runtime — an event method was registered/discovered
+  only because it carried `[SleipnirMethod]`, and event-ness was inferred from the `IObservable<T>`
+  return type. As of this version, `SleipnirInvoker.Register` scans `[SleipnirEvent]` directly and
+  enforces the contract at registration (fail-loud, like method-name uniqueness):
+  - An `IObservable<T>` method must be marked `[SleipnirEvent]` (not `[SleipnirMethod]`); the old
+    form is rejected with a migration message ("use `[SleipnirEvent]` for server-push events").
+  - A `[SleipnirEvent]` method must return `IObservable<T>` directly (not `Task<IObservable<T>>`);
+    otherwise registration throws.
+  - `[SleipnirEvent]` and `[SleipnirMethod]` are mutually exclusive on one method; event and call
+    names share the `{Controller}_{name}` dispatch namespace and must not collide.
+- **Plain calls to event methods now return `400`** ("… is a server-push event; use
+  `kind:\"subscribe\"`") instead of the previous opaque `500` ("Failed to serialize the response."
+  — `System.Text.Json` cannot serialize an `IObservable<T>`).
+- **Subscribe to a non-event method returns `400` without executing it.** Previously `SubscribeAsync`
+  ran the call method as a side effect before the return-type check rejected it; the `IsEvent` guard
+  now short-circuits before auth/bind/invoke.
+- **Migration:** replace `[SleipnirMethod]` with `[SleipnirEvent]` on any `IObservable<T>` method.
+  The wire format, `subscriptionId`/`eventId` frames, and client API are unchanged.
+- **No SemVer major** — events are experimental (`STABILITY.md` §2); experimental-surface changes
+  are noted in the changelog and do not require a major (§3.7). Consumer docs: `README_DETAILS.md`
+  → "Server-Push Events"; wire spec: `PROTOCOL.md` → "Server-Push Events".
+
 ### Fixed (npm: `sleipnir-codegen@1.2.3`)
 - **Added the missing package README.** `sleipnir-codegen`'s `package.json`
   declared `"README.md"` in `files`, but the file did not exist in the package

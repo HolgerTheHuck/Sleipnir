@@ -55,6 +55,35 @@ export interface WsCallOptions {
   timeout?: number;
 }
 
+/**
+ * Event-Handler für eine Server-Push-Subscription (Phase 3). `onNext` wird pro
+ * empfangenem Event-Frame mit dem deserialisierten Payload gerufen; `onComplete`/
+ * `onError` beim Terminal-Frame. Ein Terminal-Frame beendet die Subscription
+ * server-seitig — danach kommen keine weiteren Events für diese `subscriptionId`.
+ */
+export interface SubscribeHandlers<T> {
+  onNext: (value: T) => void;
+  onComplete?: () => void;
+  onError?: (err: Error) => void;
+}
+
+/**
+ * Handle auf eine aktive Server-Push-Subscription (Phase 3). `subscriptionId` ist
+ * die server-seitig zugewiesene Correlation-Id der Event-Frames; `unsubscribe()`
+ * sendet `kind:"unsubscribe"` und beendet die Lieferung (idempotent).
+ *
+ * Bei Auto-Reconnect re-subscribed der Client automatisch mit denselben
+ * Parametern (neue `subscriptionId`); Gap-Events während des Disconnects gehen
+ * verloren (at-most-once-while-disconnected). Ein terminaler `close()` ruft
+ * `onError` aller aktiven Subscriptions.
+ */
+export interface SleipnirSubscription {
+  /** Server-seitig zugewiesene Correlation-Id der Event-Frames. */
+  readonly subscriptionId: string;
+  /** Stoppt die Event-Lieferung; sendet `kind:"unsubscribe"`. Idempotent. */
+  unsubscribe(): Promise<void>;
+}
+
 /** Optionen für den WebSocket-Client. */
 export interface SleipnirWebSocketClientOptions {
   /** WS-Pfad (Default "sleipnirws"). */
@@ -83,6 +112,26 @@ interface PendingCall {
   onCallerAbort?: () => void;
   callerSignal?: AbortSignal;
 }
+
+interface PendingSubscribe {
+  resolve: (sub: SleipnirSubscription) => void;
+  reject: (e: Error) => void;
+  /** Original request (without `kind`) — retained for re-subscribe on reconnect. */
+  request: SleipnirRequest;
+  handlers: SubscribeHandlers<unknown>;
+  timer?: ReturnType<typeof setTimeout>;
+  onCallerAbort?: () => void;
+  callerSignal?: AbortSignal;
+}
+
+interface ActiveSubscription {
+  handlers: SubscribeHandlers<unknown>;
+  /** Original request (without `kind`) — re-sent verbatim on reconnect. */
+  request: SleipnirRequest;
+}
+
+/** Monotonic client-side id counter for unsubscribe requests (avoids id reuse). */
+let _unsubscribeIdSeq = 0;
 
 let _defaultFactoryPromise: Promise<WsFactory> | undefined;
 
@@ -138,6 +187,8 @@ export class SleipnirWebSocketClient {
   private _ws?: IWebSocket;
   private _connectPromise?: Promise<void>;
   private _pending = new Map<string, PendingCall>();
+  private _pendingSubscribes = new Map<string, PendingSubscribe>();
+  private _subscriptions = new Map<string, ActiveSubscription>();
   private _state: SleipnirConnectionState = SleipnirConnectionState.Disconnected;
   private _closedByClient = false;
   private _disposed = false;
@@ -254,12 +305,60 @@ export class SleipnirWebSocketClient {
     return response.content ? fromBase64(response.content) : null;
   }
 
+  /**
+   * Abonniert ein Server-Push-Event (Phase 3). Sendet `kind:"subscribe"` mit dem
+   * übergebenen Request (Controller/Method/Params), wartet auf die Subscribe-
+   * Response mit der `subscriptionId` und liefert ein
+   * {@link SleipnirSubscription}-Handle. Eingehende Event-/Complete-/Error-Frames
+   * werden per `subscriptionId` an `handlers` geroutet.
+   *
+   * Der Request wird via {@link SleipnirCall} gebaut (`SleipnirCall.init(c,m).with({...})`);
+   * `subscribe` setzt `kind:"subscribe"` und (falls fehlt) eine `id`. Auf
+   * Auto-Reconnect re-subscribed der Client automatisch mit demselben Request
+   * (neue `subscriptionId`, gleiche `handlers`).
+   */
+  async subscribe<T>(
+    req: SleipnirRequest,
+    handlers: SubscribeHandlers<T>,
+    opts?: WsCallOptions,
+  ): Promise<SleipnirSubscription> {
+    if (this._disposed) throw new Error("SleipnirWebSocketClient: disposed.");
+    if (!req.id) req.id = `${req.controller}.${req.method}`;
+    const id = req.id;
+    await this.connect();
+
+    const promise = this.registerPendingSubscribe(id, req, handlers as SubscribeHandlers<unknown>, opts);
+    try {
+      const ws = this._ws;
+      if (!ws || ws.readyState !== READY_OPEN) {
+        this.disposePendingSubscribe(id);
+        throw new SleipnirError(0, "WebSocket is not open.");
+      }
+      // kind:"subscribe" routet serverseitig nach SubscribeAsync; der Rest ist ein
+      // normaler SleipnirRequest (Controller/Method/Params/id).
+      ws.send(JSON.stringify({ ...req, kind: "subscribe" }));
+      return promise;
+    } catch (err) {
+      this.rejectPendingSubscribe(
+        id,
+        err instanceof SleipnirError
+          ? err
+          : new SleipnirError(0, `WebSocket send error: ${(err as Error)?.message ?? err}`),
+      );
+      throw err instanceof SleipnirError
+        ? err
+        : new SleipnirError(0, `WebSocket send error: ${(err as Error)?.message ?? err}`);
+    }
+  }
+
   /** Schließt die Verbindung terminal; alle pending Calls werden abgelehnt. Kein Reconnect. */
   close(): void {
     this._closedByClient = true;
     this._disposed = true;
     this.stopReconnect();
     this.rejectAllPending(new SleipnirError(0, "WebSocket closed by client."));
+    this.rejectAllPendingSubscribes(new SleipnirError(0, "WebSocket closed by client."));
+    this.cancelAllSubscriptions(new SleipnirError(0, "WebSocket closed by client."));
     if (this._ws) {
       try {
         this._ws.close(1000, "client close");
@@ -442,6 +541,118 @@ export class SleipnirWebSocketClient {
     for (const key of [...this._pending.keys()]) this.rejectPending(key, err);
   }
 
+  // --- Phase 3: Subscribe / Unsubscribe / Event-Dispatch (Interna) ---
+
+  /** Trägt einen pending Subscribe ein (Timeout/Abort analog registerPending). */
+  private registerPendingSubscribe(
+    id: string,
+    request: SleipnirRequest,
+    handlers: SubscribeHandlers<unknown>,
+    opts: WsCallOptions | undefined,
+  ): Promise<SleipnirSubscription> {
+    let resolve!: (sub: SleipnirSubscription) => void;
+    let reject!: (e: Error) => void;
+    const promise = new Promise<SleipnirSubscription>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+
+    const pending: PendingSubscribe = { resolve, reject, request, handlers };
+    const timeoutMs = opts?.timeout ?? this._callTimeout;
+    if (timeoutMs && timeoutMs > 0) {
+      pending.timer = setTimeout(
+        () => this.rejectPendingSubscribe(id, new CancelledError("Sleipnir subscribe timed out.", true)),
+        timeoutMs,
+      );
+    }
+    if (opts?.signal) {
+      if (opts.signal.aborted) {
+        queueMicrotask(() => this.rejectPendingSubscribe(id, new CancelledError("Sleipnir subscribe was cancelled.")));
+      } else {
+        pending.callerSignal = opts.signal;
+        pending.onCallerAbort = () =>
+          this.rejectPendingSubscribe(id, new CancelledError("Sleipnir subscribe was cancelled."));
+        opts.signal.addEventListener("abort", pending.onCallerAbort, { once: true });
+      }
+    }
+    this._pendingSubscribes.set(id, pending);
+    return promise;
+  }
+
+  /** Lehnt einen pending Subscribe ab (Timeout/Abort/Sendefehler/Disconnect). */
+  private rejectPendingSubscribe(id: string, err: Error): void {
+    const pending = this._pendingSubscribes.get(id);
+    if (!pending) return;
+    this.disposePendingSubscribe(id);
+    pending.reject(err);
+  }
+
+  /** Räumt Timer/Abort-Listener + Map-Eintrag eines pending Subscribe (ohne reject). */
+  private disposePendingSubscribe(id: string): void {
+    const pending = this._pendingSubscribes.get(id);
+    if (!pending) return;
+    if (pending.timer) clearTimeout(pending.timer);
+    if (pending.onCallerAbort && pending.callerSignal) {
+      pending.callerSignal.removeEventListener("abort", pending.onCallerAbort);
+    }
+    this._pendingSubscribes.delete(id);
+  }
+
+  private rejectAllPendingSubscribes(err: Error): void {
+    for (const id of [...this._pendingSubscribes.keys()]) this.rejectPendingSubscribe(id, err);
+  }
+
+  /** Terminal: alle aktiven Subscriptions auf onError setzen und verwerfen. */
+  private cancelAllSubscriptions(err: Error): void {
+    for (const [, entry] of this._subscriptions) {
+      try { entry.handlers.onError?.(err); } catch { /* Handler-Fehler nicht fatal */ }
+    }
+    this._subscriptions.clear();
+  }
+
+  /**
+   * Sendet `kind:"unsubscribe"` für `subscriptionId` und entfernt die Subscription.
+   * Idempotent: ein zweiter Aufruf für dieselbe Id ist ein No-op. Best-effort —
+   * ein Sendefehler nach Disconnect wird still ignoriert (die Subscription ist
+   * serverseitig ohnehin mit der Connection gestorben).
+   */
+  private async unsubscribe(subscriptionId: string): Promise<void> {
+    if (!this._subscriptions.delete(subscriptionId)) return;
+    const ws = this._ws;
+    if (ws && ws.readyState === READY_OPEN) {
+      try {
+        ws.send(JSON.stringify({ kind: "unsubscribe", subscriptionId, id: `unsub.${_unsubscribeIdSeq++}` }));
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
+  /**
+   * Re-abonniert alle aktiven Subscriptions nach einem Reconnect (Entscheidung 6:
+   * client-seitiger Re-subscribe mit neuen subscriptionIds, da die Connection neu
+   * ist). Die ursprünglichen Requests werden unverbatim neu gesendet; die Handler
+   * bleiben erhalten. Ein Fehlschlag pro Subscription -> onError (und Austrag aus
+   * der Map, da `subscribe` sie nur bei Erfolg einträgt).
+   */
+  private async resubscribeAll(): Promise<void> {
+    if (this._subscriptions.size === 0) return;
+    const old = [...this._subscriptions.entries()];
+    // `subscribe` trägt unter der neuen subscriptionId ein; die alten Einträge
+    // müssen weg, sonst blieben sie als Dead-Entries (neue Id != alte Id).
+    this._subscriptions.clear();
+    for (const [, entry] of old) {
+      try {
+        // Re-subscribe mit demselben Request + denselben Handlern. `subscribe`
+        // setzt `kind:"subscribe"` und trägt unter der neuen server-seitigen Id ein.
+        await this.subscribe<unknown>(entry.request, entry.handlers);
+      } catch (err) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        try { entry.handlers.onError?.(e); } catch { /* Handler-Fehler nicht fatal */ }
+      }
+    }
+  }
+
   private onMessage(data: string | ArrayBuffer): void {
     const text = typeof data === "string" ? data : new TextDecoder().decode(data);
     let parsed: unknown;
@@ -450,6 +661,16 @@ export class SleipnirWebSocketClient {
     } catch {
       // Server-Fehlerframes ohne id können nicht korreliert werden -> verwerfen.
       return;
+    }
+
+    // Phase 3: Event-/Complete-/Error-Frames — Objekt mit `type` + `subscriptionId`,
+    // ohne `code`/`id`. Werden per subscriptionId an die aktive Subscription geroutet.
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>;
+      if (typeof obj.type === "string" && typeof obj.subscriptionId === "string") {
+        this.dispatchEventFrame(obj.type, obj.subscriptionId, obj);
+        return;
+      }
     }
 
     if (Array.isArray(parsed)) {
@@ -463,8 +684,51 @@ export class SleipnirWebSocketClient {
 
     const resp = normalizeResponse(parsed as SleipnirResponse);
     const key = resp?.id ?? undefined;
+    // Subscribe-Response (normale SleipnirResponse, correlated by id) — vor den
+    // Call-Pending prüfen, da subscribe einen eigenen Pending-Map führt.
+    if (key && this._pendingSubscribes.has(key)) {
+      this.handleSubscribeResponse(key, resp);
+      return;
+    }
     if (key && this.resolvePending(key, resp)) return;
     this.dropUnmatched(text, key);
+  }
+
+  /** Routet einen Event-/Complete-/Error-Frame an die aktive Subscription. */
+  private dispatchEventFrame(type: string, subscriptionId: string, obj: Record<string, unknown>): void {
+    const entry = this._subscriptions.get(subscriptionId);
+    if (!entry) return; // unsubscribe schon gelaufen / unbekannt -> verwerfen.
+    if (type === "event") {
+      entry.handlers.onNext(obj.data);
+    } else if (type === "complete") {
+      this._subscriptions.delete(subscriptionId);
+      try { entry.handlers.onComplete?.(); } catch { /* Handler-Fehler nicht fatal */ }
+    } else if (type === "error") {
+      this._subscriptions.delete(subscriptionId);
+      const msg = typeof obj.message === "string" ? obj.message : "Subscription error";
+      try { entry.handlers.onError?.(new Error(msg)); } catch { /* Handler-Fehler nicht fatal */ }
+    }
+  }
+
+  /** Verarbeitet eine Subscribe-Response: extrahiert subscriptionId, registriert die Subscription. */
+  private handleSubscribeResponse(key: string, resp: SleipnirResponse): void {
+    const pending = this._pendingSubscribes.get(key);
+    if (!pending) return;
+    this.disposePendingSubscribe(key);
+    if (!resp.isSuccess) {
+      pending.reject(SleipnirError.fromResponse(resp));
+      return;
+    }
+    const sid = extractSubscriptionId(resp);
+    if (!sid) {
+      pending.reject(new SleipnirError(resp.code ?? 0, "Subscribe response missing subscriptionId."));
+      return;
+    }
+    this._subscriptions.set(sid, { handlers: pending.handlers, request: pending.request });
+    pending.resolve({
+      subscriptionId: sid,
+      unsubscribe: () => this.unsubscribe(sid),
+    });
   }
 
   private dropUnmatched(text: string, key: string | undefined): void {
@@ -479,6 +743,10 @@ export class SleipnirWebSocketClient {
   private onClosed(): void {
     this._ws = undefined;
     this.rejectAllPending(new SleipnirError(0, "WebSocket connection closed."));
+    // Pending subscribes haben noch keine subscriptionId -> die Response kommt nie.
+    // Aktive Subscriptions (_subscriptions) bleiben bestehen und werden nach dem
+    // Reconnect re-subscribed (at-most-once-while-disconnected: Gap-Events verloren).
+    this.rejectAllPendingSubscribes(new SleipnirError(0, "WebSocket connection closed."));
 
     // Unerwarteter Disconnect (nicht durch close()/dispose() ausgelöst) -> Reconnect.
     if (!this._closedByClient && !this._disposed && this._reconnect) {
@@ -518,6 +786,10 @@ export class SleipnirWebSocketClient {
           await this._connectPromise;
           if (this._ws && this._ws.readyState === READY_OPEN) {
             this.setState(SleipnirConnectionState.Connected);
+            // Phase 3: aktive Subscriptions mit dem neuen Socket re-abonnieren
+            // (neue subscriptionIds; gleiche Parameter + Handler). Best-effort,
+            // fire-and-forget — ein Fehlschlag pro Subscription -> onError.
+            void this.resubscribeAll();
             return; // Erfolg
           }
         } catch {
@@ -545,4 +817,17 @@ function parseData<T>(response: SleipnirResponse): T | null {
   }
   if (!response.isSuccess) throw SleipnirError.fromResponse(response);
   return null;
+}
+
+/**
+ * Extrahiert die `subscriptionId` aus einer Subscribe-Response. Der Server sendet
+ * `data: { subscriptionId: "…" }` (object) — als Fallback wird ein skalarer
+ * `data`-String akzeptiert (Spiegel des C# `ExtractSubscriptionId`).
+ */
+function extractSubscriptionId(response: SleipnirResponse): string | undefined {
+  const data = response.data;
+  if (data && typeof data === "object" && typeof (data as { subscriptionId?: unknown }).subscriptionId === "string") {
+    return (data as { subscriptionId: string }).subscriptionId;
+  }
+  return typeof data === "string" ? data : undefined;
 }

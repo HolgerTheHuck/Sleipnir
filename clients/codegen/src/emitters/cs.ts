@@ -16,7 +16,7 @@
 // POCOs + typed params + typed result deser + batch + runtime exposes/alias.
 
 import type { EmitterInput, ResolvedController, ResolvedMethod, ResolvedProperty, ResolvedTypeRef } from "../core/model.js";
-import { csTypeOfRef } from "../core/model.js";
+import { csTypeOfRef, isEventMethod, eventPayloadRef } from "../core/model.js";
 import { NamingResolver } from "../core/naming.js";
 
 export interface EmitCsOptions {
@@ -247,6 +247,17 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
   });
   const paramChain = m.parameters.map((p) => `.Param("${p.name}", ${p.name}.ToWireValue())`).join("");
   const doc = m.documentation ? `        /// <summary>${m.documentation}</summary>\n` : "";
+  if (isEventMethod(m)) {
+    // Server-Push-Events sind WS-exklusiv; der REST-only generierte C#-Client kann
+    // sie nicht abonnieren. Klare Ausnahme statt eines falschen REST-Calls. Der
+    // Payload-Typ wird genannt, damit der Konsument weiß, was zu abonnieren wäre.
+    const payload = csTypeOfRef(eventPayloadRef(m), resolver);
+    return `${doc}        // TODO: ${m.methodName} is a [SleipnirEvent] (IObservable<${payload}>) — server-push events require
+        // WebSocket transport. The REST-only generated C# client cannot subscribe.
+        // Use SleipnirClient.Sleipnir.SleipnirWebSocketClient.SubscribeAsync<${payload}>("${ctrl.name}", "${m.methodName}", args) directly.
+        public Call ${m.methodName}(${params.join(", ")}) => throw new System.NotImplementedException(
+            "${m.methodName} is a Sleipnir server-push event (IObservable<${payload}>); the REST-only generated C# client cannot subscribe. Use SleipnirWebSocketClient.SubscribeAsync<${payload}>(\\\"${ctrl.name}\\\", \\\"${m.methodName}\\\", args) over WebSocket.");`;
+  }
   const todo = m.returnType.kind === "opaque" && !m.isVoid
     ? `        // TODO: return type "${m.returnType.nativeName ?? "?"}" is an opaque framework/BCL type not modelled in discovery; deserialize as object.\n`
     : "";

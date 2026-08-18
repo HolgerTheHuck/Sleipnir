@@ -145,10 +145,10 @@ export interface EnumMember {
  * Language-neutral type reference (docs/discovery-schema.md §2). Discriminated by `kind`.
  */
 export interface TypeRef {
-  kind: "scalar" | "array" | "set" | "map" | "ref" | "stream" | "opaque" | "void";
+  kind: "scalar" | "array" | "set" | "map" | "ref" | "stream" | "event" | "opaque" | "void";
   /** scalar: a name from the fixed scalar table. */
   name?: string;
-  /** array | set | stream: the element TypeRef. */
+  /** array | set | stream | event: the element TypeRef (for events, the pushed payload type T of IObservable<T>). */
   element?: TypeRef;
   /** map: the key TypeRef. */
   key?: TypeRef;

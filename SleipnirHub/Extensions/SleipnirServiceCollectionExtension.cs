@@ -128,6 +128,11 @@ namespace SleipnirHub.Extensions
                 // Propagate the alias binding mode (default Weak; Strict = fragment must
                 // fully cover the consumer type, otherwise 400 — see DEPENDENCY_BINDING.md).
                 invoker.AliasBindingMode = options.AliasBindingMode;
+                // Event backpressure (Phase 3, experimental): per-subscription buffer capacity
+                // + overflow strategy, overridable per event via [SleipnirEvent]. Defaults keep
+                // the 1.1.x behavior (capacity 100, drop-oldest) — see STABILITY.md §2.
+                invoker.EventBufferCapacity = options.EventBufferCapacity;
+                invoker.EventBackpressureStrategy = options.EventBackpressureStrategy;
                 // North-bound hardening (default non-breaking, see SECURITY.md):
                 // RequireAuthentication = default-deny for unattributed methods;
                 // MaximumBatchSize = fan-out DoS cap; JsonPath limits = client-path DoS cap.

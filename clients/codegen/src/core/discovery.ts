@@ -95,7 +95,7 @@ export class DiscoveryShapeError extends Error {
 /** Known `discoveryVersion` values (additive-only — see docs/discovery-schema.md §11). */
 const KNOWN_DISCOVERY_VERSIONS = new Set(["1"]);
 
-const VALID_KINDS = new Set(["scalar", "array", "set", "map", "ref", "stream", "opaque", "void"]);
+const VALID_KINDS = new Set(["scalar", "array", "set", "map", "ref", "stream", "event", "opaque", "void"]);
 const SCALAR_NAMES = new Set([
   "string", "char", "bool", "int", "long", "float", "double", "decimal",
   "datetime", "datetimeoffset", "dateonly", "timeonly", "timespan", "guid",
@@ -222,6 +222,7 @@ function assertTypeRef(value: unknown, where: string, types: Record<string, unkn
     case "array":
     case "set":
     case "stream":
+    case "event":
       if (!ref.element) throw new DiscoveryShapeError(`${where} (kind "${ref.kind}") is missing "element".`);
       assertTypeRef(ref.element, `${where} element`, types);
       return;

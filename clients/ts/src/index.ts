@@ -15,6 +15,8 @@ export {
   type WsCallOptions,
   type IWebSocket,
   type WsFactory,
+  type SubscribeHandlers,
+  type SleipnirSubscription,
 } from "./websocket.js";
 export { buildParams, buildSingle, buildMulti, toBase64, fromBase64 } from "./request.js";
 

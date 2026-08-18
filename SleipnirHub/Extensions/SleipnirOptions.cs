@@ -8,6 +8,32 @@ namespace SleipnirHub.Extensions
 
         public int? StreamBufferCapacity { get; set; }
 
+        /// <summary>
+        /// Per-subscription buffer capacity for server-push events
+        /// (<c>[SleipnirEvent]</c> + <c>IObservable&lt;T&gt;</c>). When <c>null</c>
+        /// (the default) the framework falls back to 100. A positive value caps each
+        /// subscription's buffer at that many events; the overflow behavior is governed
+        /// by <see cref="EventBackpressureStrategy"/>. Ignored when the strategy is
+        /// <see cref="SleipnirCommon.Models.EventBackpressureStrategy.Unbounded"/>.
+        /// Overridable per event via <c>[SleipnirEvent(BufferCapacity = …)]</c>.
+        /// Experimental (Phase 3) — see <c>STABILITY.md</c> §2.
+        /// </summary>
+        public int? EventBufferCapacity { get; set; }
+
+        /// <summary>
+        /// Overflow strategy for a full per-subscription event buffer (default
+        /// <see cref="SleipnirCommon.Models.EventBackpressureStrategy.DropOldest"/> —
+        /// evict the oldest event, increment <c>sleipnir.event.dropped</c>).
+        /// <see cref="SleipnirCommon.Models.EventBackpressureStrategy.DropWrite"/>
+        /// drops the newest; <see cref="SleipnirCommon.Models.EventBackpressureStrategy.Block"/>
+        /// back-pressures the producer (risky — see the enum doc);
+        /// <see cref="SleipnirCommon.Models.EventBackpressureStrategy.Unbounded"/>
+        /// disables the cap (no DoS backstop). Overridable per event via
+        /// <c>[SleipnirEvent(BackpressureStrategy = …)]</c>.
+        /// Experimental (Phase 3) — see <c>STABILITY.md</c> §2.
+        /// </summary>
+        public EventBackpressureStrategy EventBackpressureStrategy { get; set; } = EventBackpressureStrategy.DropOldest;
+
         public int MaximumParallelInvocationsPerClient { get; set; }
 
         public bool UseMessagePack { get; set; }

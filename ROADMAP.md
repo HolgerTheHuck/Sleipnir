@@ -178,7 +178,7 @@ voraus — vorher bewarben sie eine halbfertige Sache.
 | 0 | Ist `discoveryVersion` ein SemVer-Feld oder additive-only-Counter? (Heute additive-only — bestätigen.) |
 | 1 | Interceptor-Reihenfolge festlegen: Auth → Validation → Tracing → Method? (Auth *vor* allem anderen, inkl. OTel, sonst loggst du unautorisieren Traffic.) |
 | 1 | Fehler-Taxonomie: eigene Codes oder an gRPC-Status-Codes lehnen? (gRPC-Anlehnung senkt polyglotte Adoption-Reibung.) |
-| 3 | Events gap-Semantik: at-most-once-while-disconnected (v1) vs. `Last-Event-Id`-Resume (v1.x)? (v1: at-most-once, dokumentiert; v1.x: Resume.) |
+| 3 | Events gap-Semantik: at-most-once-while-disconnected (v1) vs. `Last-Event-Id`-Resume (v1.x)? (**v1: at-most-once, dokumentiert. Resume als Phase R (experimental) geliefert** — opt-in `[SleipnirEvent(Resumable = true)]` + Client-Resume-Policy: at-least-once innerhalb des Replay-Fensters, Client dedup'd per `eventId`, Reconnect-Auth-Re-Check; genau-once + cross-process-durable bleiben future.) |
 | 3 | Subscribe-Parameter (z. B. `chatId`) als First-Class in der Subscription-ID oder nachgelagertes Filter? (First-Class — dominiert in der Praxis.) |
 | 4 | Positionierung: "Sleipnir + REST" als *erste* Aussage auf der Landing Page oder als eigener Abschnitt? (Erste — es ist die Nr.-1-Adoptions-Frage.) |
 

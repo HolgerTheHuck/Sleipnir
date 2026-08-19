@@ -252,6 +252,30 @@ public class SleipnirInvokerTests
         result.Observable.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task Subscribe_ToValueTypeEvent_ReturnsObservableAndPushesBoxedInts()
+    {
+        // Regression: IObservable<int> (value-type element) was rejected at subscribe time
+        // up to 1.2.0 by the covariant `result is IObservable<object?>` test as "not a
+        // subscribable event" (IObservable<out T> covariance does not apply to value-type
+        // elements). Now: subscribe succeeds and the boxing adapter delivers the ints as object?.
+        var (invoker, sp) = NewInvokerWithValueTypeEvent();
+        using (sp)
+        {
+            var req = CreateRequest("VtEvents", "ObservableInts", ("count", "4"));
+            var result = await invoker.SubscribeAsync(req, null);
+
+            result.Error.Should().BeNull();
+            result.Observable.Should().NotBeNull();
+
+            var pushed = new List<object?>();
+            var done = new ManualResetEventSlim();
+            result.Observable!.Subscribe(new ObjCollector(pushed, done));
+            done.Wait(500);
+            pushed.Should().BeEquivalentTo(new object?[] { 0, 1, 2, 3 });
+        }
+    }
+
     // ── Backpressure resolution (per-event override ?? global option ?? default) ──
 
     private static (SleipnirInvoker invoker, ServiceProvider sp) NewInvokerWithEvents()
@@ -264,6 +288,19 @@ public class SleipnirInvokerTests
             sp.GetRequiredService<IServiceScopeFactory>(),
             sp.GetRequiredService<ILogger<SleipnirInvoker>>());
         invoker.Register<BackpressureEventController>();
+        return (invoker, sp);
+    }
+
+    private static (SleipnirInvoker invoker, ServiceProvider sp) NewInvokerWithValueTypeEvent()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddTransient<ValueTypeEventController>();
+        var sp = services.BuildServiceProvider();
+        var invoker = new SleipnirInvoker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<ILogger<SleipnirInvoker>>());
+        invoker.Register<ValueTypeEventController>();
         return (invoker, sp);
     }
 
@@ -1850,5 +1887,32 @@ public class SleipnirInvokerTests
         [SleipnirEvent("UnboundedEvent", BackpressureStrategy = EventBackpressureStrategy.Unbounded)]
         public IObservable<string> UnboundedEvent(int count)
             => new SimpleObservable<string>(o => { for (int i = 0; i < count; i++) o.OnNext($"e{i}"); o.OnCompleted(); return () => { }; });
+    }
+
+    /// <summary>
+    /// Value-type-element event fixture (IObservable&lt;int&gt;). Regression for the
+    /// subscribe-time bug present up to 1.2.0, which rejected value-type elements via the
+    /// covariant <c>result is IObservable&lt;object?&gt;</c> test as "not a subscribable
+    /// event" (IObservable&lt;out T&gt; covariance does not apply to value-type elements).
+    /// The invoker now builds a boxing adapter IObservable&lt;object?&gt; for value types.
+    /// </summary>
+    [SleipnirController("VtEvents", AutoDiscover = false)]
+    private class ValueTypeEventController
+    {
+        [SleipnirEvent("ObservableInts")]
+        public IObservable<int> ObservableInts(int count)
+            => new SimpleObservable<int>(o => { for (int i = 0; i < count; i++) o.OnNext(i); o.OnCompleted(); return () => { }; });
+    }
+
+    /// <summary>Collects IObservable&lt;object?&gt; elements and signals OnCompleted/OnError.</summary>
+    private sealed class ObjCollector : IObserver<object?>
+    {
+        private readonly List<object?> _values;
+        private readonly ManualResetEventSlim _done;
+        public ObjCollector(List<object?> values, ManualResetEventSlim done)
+        { _values = values; _done = done; }
+        public void OnNext(object? value) => _values.Add(value);
+        public void OnError(Exception error) => _done.Set();
+        public void OnCompleted() => _done.Set();
     }
 }

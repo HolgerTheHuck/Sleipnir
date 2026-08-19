@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(nothing yet)_
 
+## [1.2.1] - 2026-08-19
+
+### Fixed — Events: value-type-element `IObservable<T>` was wrongly rejected at subscribe time
+- **A `[SleipnirEvent]` method returning `IObservable<T>` with a value-type `T` (e.g.
+  `IObservable<int>`) was rejected at subscribe time** with "does not return an
+  `IObservable<T>` — not a subscribable event", although it is a perfectly valid event.
+  The subscribe-time check used the covariant `result is IObservable<object?>` test, which
+  relies on `IObservable<out T>` covariance — and covariance does **not** apply to value-type
+  elements, so `IObservable<int>` is not assignable to `IObservable<object?>`. Reference-type
+  elements (`IObservable<ChatStreamEvent>`) happened to work because covariance covers them.
+- `SubscribeAsync` now uses `TryAsObservableObject`: reference-type elements still take the
+  zero-overhead covariance cast (the `SubscriptionManager` sees exactly the original source);
+  value-type elements get a `BoxingObservableAdapter` + `BoxingObserver<T>` that boxes each `T`
+  to `object?`. Reflection runs once per subscribe (not per element); the per-`OnNext` boxing is
+  unavoidable since the downstream `SubscriptionManager` consumes `IObservable<object?>`.
+- Regression test: `SleipnirInvokerTests.Subscribe_ToValueTypeEvent_ReturnsObservableAndPushesBoxedInts`.
+- Server-side only (no client/wire change); no npm publish. Discovered by the owner after 1.2.0.
+
 ## [1.2.0] - 2026-08-19
 
 ### Added — Codegen: `sleipnir-gen --selfcheck` drift gate (npm `sleipnir-codegen`)

@@ -429,8 +429,15 @@ namespace SleipnirCore.Services
 
                 var result = invokeInfo.CompiledInvocation?.Invoke(instance, parameters.Items!);
 
-                // Ergebnis muss IObservable<T> sein — sonst ist die Methode kein [SleipnirEvent].
-                if (result is not IObservable<object?> observable)
+                // Result must be IObservable<T> — otherwise the method is not a [SleipnirEvent].
+                // Note: the direct test `result is IObservable<object?>` only works for
+                // reference-type elements (IObservable<out T> covariance). Value-type
+                // elements (IObservable<int> …) are not covariantly assignable to
+                // IObservable<object?> and would be wrongly rejected as "not an IObservable<T>".
+                // TryAsObservableObject takes the covariance cast for reference types (no
+                // overhead) and builds a boxing adapter IObservable<object?> for value types,
+                // boxing each T to object?.
+                if (!TryAsObservableObject(result, out var observable))
                     return SleipnirSubscribeResult.Fail(BadRequest(
                         $"Method '{request.Method}' on controller '{request.Controller}' does not return an IObservable<T> — not a subscribable event."));
 
@@ -1984,6 +1991,69 @@ namespace SleipnirCore.Services
         /// </summary>
         private static bool IsIObservable(Type type)
             => type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IObservable<>);
+
+        /// <summary>
+        /// Converts the invoke result of a [SleipnirEvent] into the non-generic
+        /// <c>IObservable&lt;object?&gt;</c> the SubscriptionManager subscribes to. Reference-type
+        /// elements (e.g. <c>IObservable&lt;ChatStreamEvent&gt;</c>) are assigned directly via
+        /// <c>IObservable&lt;out T&gt;</c> covariance — no overhead, the SubscriptionManager sees
+        /// exactly the original source. For value-type elements (e.g. <c>IObservable&lt;int&gt;</c>)
+        /// <see cref="BoxingObservableAdapter"/> builds an adapter that boxes each <c>T</c> to
+        /// <c>object?</c>: covariance does not apply to value types, so a direct
+        /// <c>result is IObservable&lt;object?&gt;</c> would reject them (this was the subscribe-time
+        /// bug up to 1.2.0).
+        /// </summary>
+        private static bool TryAsObservableObject(object? result, out IObservable<object?> observable)
+        {
+            if (result is IObservable<object?> covariant)
+            {
+                observable = covariant;
+                return true;
+            }
+            if (result is not null)
+            {
+                var iobs = result.GetType().GetInterfaces()
+                    .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IObservable<>));
+                if (iobs is not null)
+                {
+                    observable = new BoxingObservableAdapter(result, iobs.GetGenericArguments()[0]);
+                    return true;
+                }
+            }
+            observable = null!;
+            return false;
+        }
+
+        /// <summary>
+        /// <c>IObservable&lt;object?&gt;</c> adapter over an <c>IObservable&lt;T&gt;</c> with a
+        /// value-type element. Subscribes the inner source with a <see cref="BoxingObserver{T}"/>
+        /// and forwards <c>OnNext</c> (boxing T → object?), <c>OnCompleted</c>, and <c>OnError</c>.
+        /// </summary>
+        private sealed class BoxingObservableAdapter(object source, Type elementType) : IObservable<object?>
+        {
+            public IDisposable Subscribe(IObserver<object?> observer)
+            {
+                var adapter = Activator.CreateInstance(
+                    typeof(BoxingObserver<>).MakeGenericType(elementType),
+                    bindingAttr: BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    binder: null,
+                    args: new object[] { observer },
+                    culture: null)!;
+                var iobsType = typeof(IObservable<>).MakeGenericType(elementType);
+                var subscribe = iobsType.GetMethod(nameof(IObservable<object?>.Subscribe))!;
+                return (IDisposable)subscribe.Invoke(source, new[] { adapter })!;
+            }
+        }
+
+        /// <summary>An <c>IObserver&lt;T&gt;</c> that forwards to an <c>IObserver&lt;object?&gt;</c>.</summary>
+        private sealed class BoxingObserver<T> : IObserver<T>
+        {
+            private readonly IObserver<object?> _inner;
+            public BoxingObserver(IObserver<object?> inner) => _inner = inner;
+            public void OnNext(T value) => _inner.OnNext(value);
+            public void OnError(Exception error) => _inner.OnError(error);
+            public void OnCompleted() => _inner.OnCompleted();
+        }
 
         private SleipnirResponse ReturnResponse(object? result, Type? instanceType)
         {

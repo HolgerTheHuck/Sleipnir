@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_(nothing yet)_
+
+## [1.2.0] - 2026-08-19
+
 ### Added — Codegen: `sleipnir-gen --selfcheck` drift gate (npm `sleipnir-codegen`)
 - New `--selfcheck` mode regenerates the client tree from `--discovery` in memory and
   compares it against the committed tree at `--out`; exits `4` on drift (a missing or
@@ -146,6 +150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   emitters and their output file sets / runtime dependencies / transport support,
   and the programmatic (browser-safe core + `sleipnir-codegen/node`) API. No
   code change.
+
+## [1.1.4] - 2026-08-17
 
 ### Fixed (NuGet: `1.1.4` — `Sleipnir.Generator` + `Sleipnir.Codegen.Core`)
 - **`BatchEntry.Alias(name)` in the .NET-native C# emitter now ensures the leading `@`.**

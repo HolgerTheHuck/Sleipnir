@@ -41,6 +41,29 @@ namespace SleipnirHub.Extensions
         public bool UseSignalR { get; set; }
 
         /// <summary>
+        /// When <c>true</c> (default), the REST endpoint group is mapped by
+        /// <c>MapSleipnir</c> (<c>/json</c>, <c>/json/multi</c>, <c>/discovery</c>,
+        /// the JSON-RPC compat endpoint when enabled, and the Developer UI backend).
+        /// When <c>false</c>, no REST endpoints are mapped — a headless
+        /// WebSocket/SignalR-only mode. Additive (default keeps current behavior);
+        /// only honored by the unified <c>UseSleipnirTransports</c>/<c>MapSleipnir</c>
+        /// pipeline (hosts that call the low-level <c>MapSleipnirEndpoints</c>
+        /// directly bypass this toggle). See <c>STABILITY.md</c> §1.3.
+        /// </summary>
+        public bool UseRest { get; set; } = true;
+
+        /// <summary>
+        /// When <c>true</c> (default), <c>UseSleipnirTransports</c> wires
+        /// <c>UseWebSockets</c> + <c>UseSleipnirWebSocket</c> (the primary channel).
+        /// When <c>false</c>, both are skipped — no WebSocket transport. Additive
+        /// (default keeps current behavior); only honored by the unified
+        /// <c>UseSleipnirTransports</c> pipeline (hosts that call
+        /// <c>UseSleipnirWebSocket</c> directly bypass this toggle).
+        /// See <c>STABILITY.md</c> §1.3.
+        /// </summary>
+        public bool UseWebSocket { get; set; } = true;
+
+        /// <summary>
         /// When <c>true</c> (default), <c>AddSleipnir</c> auto-discovers all
         /// <c>[SleipnirController]</c> types across the loaded assemblies (skipping any
         /// with <c>AutoDiscover = false</c>) and registers them as scoped services,

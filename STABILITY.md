@@ -72,6 +72,15 @@ requires a 2.0.0 (SemVer major).
   within 1.x.
 - `SleipnirOptions.AliasBindingMode` (`Weak` / `Strict` / `Paranoid`) — the three modes and their
   semantics (`DEPENDENCY_BINDING.md` §7) are stable. `Weak` remains the default.
+- **`SleipnirOptions.UseRest` / `SleipnirOptions.UseWebSocket` (additive, default `true`)** — gate
+  the unified `UseSleipnirTransports`/`MapSleipnir` pipeline. `UseRest=false` → headless mode (no
+  `/json`, `/json/multi`, `/discovery`, JSON-RPC compat, or Developer UI backend — the DevUI panel
+  calls those REST-group endpoints at runtime, so it is gated on `UseRest` too). `UseWebSocket=false`
+  → no WebSocket transport. Together with the existing `UseSignalR` they form a symmetric
+  transport-toggle trio, all default-on (non-breaking). **Caveat:** only the unified pipeline honors
+  them; hosts that call the low-level `MapSleipnirEndpoints`/`UseSleipnirWebSocket` directly bypass
+  the toggles. `UseSleipnirTransports` emits one `Information` startup line naming the active
+  transports (`Sleipnir transports: REST=…, WebSocket=…, SignalR=…`).
 - **`SleipnirOptions.Interceptors` / `SleipnirOptions.BatchInterceptors` (Phase 1, additive)** —
   collections for user interceptors; `RegisterBuiltInInterceptors` (default `true`) toggles the
   built-in Auth/Telemetry/Logging interceptors. Additive properties with safe defaults.

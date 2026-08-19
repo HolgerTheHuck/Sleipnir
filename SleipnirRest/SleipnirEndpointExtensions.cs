@@ -31,7 +31,7 @@ namespace SleipnirRest
         /// <returns>Der IEndpointRouteBuilder für weitere Konfigurationen.</returns>
         public static IEndpointRouteBuilder MapSleipnirEndpoints(this IEndpointRouteBuilder endpoints,
             string prefix = "/api/sleipnir", bool enableRateLimiting = false, bool enableJsonRpcCompat = false,
-            bool enableObservability = false, bool signalREnabled = false)
+            bool enableObservability = false, bool signalREnabled = false, bool useWebSocket = true)
         {
             // Erstellt eine Gruppe für alle Routen — sauber und konfliktfrei.
             var group = endpoints.MapGroup(prefix);
@@ -112,12 +112,13 @@ namespace SleipnirRest
                         return Results.Unauthorized();
 
                     var snap = registry.GetSnapshot();
-                    // Transport flags: REST is on (this endpoint lives in the REST group), WebSocket
-                    // is the default-on primary channel in v1 (Task #11 will add a toggle), SignalR is
-                    // the only optional transport — its state is threaded in from SleipnirOptions.
+                    // Transport flags: REST is on whenever this endpoint is reachable (it lives in the
+                    // REST endpoint group, which is only mapped when UseRest != false). WebSocket and
+                    // SignalR are threaded in from SleipnirOptions so the snapshot reflects the
+                    // configured transport surface even though REST is the only channel you can scrape.
                     var payload = new
                     {
-                        transports = new { rest = true, webSocket = true, signalR = signalREnabled },
+                        transports = new { rest = true, webSocket = useWebSocket, signalR = signalREnabled },
                         activeConnections = snap.ActiveConnections,
                         activeSubscriptions = snap.ActiveSubscriptions,
                         eventDroppedTotal = snap.EventDroppedTotal,

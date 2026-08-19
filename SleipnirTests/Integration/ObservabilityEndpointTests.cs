@@ -125,6 +125,47 @@ public class ObservabilityEndpointTests
     }
 
     [Fact]
+    public async Task Observability_Transports_ReflectUseWebSocketToggle()
+    {
+        // Task #11 Part B: the /observability `transports.webSocket` flag must reflect the
+        // threaded option, not a hard-coded true. This host maps the REST group with
+        // useWebSocket:false (headless REST-only surface) — the snapshot must report it.
+        // Built inline (not via BuildHostAsync, which hard-wires WS + omits the new param).
+        var options = new SleipnirOptions { EnableObservability = true, RequireAuthentication = true };
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSleipnir(options);
+        builder.Services.AddAuthentication("Test")
+            .AddScheme<TestAuthOptions, TestAuthHandler>("Test", _ => { });
+        builder.Services.AddAuthorization();
+
+        var app = builder.Build();
+        app.UseRouting();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.UseSleipnir();
+        // Deliberately no UseWebSockets/UseSleipnirWebSocket — WS transport is off.
+        app.MapSleipnirEndpoints("/api/sleipnir",
+            enableObservability: options.EnableObservability,
+            signalREnabled: options.UseSignalR,
+            useWebSocket: false);
+        await app.StartAsync();
+        await using var _ = app;
+        using var client = new HttpClient { BaseAddress = new Uri(app.Urls.First().TrimEnd('/') + "/") };
+
+        var res = await client.SendAsync(Authed(HttpMethod.Get, "/api/sleipnir/observability"));
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await res.Content.ReadAsStringAsync();
+        var snap = JsonSerializer.Deserialize<JsonElement>(body, JsonOpts);
+
+        snap.GetProperty("transports").GetProperty("rest").GetBoolean().Should().BeTrue(
+            "REST is on whenever the endpoint is reachable (it lives in the REST group)");
+        snap.GetProperty("transports").GetProperty("webSocket").GetBoolean().Should().BeFalse(
+            "useWebSocket:false must surface as webSocket=false in the snapshot, not a hard-coded true");
+        snap.GetProperty("transports").GetProperty("signalR").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Observability_Disabled_NotMapped_Returns404()
     {
         // EnableObservability=false (default) → /observability is not registered.

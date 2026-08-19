@@ -22,16 +22,19 @@ public class SleipnirWebSocketMiddleware
     private readonly ILogger<SleipnirWebSocketMiddleware>? _logger;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly SleipnirConnectionRegistry _connectionRegistry;
+    private readonly SleipnirSubscriptionStore _subscriptionStore;
 
     public SleipnirWebSocketMiddleware(
         RequestDelegate next,
         ISleipnirCore sleipnirCore,
         SleipnirConnectionRegistry connectionRegistry,
+        SleipnirSubscriptionStore subscriptionStore,
         ILogger<SleipnirWebSocketMiddleware>? logger = null)
     {
         _next = next;
         _sleipnirCore = sleipnirCore;
         _connectionRegistry = connectionRegistry;
+        _subscriptionStore = subscriptionStore;
         _logger = logger;
         _jsonOptions = new JsonSerializerOptions
         {
@@ -139,7 +142,7 @@ public class SleipnirWebSocketMiddleware
     private async Task HandleConnectionAsync(HttpContext context, WebSocket webSocket)
     {
         // Phase 3: per-connection subscription manager for events.
-        var subscriptions = new SleipnirSubscriptionManager(webSocket, _sleipnirCore, _connectionRegistry, _logger);
+        var subscriptions = new SleipnirSubscriptionManager(webSocket, _sleipnirCore, _connectionRegistry, _subscriptionStore, _logger);
         try
         {
             var buffer = new byte[1024 * 4];
@@ -223,7 +226,21 @@ public class SleipnirWebSocketMiddleware
             {
                 var request = JsonSerializer.Deserialize<SleipnirRequest>(message, _jsonOptions);
                 if (request == null) { await SendErrorAsync(subscriptions, 400, "Invalid subscribe request.", id); return; }
-                var response = await subscriptions.HandleSubscribeAsync(request, context, context.RequestAborted);
+                // Phase R: optional resume fields. lastEventId = the last eventId the client
+                // processed (resume from there); subscriptionId = the durable id to resume.
+                // Both absent → fresh subscribe. Extracted out-of-band from the raw frame so
+                // the SleipnirRequest wire model stays untouched.
+                long? lastEventId = null;
+                string? resumeSubscriptionId = null;
+                if (root.ValueKind == JsonValueKind.Object)
+                {
+                    if (root.TryGetProperty("lastEventId", out var leid) && leid.ValueKind == JsonValueKind.Number)
+                        lastEventId = leid.GetInt64();
+                    if (root.TryGetProperty("subscriptionId", out var sid) && sid.ValueKind == JsonValueKind.String)
+                        resumeSubscriptionId = sid.GetString();
+                }
+                var response = await subscriptions.HandleSubscribeAsync(
+                    request, context, context.RequestAborted, lastEventId, resumeSubscriptionId);
                 if (response != null)
                 {
                     if (string.IsNullOrEmpty(response.Id)) response.Id = request.Id ?? id ?? string.Empty;

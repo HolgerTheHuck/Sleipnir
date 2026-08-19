@@ -98,6 +98,16 @@ namespace SleipnirCore.Services
         public EventBackpressureStrategy EventBackpressureStrategy { get; set; } = EventBackpressureStrategy.DropOldest;
 
         /// <summary>
+        /// Replay-buffer capacity for <c>Resumable</c> events (Phase R) — how many events
+        /// the server-side disconnect buffer retains per durable subscription (evict-oldest
+        /// on overflow; <c>0</c> = unbounded). <c>null</c> (default) → fallback 1000. Set
+        /// from <c>SleipnirOptions.EventReplayBufferCapacity</c> via <c>AddSleipnir</c>.
+        /// Only relevant for <c>[SleipnirEvent(Resumable = true)]</c>. Experimental —
+        /// see <c>STABILITY.md</c> §2.
+        /// </summary>
+        public int? EventReplayBufferCapacity { get; set; }
+
+        /// <summary>
         /// North-Bound-Default-Deny. Wenn <c>true</c>, verlangt jede Methode ohne
         /// <c>[SleipnirAnonymous]</c> einen authentifizierten User; <c>[SleipnirAuthorise]</c>
         /// prüft weiterhin Rolle/Authentication. Default <c>false</c> (South-Bound,
@@ -243,6 +253,7 @@ namespace SleipnirCore.Services
                         IsEvent = isEvent,
                         EventBufferCapacity = isEvent ? eventAttr!.BufferCapacity : -1,
                         EventBackpressureStrategy = isEvent ? eventAttr!.BackpressureStrategy : EventBackpressureStrategy.Inherit,
+                        EventResumable = isEvent && eventAttr!.Resumable,
                         // Methoden-Level schlägt Controller-Level (Default); beides null
                         // → im RequireAuthentication-Modus verlangt CheckAuthorisation
                         // mindestens IsAuthenticated, sonst default-allow (South-Bound).
@@ -441,7 +452,13 @@ namespace SleipnirCore.Services
                         : (EventBufferCapacity ?? 100));
                 if (capacity < 0) capacity = 100;
 
-                return SleipnirSubscribeResult.Ok(observable, capacity, strategy);
+                // Phase R: replay-buffer capacity for Resumable events (Fallback 1000).
+                var replayCapacity = invokeInfo.EventResumable
+                    ? (EventReplayBufferCapacity is { } rc && rc > 0 ? rc : 1000)
+                    : 0;
+
+                return SleipnirSubscribeResult.Ok(observable, capacity, strategy,
+                    resumable: invokeInfo.EventResumable, replayBufferCapacity: replayCapacity);
             }
             catch (Exception ex)
             {
@@ -2146,6 +2163,14 @@ namespace SleipnirCore.Services
             /// <see cref="IsEvent"/>-Methoden relevant.
             /// </summary>
             public EventBackpressureStrategy EventBackpressureStrategy { get; set; } = EventBackpressureStrategy.Inherit;
+
+            /// <summary>
+            /// Per-event <c>[SleipnirEvent(Resumable = true)]</c> opt-in for
+            /// <c>Last-Event-Id</c> resume + a server-side disconnect buffer (Phase R).
+            /// Only relevant for <see cref="IsEvent"/> methods. See
+            /// <c>SleipnirEventAttribute.Resumable</c>.
+            /// </summary>
+            public bool EventResumable { get; set; }
 
             /// <summary>
             /// Methoden-Level [SleipnirAnonymous] → Opt-out vom RequireAuthentication-

@@ -42,6 +42,7 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
     private readonly WebSocket _webSocket;
     private readonly ISleipnirCore _sleipnirCore;
     private readonly SleipnirConnectionRegistry _connectionRegistry;
+    private readonly SleipnirSubscriptionStore _store;
     private readonly ILogger? _logger;
     private readonly int _defaultBufferCapacity;
     private readonly EventBackpressureStrategy _defaultStrategy;
@@ -49,6 +50,12 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
 
     // subscriptionId → Subscription-State (Channel, eventId-Counter, IDisposable vom IObservable).
     private readonly ConcurrentDictionary<string, SubscriptionState> _subscriptions = new();
+
+    // Phase R: durable subscription ids currently attached to THIS connection. The real
+    // state lives in the SleipnirSubscriptionStore (process-wide); this set is only for
+    // disconnect cleanup (Detach — keep source + buffer for resume). Ephemeral subscriptions
+    // stay in _subscriptions above; durable ones live here + in the store.
+    private readonly ConcurrentDictionary<string, byte> _attachedDurable = new();
 
     // Ein Send-Loop pro Connection, der Event-Frames serialisiert auf den Socket schreibt
     // (WebSocket.SendAsync ist nicht thread-safe für konkurrierende Sends).
@@ -59,6 +66,7 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         WebSocket webSocket,
         ISleipnirCore sleipnirCore,
         SleipnirConnectionRegistry connectionRegistry,
+        SleipnirSubscriptionStore store,
         ILogger? logger,
         int bufferCapacity = 100,
         EventBackpressureStrategy backpressureStrategy = EventBackpressureStrategy.DropOldest)
@@ -66,6 +74,7 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         _webSocket = webSocket;
         _sleipnirCore = sleipnirCore;
         _connectionRegistry = connectionRegistry;
+        _store = store;
         _logger = logger;
         _defaultBufferCapacity = bufferCapacity > 0 ? bufferCapacity : 100;
         _defaultStrategy = backpressureStrategy;
@@ -83,12 +92,93 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
     }
 
     /// <summary>Verarbeitet einen Subscribe-Request: ruft SubscribeAsync, subscribiert das Observable, pusht Events.</summary>
-    public async Task<SleipnirResponse?> HandleSubscribeAsync(SleipnirRequest request, HttpContext? context, CancellationToken ct)
+    public async Task<SleipnirResponse?> HandleSubscribeAsync(
+        SleipnirRequest request, HttpContext? context, CancellationToken ct,
+        long? lastEventId = null, string? resumeSubscriptionId = null)
     {
+        // ── Phase R: resume path ──────────────────────────────────────────────
+        // A resume carries the durable subscriptionId + the last eventId the client processed.
+        // If the durable state still lives in the store, re-attach a live tap and replay the
+        // gap. If it has been GC'd (TTL expired) or was never resumable, fall through to a
+        // fresh subscribe (degrade — documented). R1 does not re-check auth here (R3 wires
+        // the reconnect auth re-check; safe because no client resumes until R2 ships the hook).
+        if (!string.IsNullOrEmpty(resumeSubscriptionId)
+            && _store.Lookup(resumeSubscriptionId!) is { } existingState)
+        {
+            var tap = existingState.Attach(lastEventId ?? 0);
+            _attachedDurable[tap.SubscriptionId] = 1;
+            _store.OnAttached();   // gauge: a client is (re)attached to this durable subscription
+            StartDurablePump(tap, ct);
+            return new SleipnirResponse
+            {
+                Code = SleipnirErrorCodes.Ok,
+                Data = JsonSerializer.SerializeToElement(
+                    new { subscriptionId = tap.SubscriptionId, replayedFrom = tap.ReplayedFrom },
+                    SleipnirJsonOptions.Default),
+                Id = request.Id,
+            };
+        }
+
+        // ── Fresh subscribe path ──────────────────────────────────────────────
         var result = await _sleipnirCore.SubscribeAsync(request, context, ct);
         if (result.Error != null)
             return result.Error;
 
+        // Phase R: resumable events go to the durable store (source kept alive across
+        // disconnects, replay ring buffer, stable subscriptionId). Non-resumable events keep
+        // the v1 ephemeral per-connection path unchanged.
+        if (result.Resumable)
+            return await CreateDurableAsync(request, result, ct);
+
+        return CreateEphemeral(request, result);
+    }
+
+    /// <summary>Fresh durable subscribe: register state, subscribe the observer, attach the tap.</summary>
+    private async Task<SleipnirResponse?> CreateDurableAsync(SleipnirRequest request, SleipnirSubscribeResult result, CancellationToken ct)
+    {
+        var observable = result.Observable!;
+        var state = _store.BeginCreate(result.EventBackpressureStrategy);
+        if (state == null)
+            return SleipnirResults.Error(SleipnirErrorCodes.ServiceUnavailable, "Durable subscription cap reached — retry later.",
+                SleipnirCommon.Results.SleipnirErrorCategory.ResourceExhausted);
+
+        // Subscribe the observer FIRST so events produced before Attach land in the ring
+        // buffer (the attach snapshot then replays them — no lost events on the create path).
+        state.SourceSubscription = observable.Subscribe(new DurableEventObserver<object?>(state, _logger));
+
+        var tap = state.Attach(0);
+        _attachedDurable[tap.SubscriptionId] = 1;
+        _store.OnAttached();
+        StartDurablePump(tap, ct);
+
+        return new SleipnirResponse
+        {
+            Code = SleipnirErrorCodes.Ok,
+            Data = JsonSerializer.SerializeToElement(new { subscriptionId = tap.SubscriptionId }, SleipnirJsonOptions.Default),
+            Id = request.Id,
+        };
+    }
+
+    /// <summary>Durable live-tap pump: drains the tap (replayed + live frames) into the send channel.</summary>
+    private void StartDurablePump(Tap tap, CancellationToken ct)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var frame in tap.Reader.ReadAllAsync(_disposeCts.Token))
+                {
+                    await _sendChannel.Writer.WriteAsync(frame, _disposeCts.Token);
+                }
+            }
+            catch (OperationCanceledException) { /* Dispose/disconnect */ }
+            catch (Exception ex) { _logger?.LogError(ex, "Durable pump task failed for subscription {SubscriptionId}", tap.SubscriptionId); }
+        }, _disposeCts.Token);
+    }
+
+    /// <summary>Fresh ephemeral subscribe (v1 path, non-resumable events): per-connection state + buffer.</summary>
+    private SleipnirResponse CreateEphemeral(SleipnirRequest request, SleipnirSubscribeResult result)
+    {
         var observable = result.Observable!;
         var subscriptionId = Guid.NewGuid().ToString("N");
 
@@ -134,10 +224,20 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
     }
 
     /// <summary>
-    /// Verarbeitet einen Unsubscribe-Request: disposed die Subscription.
+    /// Verarbeitet einen Unsubscribe-Request: disposed die Subscription (ephemeral) bzw.
+    /// destroyed die durable Subscription (Phase R — explicit unsubscribe tears down the
+    /// source + replay buffer; a disconnect-only Detach would keep it for resume).
     /// </summary>
     public Task<SleipnirResponse?> HandleUnsubscribeAsync(string subscriptionId, string? requestId, CancellationToken ct)
     {
+        // Phase R: durable unsubscribe — destroy the source + buffer (the client opted out).
+        // store.Destroy decrements the gauge iff a tap was still attached.
+        if (_attachedDurable.TryRemove(subscriptionId, out _))
+        {
+            _store.Destroy(subscriptionId);
+            return Task.FromResult<SleipnirResponse?>(new SleipnirResponse { Code = SleipnirErrorCodes.Ok, Id = requestId ?? string.Empty });
+        }
+
         if (_subscriptions.TryRemove(subscriptionId, out var state))
         {
             state.Dispose();
@@ -184,7 +284,7 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         _disposeCts.Cancel();
         _sendChannel.Writer.TryComplete();
 
-        // Alle Subscriptions disposed.
+        // Alle ephemeral Subscriptions disposed.
         foreach (var state in _subscriptions.Values)
         {
             state.Dispose();
@@ -193,6 +293,13 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
             _connectionRegistry.DecSubscription();
         }
         _subscriptions.Clear();
+
+        // Phase R: durable subscriptions are DETACHED, not destroyed — the source subscription
+        // + replay ring buffer persist in the process-wide store for a resume on reconnect.
+        // store.Detach decrements the gauge (symmetric with OnAttached at subscribe/resume).
+        foreach (var durableId in _attachedDurable.Keys)
+            _store.Detach(durableId);
+        _attachedDurable.Clear();
 
         try { await _sendLoopTask; } catch { /* ignore */ }
         _disposeCts.Dispose();
@@ -440,6 +547,54 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         {
             var frame = JsonSerializer.Serialize(new { type = "error", subscriptionId = _subscriptionId, message = error.Message }, SleipnirJsonOptions.Default);
             _state.Buffer.EnqueueTerminal(frame);
+        }
+    }
+
+    /// <summary>
+    /// IObserver implementation for <b>durable</b> subscriptions (Phase R): serializes
+    /// each event frame with the <see cref="DurableSubscriptionState"/>-owned monotonic
+    /// <c>eventId</c> (stable across reconnects) and forwards it to the store state
+    /// (replay ring buffer + optional live tap). OnCompleted/OnError are recorded as a
+    /// terminal frame (replayed on resume) and forwarded to the live tap.
+    /// </summary>
+    private sealed class DurableEventObserver<T> : IObserver<T>
+    {
+        private readonly DurableSubscriptionState _state;
+        private readonly ILogger? _logger;
+
+        public DurableEventObserver(DurableSubscriptionState state, ILogger? logger)
+        {
+            _state = state;
+            _logger = logger;
+        }
+
+        public void OnNext(T value)
+        {
+            var eventId = _state.NextEventId();
+            var frame = JsonSerializer.Serialize(new
+            {
+                type = "event",
+                subscriptionId = _state.SubscriptionId,
+                eventId,
+                data = value,
+            }, SleipnirJsonOptions.Default);
+            // AppendEvent records into the replay ring buffer (evict-oldest on cap → drop
+            // counter via the store) AND forwards to the attached live tap, if any. With no
+            // tap (disconnected) the frame lives only in the ring buffer → replayed on resume.
+            _state.AppendEvent(eventId, frame);
+        }
+
+        public void OnCompleted()
+        {
+            var frame = JsonSerializer.Serialize(new { type = "complete", subscriptionId = _state.SubscriptionId }, SleipnirJsonOptions.Default);
+            _state.SetTerminal(frame);
+        }
+
+        public void OnError(Exception error)
+        {
+            var frame = JsonSerializer.Serialize(new { type = "error", subscriptionId = _state.SubscriptionId, message = error.Message }, SleipnirJsonOptions.Default);
+            _state.SetTerminal(frame);
+            _logger?.LogError(error, "Durable event source errored for subscription {SubscriptionId}", _state.SubscriptionId);
         }
     }
 }

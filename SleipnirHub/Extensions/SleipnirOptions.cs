@@ -34,6 +34,34 @@ namespace SleipnirHub.Extensions
         /// </summary>
         public EventBackpressureStrategy EventBackpressureStrategy { get; set; } = EventBackpressureStrategy.DropOldest;
 
+        /// <summary>
+        /// Replay-buffer capacity for <c>[SleipnirEvent(Resumable = true)]</c> events
+        /// (Phase R, experimental — see <c>STABILITY.md</c> §2). How many events the
+        /// server-side disconnect buffer retains per durable subscription (evict-oldest
+        /// on overflow; <c>0</c> = unbounded — no DoS backstop). Default <c>null</c>
+        /// → fallback 1000. Overflow during a long disconnect loses events beyond the
+        /// window (counted in <c>sleipnir.event.dropped</c>).
+        /// </summary>
+        public int? EventReplayBufferCapacity { get; set; }
+
+        /// <summary>
+        /// Idle-TTL for durable subscriptions (Phase R, experimental). A durable
+        /// subscription with no active client connection is reclaimed after the TTL
+        /// expires (source subscription disposed, replay buffer discarded). Default
+        /// <c>null</c> → fallback 60s. <c>0</c> = never auto-reclaim (only explicit
+        /// unsubscribe / source <c>complete</c>/<c>error</c> — risk: unbounded memory
+        /// for abandoned subscriptions). See <c>STABILITY.md</c> §2.
+        /// </summary>
+        public TimeSpan? EventResumeTtl { get; set; }
+
+        /// <summary>
+        /// Maximum number of concurrent durable subscriptions process-wide (Phase R,
+        /// DoS backstop). Default <c>null</c> → fallback 10 000. <c>0</c> = unbounded
+        /// (no backstop). Over-cap subscribe is rejected (409/503). See
+        /// <c>SECURITY.md</c> / <c>STABILITY.md</c> §2.
+        /// </summary>
+        public int? EventMaxDurableSubscriptions { get; set; }
+
         public int MaximumParallelInvocationsPerClient { get; set; }
 
         public bool UseMessagePack { get; set; }

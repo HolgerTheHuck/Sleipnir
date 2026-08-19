@@ -61,6 +61,19 @@ namespace SleipnirHub.Extensions
             SleipnirCore.Tracing.SleipnirMetrics.SetConnectionRegistry(connectionRegistry);
             services.AddSingleton(connectionRegistry);
 
+            // Phase R (resume, experimental): process-wide store of durable event
+            // subscriptions for [SleipnirEvent(Resumable = true)] — keeps the IObservable
+            // source alive across disconnects, buffers events, replays from lastEventId.
+            // Sibling of the connection registry; holds real per-subscription state.
+            // See STABILITY.md §2 + docs/design/phase-3-events.md.
+            services.AddSingleton<SleipnirCore.Services.SleipnirSubscriptionStore>(sp =>
+                new SleipnirCore.Services.SleipnirSubscriptionStore(
+                    connectionRegistry,
+                    options.EventReplayBufferCapacity,
+                    options.EventResumeTtl,
+                    options.EventMaxDurableSubscriptions,
+                    sp.GetService<Microsoft.Extensions.Logging.ILogger<SleipnirCore.Services.SleipnirSubscriptionStore>>()));
+
             if (options.UseSignalR)
             {
                 // Add SignalR as the transport-layer.
@@ -146,6 +159,10 @@ namespace SleipnirHub.Extensions
                 // the 1.1.x behavior (capacity 100, drop-oldest) — see STABILITY.md §2.
                 invoker.EventBufferCapacity = options.EventBufferCapacity;
                 invoker.EventBackpressureStrategy = options.EventBackpressureStrategy;
+                // Phase R (resume, experimental): replay-buffer capacity for
+                // [SleipnirEvent(Resumable = true)] events. The durable subscription
+                // store (TTL/cap) is registered below. See STABILITY.md §2.
+                invoker.EventReplayBufferCapacity = options.EventReplayBufferCapacity;
                 // North-bound hardening (default non-breaking, see SECURITY.md):
                 // RequireAuthentication = default-deny for unattributed methods;
                 // MaximumBatchSize = fan-out DoS cap; JsonPath limits = client-path DoS cap.

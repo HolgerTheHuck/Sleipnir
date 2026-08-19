@@ -96,3 +96,15 @@ public class AuthedResumableEventController
     [SleipnirAuthorise(Role = "Admin")]
     public IObservable<string> SecureTick() => Stream;
 }
+
+/// <summary>
+/// Plain (non-event) controller for the <see cref="AuthorizeSubscribeTests"/> non-event branch.
+/// <c>AuthorizeSubscribeAsync</c> rejects a route that is not a <c>[SleipnirEvent]</c> with 400, so a
+/// caller cannot lie that a plain call is a resumable event to land a weaker auth check on resume.
+/// </summary>
+[SleipnirController("PlainCall")]
+public class PlainCallController
+{
+    [SleipnirMethod("Ping")]
+    public string Ping() => "pong";
+}

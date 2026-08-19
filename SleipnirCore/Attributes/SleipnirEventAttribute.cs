@@ -35,6 +35,16 @@ namespace SleipnirCore.Attributes
     /// über <see cref="BufferCapacity"/>/<see cref="BackpressureStrategy"/> überschreibbar;
     /// <c>sleipnir.event.dropped</c> zählt verlorene Events.
     /// </para>
+    /// <para>
+    /// <b>Resume:</b> <see cref="Resumable"/> (default <c>false</c>) opts in to
+    /// <c>Last-Event-Id</c> resume + a server-side disconnect buffer (Phase R). A
+    /// <c>Resumable</c> method must return a <b>long-lived hot/durable observable</b>
+    /// (e.g. <c>Subject&lt;T&gt;</c> or a factory backed by a long-running producer) —
+    /// the server keeps <i>one</i> subscription alive across the disconnect and buffers
+    /// events; a cold observable that restarts per subscribe has no resume semantics.
+    /// Replay is <c>at-least-once</c> within the replay-buffer window; the client dedups
+    /// by <c>eventId</c>. See <c>STABILITY.md</c> §2.
+    /// </para>
     /// </remarks>
     [System.AttributeUsage(System.AttributeTargets.Method)]
     public class SleipnirEventAttribute : System.Attribute
@@ -73,5 +83,21 @@ namespace SleipnirCore.Attributes
         /// </summary>
         public SleipnirCommon.Models.EventBackpressureStrategy BackpressureStrategy { get; set; }
             = SleipnirCommon.Models.EventBackpressureStrategy.Inherit;
+
+        /// <summary>
+        /// Opt-in for <c>Last-Event-Id</c> resume + a server-side disconnect buffer
+        /// (Phase R, experimental — see <c>STABILITY.md</c> §2). Default <c>false</c>
+        /// (non-breaking: today's at-most-once-while-disconnected behavior). When <c>true</c>,
+        /// the server keeps <i>one</i> <c>IObservable</c> subscription alive across
+        /// WebSocket disconnects, buffers events produced while no client is attached, and
+        /// replays from the client-supplied <c>lastEventId</c> on reconnect (at-least-once
+        /// within the replay-buffer window; the client dedups by <c>eventId</c>).
+        /// <b>Contract:</b> the method must return a long-lived hot/durable observable
+        /// (e.g. <c>Subject&lt;T&gt;</c>) — a cold observable that restarts per subscribe
+        /// has no resume semantics. The <c>subscriptionId</c> is stable (durable) across
+        /// reconnects for resumable events. Reclaim/GC: idle-TTL, explicit unsubscribe, or
+        /// source <c>complete</c>/<c>error</c> (<c>SleipnirOptions.EventResumeTtl</c>).
+        /// </summary>
+        public bool Resumable { get; set; }
     }
 }

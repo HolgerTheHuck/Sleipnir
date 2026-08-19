@@ -210,6 +210,7 @@ var responses = await client.Call(batch);
 - **Request** — a single method call with a parameter form + raw JSON editor.
 - **Dependency Builder** — a visual composer for serial `@alias` batches: each step is a `SleipnirRequest`, exposes become `dependencyMapping`, alias-params become `@alias` placeholders. The one place that has both the provider return schema and the consumer parameter schema (from discovery), so it runs a **static checker** — see [DevUI static checker](#devui-static-checker).
 - **Codegen** — emits TypeScript and C# client code for the current call or batch, copy-to-clipboard.
+- **Observability** — a live panel that polls `GET /api/sleipnir/observability` (opt-in `EnableObservability`) every ~2 s: transport pills (REST/WS/SignalR on/off), active connections/subscriptions with sparklines, cumulative call/error/batch counters, uptime, and a pointer to the Prometheus `/metrics` scrape for the full instrument set. RequireAuth-gated like `/discovery`.
 
 **History.** The last 100 calls (request, response, duration, error) live in `sleipnir-history` and show in a collapsible bottom panel. Replay is one click.
 
@@ -229,7 +230,8 @@ var responses = await client.Call(batch);
 - **Streaming**: IAsyncEnumerable<T> support, serialized as JSON arrays
 - **Interceptor-Pipeline**: ISleipnirInterceptor for logging, tracing, caching, validation
 - **Discovery/MEX**: GET /api/sleipnir/discovery returns full API metadata
-- **Developer-UI**: Built-in web UI at `/Sleipnir` for browsing, testing, batch-building, codegen, and saving whole worksets — see [Developer UI](#developer-ui)
+- **Observability**: opt-in `GET /api/sleipnir/metrics` (Prometheus text) + `GET /api/sleipnir/observability` (JSON snapshot for the DevUI panel); OTel metrics column wired via `AddSleipnirTelemetry`; live connection/subscription gauges — see [Metrics & observability endpoints](#metrics--observability-endpoints-experimental-opt-in)
+- **Developer-UI**: Built-in web UI at `/Sleipnir` for browsing, testing, batch-building, codegen, observability, and saving whole worksets — see [Developer UI](#developer-ui)
 - **Rate-Limiting**: Built-in fixed-window rate limiter
 - **Authorization**: [SleipnirAuthorise] attribute with role-based access
 - **Expression-Tree Invocation**: Pre-compiled method delegates for maximum performance
@@ -251,6 +253,102 @@ Base64 is avoided **only on the SignalR/MessagePack channel**. REST and WebSocke
 **Practical guidance:** Binary over REST or WebSocket is fine for payloads up to the limits. For large or frequent binary, run a plain REST or WebSocket endpoint alongside Sleipnir — there is nothing about binary that requires the RPC channel. Streamed/chunked binary upload and a streamed `byte[]` response are not in v1; see [ROADMAP.md](ROADMAP.md) for the v1.x+ binary-transfer plan.
 
 **Client support:** TypeScript ships `withBinary(Uint8Array)` and `callBinary()`; SignalR clients (C# + TS) carry `byte[]` natively. The C# REST/WebSocket client offers `CallBinary()` for responses, but the fluent builder has **no `WithBinary` yet** — set `request.BinaryData` directly until it lands. See [PROTOCOL.md](PROTOCOL.md) for exact field semantics.
+
+## Serving Media & Non-RPC Resources (images, video, downloads)
+
+Sleipnir is a **command-oriented RPC framework**: a method is a command, the call is `POST` + JSON, the result is a typed JSON contract. Media — images, video, file downloads, generated PDFs — is **resource-oriented**: a browser-fetchable `GET` URL, cacheable, rangeable, CDN-friendly. These are two different shapes, and Sleipnir serves media by **co-hosting a plain HTTP endpoint next to the RPC channel**, not by putting raw bytes in the RPC envelope. This is the intended split, not a gap:
+
+> **Sleipnir = authority** — metadata, permission, business logic, and *which URL* the resource lives at.
+> **HTTP / CDN = delivery** — the raw bytes, streamed, with the right `Content-Type`, `ETag`, `Range`, and cache headers.
+
+### Not a second framework
+
+`app.MapGet(...)` beside `app.MapSleipnirEndpoints()` is **one ASP.NET host, one process, one DI container, one auth pipeline**. Sleipnir *is* a set of endpoints on that host; a Minimal API `GET` is another set on the same host. You are not introducing a second runtime — you are using the host you already have. (This is the same relationship gRPC has with its HTTP/2 host: nobody calls that "two frameworks.") See [Sleipnir + REST — a complement](README.md#sleipnir--rest--not-a-replacement-a-complement).
+
+### The pattern
+
+One shared service does the work; the Sleipnir controller is the authority (permission + the URL), the `GET` endpoint is the delivery.
+
+```csharp
+// Shared domain service — the single source of truth.
+public class AvatarService(IUserPermissions perms)
+{
+    public async Task<bool> CanViewAsync(int viewer, int userId, CancellationToken ct)
+        => await perms.CanViewAsync(viewer, userId, ct);
+
+    public (Stream Stream, string ContentType) OpenAvatar(int userId)
+        => (File.OpenRead($"./avatars/{userId}.png"), "image/png");
+}
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddSleipnir(...);
+builder.Services.AddScoped<AvatarService>();
+// Standard ASP.NET auth (e.g. JWT bearer) — applies to BOTH the Sleipnir channel
+// and the media endpoint, so governance (auth, rate limit, tracing) is unified.
+builder.Services.AddAuthentication().AddJwtBearer(...);
+builder.Services.AddAuthorization();
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Sleipnir = authority: the command returns the resource URL (and gates permission
+// in the RPC flow). The client learns *where* the media is from the typed call.
+app.MapSleipnirEndpoints();
+
+// Delivery: a browser-fetchable GET URL that streams the bytes with a real
+// Content-Type. RequireAuthorization shares the same auth pipeline as Sleipnir.
+app.MapGet("/avatars/{userId}.png",
+    async (int userId, AvatarService svc, HttpContext ctx, CancellationToken ct) =>
+{
+    if (!await svc.CanViewAsync(ctx.User.GetUserId(), userId, ct))
+        return Results.Forbid();
+    var (stream, contentType) = svc.OpenAvatar(userId);
+    return Results.Stream(stream, contentType);   // chunked, correct Content-Type
+}).RequireAuthorization();
+
+app.Run();
+```
+
+```csharp
+[SleipnirController("User")]
+public class UserController(AvatarService _avatars)
+{
+    [SleipnirMethod("AvatarUrl")]
+    [SleipnirAuthorise]
+    public string? GetAvatarUrl(int userId)
+        => _avatars.CanViewAsync(...) is false ? null : $"/avatars/{userId}.png";
+}
+```
+
+Client side: the typed call gives the URL; the browser fetches the bytes — `<img src={await client.user.avatarUrl(42)}>`. Put a CDN or a static-file store in front of `/avatars/*` to scale media off the app server entirely; Sleipnir stays the authority that hands out the reference.
+
+### Why not `byte[]` / a raw return inside the RPC envelope
+
+The RPC channel is the wrong shape for media, on every axis:
+
+| Need | RPC envelope (`byte[]` / `content`) | Co-hosted `GET` endpoint |
+|---|---|---|
+| `<img src="…">` / `<video src="…">` | ✗ browsers cannot `GET` a `POST` | ✓ native |
+| Wire cost | base64 in JSON (~33 % overhead) | raw bytes |
+| Size | REST 1 MB / WS 1 MB message cap | unlimited (streamed/chunked) |
+| Range / `206 Partial Content` (video seeking) | ✗ | ✓ `Results.Stream` + range headers |
+| `ETag` / `304 Not Modified` / cache | ✗ RPC responses are non-cacheable | ✓ CDN + conditional GET |
+| `Content-Type` / `Content-Disposition` | ✗ JSON envelope | ✓ native headers |
+| Transport symmetry (REST/WS/SignalR identical) | ✓ but useless for media | n/a (REST is correct for browser media) |
+
+`byte[]` in the envelope is fine for **small binary inside a call** (a thumbnail embedded in a result, a signed hash, a small file returned from a command). For anything a browser fetches as media, use the co-hosted `GET`.
+
+### What is deliberately *not* in v1 (the boundary)
+
+Sleipnir does **not** offer a `[SleipnirMethod]` that returns raw bytes as a browser `GET`, nor `SleipnirResults.Raw` / `.File` / `.Stream`, nor an auto-generated media route in discovery/codegen. This is a **deliberate boundary**, not an oversight:
+
+- It would require a **second dispatcher verb** (`GET` + query-param binding) alongside the `POST` + JSON command path.
+- It would create **transport asymmetry**: WebSocket/SignalR cannot serve browser media (`<img src>` is HTTP), so a "raw return" method would mean different contracts per transport — the one invariant Sleipnir otherwise preserves (all transports speak the same JSON contract).
+- It opens the **HTTP-semantics slope**: a media endpoint without `Range` / `ETag` / `304` / `Cache-Control` is a toy for real frontends, and each header pulls in the next.
+- Media delivery is **operationally better served** by a CDN/static store in front of a plain `GET` than by an RPC framework acting as a file server.
+
+If you need media to appear inside the **typed/codegen client surface** (discovery + a generated `DownloadAsync`), that is a future *resource pillar* — explicitly experimental, not in v1. Track it in [ROADMAP.md](ROADMAP.md). Until then, the co-hosted `GET` pattern above is the supported way to serve media from a Sleipnir application.
 
 ## Cross-Platform
 
@@ -378,6 +476,216 @@ Authorization is checked **per request**, not per batch. A `401` on one request 
 
 `HttpContext` is not thread-safe, yet every request in a batch shares the same incoming context. The server runs the `[SleipnirAuthorise]` check **serially in a pre-pass** before the parallel `Task.WhenAll` fan-out; the parallel execution never touches `HttpContext`. Auth is cheap (claims reads), so this does not regress parallel throughput. **User-code contract:** controllers that obtain the context via `IHttpContextAccessor`, and overrides of `OnAuthorization`, must treat it as **read-only** in a parallel batch (no writes to `Items`/response/request-body) — the framework's own concurrent access is eliminated by the pre-pass, but user code is the caller's responsibility. Full spec: [`DEPENDENCY_BINDING.md §9`](DEPENDENCY_BINDING.md#9-provider-failure--dependent-propagation).
 
+## Server-Push Events (IObservable<T>)
+
+Alongside request/response **calls**, Sleipnir supports server→client **push** via `IObservable<T>`
+event methods. The server declares an event; clients subscribe to it over WebSocket and receive a
+stream of typed values until they unsubscribe or the source completes. **WebSocket-only in v1**
+(no REST, no SignalR event surface). The full wire spec is in [`PROTOCOL.md`](PROTOCOL.md) →
+"Server-Push Events"; the design rationale is in [`docs/design/phase-3-events.md`](docs/design/phase-3-events.md).
+
+> **Status:** experimental in v1 (`STABILITY.md` §2). The wire format, subscription lifecycle, and
+> backpressure may settle in a minor version. `Last-Event-Id` resume and a server-side disconnect
+> buffer are deferred to v1.x+.
+
+### Events vs. calls vs. streams
+
+| Surface | Direction | Bounded? | Marker | Transport |
+|---------|-----------|----------|--------|-----------|
+| **Call** | request/response | one result (or batch) | `[SleipnirMethod]` | REST, WS, SignalR |
+| **Stream** | response, many items | finite — completes with the call | `[SleipnirMethod]` + `IAsyncEnumerable<T>` | WS, SignalR (REST materializes) |
+| **Event** | server→client push | **unbounded** until unsubscribe/complete | `[SleipnirEvent]` + `IObservable<T>` | WS only |
+
+A stream is *one call that yields many elements then ends*; an event is *subscribe once, receive
+push values indefinitely*. Events are **not chainable** — there is no single result to feed into
+`exposes`/`@alias`, so they cannot participate in dependency chains.
+
+### Server: declare an event
+
+Mark a method with `[SleipnirEvent("name")]` (the wire name, analogous to `[SleipnirMethod]`) and
+return `IObservable<T>`. The method's parameters are **first-class subscription parameters** —
+bound once at subscribe time, not per event.
+
+```csharp
+using SleipnirCore.Attributes;
+
+[SleipnirController("Chat")]
+public class ChatController(IChatService service)
+{
+    // A request/response call, unchanged.
+    [SleipnirMethod("SendMessage")]
+    public Task<Message> SendMessage(int chatId, string text, CancellationToken ct)
+        => service.SendAsync(chatId, text, ct);
+
+    // A server-push event. Returns IObservable<T>; chatId is the subscription parameter
+    // ("push me every message in chat 42"). Auth runs at subscribe time like any call.
+    [SleipnirAuthorise]
+    [SleipnirEvent("MessageReceived")]
+    public IObservable<Message> MessageReceived(int chatId, CancellationToken ct)
+        => service.SubscribeMessages(chatId, ct);
+}
+```
+
+Rules enforced **at registration** (fail-loud, like method-name uniqueness):
+
+- The method must return `IObservable<T>` **directly** — not `Task<IObservable<T>>`. (Produce the
+  observable asynchronously *inside* the method if needed; return it synchronously.)
+- `[SleipnirEvent]` and `[SleipnirMethod]` are mutually exclusive on one method — use exactly one.
+- An `IObservable<T>` method marked `[SleipnirMethod]` is rejected with a migration message
+  ("use `[SleipnirEvent]` for server-push events"). A `[SleipnirEvent]` method not returning
+  `IObservable<T>` is likewise rejected.
+- The event name shares the `{Controller}_{name}` dispatch namespace with call names; a collision
+  (two events, or an event and a call, with the same name on one controller) throws at startup.
+
+`[SleipnirAuthorise]` / `[SleipnirAnonymous]` gate the **subscribe** request through the same auth
+interceptor as calls. A plain call (`InvokeDi`) to an event method returns `400` with an
+actionable message ("… is a server-push event; use `kind:\"subscribe\"`") rather than attempting
+to serialize the observable.
+
+### Client: subscribe (C# WebSocket client)
+
+`SleipnirWebSocketClient.SubscribeAsync<T>(controller, method, args)` sends the subscribe request,
+awaits the `subscriptionId`, and returns a `SleipnirSubscription<T>` — which **is an
+`IObservable<T>`**. Consume it with any `IObserver<T>` (your own, or `System.Reactive` if you
+prefer). Disposing the subscription sends `unsubscribe`.
+
+```csharp
+using var client = new SleipnirWebSocketClient(new Uri("ws://localhost:5000/sleipnirws"));
+
+// Subscribe to the "MessageReceived" event for chat 42.
+using var subscription = await client.SubscribeAsync<Message>(
+    controller: "Chat",
+    method:    "MessageReceived",
+    args:      new object?[] { 42 });
+
+// Consume the push stream. Each OnNext is one event payload.
+var cts = new CancellationTokenSource();
+using var observerRegistration = subscription.Subscribe(
+    onNext:      msg => Console.WriteLine($"#{msg.Id} {msg.From}: {msg.Text}"),
+    onError:     ex  => Console.WriteLine($"subscription error: {ex.Message}"),
+    onCompleted: ()  => Console.WriteLine("source completed — subscription ended"));
+
+// ... run until done ...
+cts.Cancel();
+// Disposing `subscription` (using above) sends unsubscribe and frees the server resource.
+```
+
+Notes on the C# surface:
+
+- `SleipnirSubscription<T>` has no `System.Reactive` dependency — it ships its own minimal
+  `SleipnirSubject<T>`. The `.Subscribe(onNext, onError, onCompleted)` overload above is the
+  standard `IObservable<T>` extension from `System.Reactive`; if you don't reference Rx, implement
+  `IObserver<T>` directly and pass it to `subscription.Subscribe(observer)`.
+- Calling `.Subscribe(observer)` only attaches an observer to the local subject; it does **not**
+  re-subscribe on the server. Disposing the *returned* `IDisposable` detaches the observer;
+  disposing the `SleipnirSubscription<T>` itself sends `unsubscribe` to the server.
+- **Auto-reconnect re-subscribes.** If the `SleipnirWebSocketClient` is configured with
+  auto-reconnect, every active subscription is automatically re-issued with the original
+  parameters after a reconnect, obtaining fresh `subscriptionId`s (see lifecycle below).
+
+**Generated typed surface.** The `sleipnir-codegen` C# emitter recognizes `returnType.kind ==
+"event"` in discovery and emits a typed `SubscribeAsync<T>` per event method, so the call above
+becomes `client.Chat.MessageReceivedAsync(chatId: 42)` returning `SleipnirSubscription<Message>`.
+
+### Client: subscribe (raw WebSocket, any language)
+
+Any RFC 6455 client can subscribe by sending the JSON frames directly — useful from JS/Python/Go
+without a typed client. See [`PROTOCOL.md`](PROTOCOL.md) → "Server-Push Events" for the
+authoritative frame shapes; in summary:
+
+```jsonc
+// → subscribe
+{ "kind": "subscribe", "controller": "Chat", "method": "MessageReceived",
+  "params": [ { "parameterName": "chatId", "data": 42 } ], "id": "sub-1" }
+// ← subscribe response
+{ "code": 200, "data": { "subscriptionId": "7a3f9c1e…" }, "id": "sub-1" }
+// ← event frames (correlated by subscriptionId, no id/code)
+{ "type": "event", "subscriptionId": "7a3f9c1e…", "eventId": 1, "data": { "id": 1, "from": "alice", "text": "hi" } }
+{ "type": "event", "subscriptionId": "7a3f9c1e…", "eventId": 2, "data": { "id": 2, "from": "bob",   "text": "yo" } }
+// ← terminal frame (source completed)
+{ "type": "complete", "subscriptionId": "7a3f9c1e…" }
+// → unsubscribe early
+{ "kind": "unsubscribe", "subscriptionId": "7a3f9c1e…", "id": "unsub-1" }
+```
+
+A client distinguishes an event frame from a call response by the presence of `type`
+(`event`/`complete`/`error`) vs. `code` (call response).
+
+### Subscription lifecycle & delivery semantics
+
+- **`subscriptionId` is per-connection.** Each subscribe gets a fresh id; ids are not valid across
+  connections.
+- **Auto-cleanup on disconnect.** Closing the socket disposes every active subscription on that
+  connection (the server-side observable subscription is disposed, freeing the source).
+- **Reconnect → re-subscribe (client-side).** After a reconnect, the client re-issues subscribe
+  requests for each active subscription with the original parameters; new `subscriptionId`s are
+  issued. The C# `SleipnirWebSocketClient` does this automatically.
+- **At-most-once-while-disconnected.** Events produced while the connection is down are **lost** —
+  no server-side buffer in v1. This is the documented gap semantic; `Last-Event-Id` resume (the
+  `eventId` is already monotonic per subscription to enable it) + server buffer are v1.x+.
+- **Backpressure.** Each subscription has a per-subscription buffer whose capacity and overflow
+  strategy are configurable. The global defaults are `SleipnirOptions.EventBufferCapacity` (fallback
+  100) and `SleipnirOptions.EventBackpressureStrategy` (default `DropOldest`); both are overridable
+  per event via `[SleipnirEvent(BufferCapacity = …, BackpressureStrategy = …)]`. The strategies:
+  - **`DropOldest`** (default) — when full, evict the **oldest** buffered event to make room for the
+    newest. Keeps the subscription recent and is DoS-safe. Best for current-state streams (prices,
+    presence, telemetry).
+  - **`DropWrite`** — when full, drop the **newest** event. Preserves the in-order backlog but loses
+    the latest; the consumer falls behind. Best when the historical sequence matters more than freshness.
+  - **`Block`** — when full, block the producer's `OnNext` until the consumer drains a slot. Lossless,
+    but back-pressures the source thread — opt in deliberately with a producer that tolerates blocking.
+  - **`Unbounded`** — no cap; nothing is dropped. Memory grows without bound if the consumer is slower
+    than the producer (no DoS backstop). Use only for bounded-volume, short-lived subscriptions.
+  `DropOldest` evictions and `DropWrite` rejections increment the `sleipnir.event.dropped` OpenTelemetry
+  counter; `Block` and `Unbounded` never drop. (The counter is accurate as of 1.2.0 — the earlier
+  `BoundedChannel(DropOldest)` path could not detect saturation, so the metric was dead code.)
+
+### Cold vs. hot observables
+
+The framework makes **no statement** about whether your `IObservable<T>` is cold or hot — it is a
+pass-through. At subscribe time the invoker resolves the controller in a **fresh DI scope per
+subscription**, invokes the compiled delegate once, and hands the returned `IObservable<T>` to
+exactly one `Subscribe` call. It does **not** wrap in `Publish`/`RefCount`/`ReplaySubject`, so there
+is no multicast facility. The cold/hot behavior is therefore entirely determined by what your
+controller method returns:
+
+- **Cold** (e.g. a fresh `Observable.Create(...)` or an EF query re-run per subscriber) — every
+  subscriber gets an independent stream from its own start. The per-subscribe DI scope reinforces
+  this for stateful controllers: a scoped producer is re-created per subscription.
+- **Hot** (e.g. a shared `Subject<T>` / `IObservable<T>` backed by a long-running broadcast) — every
+  subscriber attaches to the same running source and sees events produced after it subscribed;
+  events produced before subscribe are not replayed (no server-side buffer in v1).
+
+If you need shared-broadcast semantics, build them in the producer yourself (a singleton
+`Subject<T>` injected into the controller) — Sleipnir will not infer or impose them. The
+at-most-once-while-disconnected rule above applies to **both** kinds: a hot source keeps producing
+while you are disconnected and those events are lost; a cold source simply restarts on re-subscribe.
+
+### Discovery
+
+Event methods appear in `DiscoveryInfo` like any method; event-ness is on the return type:
+
+```json
+{
+  "methodName": "MessageReceived",
+  "returnType": { "kind": "event", "element": { "kind": "ref", "ref": "Message" } },
+  "parameters": [ { "parameterName": "chatId", "parameterType": { "kind": "scalar", "name": "int" } } ]
+}
+```
+
+Detect a subscribable method by `returnType.kind == "event"`; the element type is
+`returnType.element`. The `[SleipnirEvent]` name is the `methodName`.
+
+### Migration from 1.1.x
+
+In 1.1.x an event method was marked `[SleipnirMethod]` and event-ness was inferred from the
+`IObservable<T>` return type; `[SleipnirEvent]` existed but was not read. As of 1.2.0
+**`[SleipnirEvent]` is the required marker**: replace `[SleipnirMethod]` with `[SleipnirEvent]` on
+any `IObservable<T>` method. The old form now fails at registration with a migration message.
+Plain calls to event methods now return `400` (was: an opaque `500`); subscribing to a non-event
+method returns `400` without executing it. This is an experimental-surface change (no SemVer
+major) — see `CHANGELOG.md` and `STABILITY.md` §2/§3.7.
+
 ## Known Limitations (v1)
 
 Sleipnir v1 is intentionally focused. The following are deliberate scope decisions, not bugs — documented here so adopters can plan around them:
@@ -439,6 +747,17 @@ Spans emitted (OTel RPC semantic conventions):
 - **`SleipnirBatch`** — one per batch, started in `InvokeDi(IEnumerable<SleipnirRequest>)`. Tags: `rpc.system=sleipnir`, `sleipnir.batch.mode` (`Parallel`/`Serial`, or `DependencyBatches` when auto-detect routes to topological execution), `sleipnir.batch.count`. The per-request `SleipnirCall` spans are children via `Activity.Current` parenting — a single batch yields one parent + N children.
 
 `Sleipnir.Telemetry` is the optional package that boots the OTel SDK: `AddSleipnirTelemetry` calls `AddOpenTelemetry().WithTracing(b => b.AddSource("Sleipnir") …)` with configurable service name, OTLP/Console exporter, and AspNetCore/HttpClient instrumentation gates. `SleipnirServer` does **not** reference it, keeping the OTel SDK dependencies out of the all-in-one bundle. Consumers who need custom samplers/resources/exporters skip `AddSleipnirTelemetry` and call `AddOpenTelemetry().WithTracing(b => b.AddSource("Sleipnir"))` directly — the source name is the only integration point.
+
+### Metrics & observability endpoints (experimental, opt-in)
+
+`AddSleipnirTelemetry` also subscribes the metrics column — `WithMetrics(b => b.AddMeter("Sleipnir") …)` — so the `sleipnir.*` instruments no longer emit into the void. The instruments (OTel RPC tag conventions): `sleipnir.call.duration` (histogram, ms), `sleipnir.call.count` / `sleipnir.error.count` (counters), `sleipnir.batch.fan_out` (histogram) / `sleipnir.batch.count` (counter), `sleipnir.event.dropped` (counter, Phase 3), and two live **observable gauges** with no OTel equivalent: `sleipnir.ws.connections` and `sleipnir.subscriptions.active`. The gauges are backed by a process-wide lock-free `SleipnirConnectionRegistry` (`Interlocked` counts), wired in `AddSleipnir` and bumped from the WebSocket transport (connection accept/close, subscription add/remove, event drop).
+
+Two opt-in endpoints surface this (both **RequireAuth-gated** like `/discovery` when `RequireAuthentication = true`):
+
+- **`GET /api/sleipnir/metrics`** — a Prometheus-text scrape (`Sleipnir.Telemetry`'s `AddSleipnirPrometheusMetrics()` + `UseSleipnirPrometheusScrapingEndpoint(path, requireAuth: true)`). Any scraper — Prometheus, Grafana Agent, VictoriaMetrics, or an embedded stack — reads it. The **Prometheus-text interface is the durable contract**; the OTel exporter behind it is the interim producer and may be replaced without changing consumers.
+- **`GET /api/sleipnir/observability`** — a small JSON snapshot (`SleipnirOptions.EnableObservability = true`): transport flags, active connections/subscriptions, cumulative call/error/batch counters, dropped events, uptime. Read straight from the registry (no OTel SDK / `MetricReader` needed) — the Developer UI Observability tab polls it.
+
+See [`PROTOCOL.md`](PROTOCOL.md) → Observability Endpoints for the instrument table and the JSON shape.
 
 ## Requirements
 

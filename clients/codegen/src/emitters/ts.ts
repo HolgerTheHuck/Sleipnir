@@ -17,7 +17,7 @@
 
 import type { EmitterInput, ResolvedController, ResolvedMethod, ResolvedType, ResolvedTypeRef } from "../core/model.js";
 import { toCamelCase } from "../core/casing.js";
-import { tsTypeOfRef } from "../core/model.js";
+import { tsTypeOfRef, isEventMethod, eventPayloadRef, hasEvents } from "../core/model.js";
 import { tsTypeOf } from "../core/scalars.js";
 import { NamingResolver } from "../core/naming.js";
 
@@ -305,6 +305,9 @@ function pathRecordForRef(ref: ResolvedTypeRef, resolver: NamingResolver): strin
     case "opaque":
     case "void":
       return "_VoidPaths"; // opaque has no structured paths to expose
+    case "event":
+      // Events are not chainable (no exposes/@alias on a subscription) → no paths.
+      return "_VoidPaths";
     case "map":
     default:
       return scalarPathsName("unknown");
@@ -329,25 +332,81 @@ function arrayPathsNameFor(element: ResolvedTypeRef | undefined, resolver: Namin
 function emitControllers(input: EmitterInput, resolver: NamingResolver): string {
   const typeImports = collectTypeImports(input, resolver);
   const pathImports = collectPathRecordImports(input, resolver);
+  const events = hasEvents(input);
   const classes = input.controllers.map((c) => emitControllerClass(c, resolver));
+  // Event-Controller brauchen die Subscribe-Typen aus dem Runtime-Client (neben
+  // SleipnirCall). Controller ohne Event-Method bleiben unverändert (kein Import-
+  // Schwenk → story01/story02-Snapshots byte-identisch).
+  const subscribeTypeImport = events
+    ? `import type { SleipnirRequest, SubscribeHandlers, SleipnirSubscription } from "sleipnir-client";\n`
+    : "";
   return `// Auto-generated Sleipnir controllers. Method names are camelCase; parameter
 // names bind case-sensitively on the wire (keys passed verbatim to SleipnirCall).
 import { SleipnirCall } from "sleipnir-client";
-import { TypedCall } from "./typed-call.js";
+${subscribeTypeImport}import { TypedCall } from "./typed-call.js";
 ${typeImports ? typeImports + "\n" : ""}${pathImports ? pathImports + "\n" : ""}
 ${classes.join("\n\n")}
 `;
 }
 
 function emitControllerClass(ctrl: ResolvedController, resolver: NamingResolver): string {
-  const methods = ctrl.methods.map((m) => emitMethod(ctrl, m, resolver));
-  return `export class ${ctrl.className} {
+  const events = ctrl.methods.some(isEventMethod);
+  const methods = ctrl.methods.map((m) =>
+    isEventMethod(m) ? emitEventMethod(ctrl, m, resolver) : emitMethod(ctrl, m, resolver),
+  );
+  if (!events) {
+    // Keine Event-Methoden → ursprüngliche Form (build-only), Snapshots stabil.
+    return `export class ${ctrl.className} {
   /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
   constructor(build: (controller: string, method: string) => SleipnirCall) {
     this._build = build;
   }
 ${methods.join("\n\n")}
 }`;
+  }
+  // Mit Event-Methoden: zweiter ctor-Parameter `subscribe` (delegiert an den
+  // WS-Client). Event-Methoden rufen this._subscribe<T>(req, handlers) auf.
+  return `export class ${ctrl.className} {
+  /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
+  /** @internal */ _subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>) => Promise<SleipnirSubscription>;
+  constructor(
+    build: (controller: string, method: string) => SleipnirCall,
+    subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>) => Promise<SleipnirSubscription>,
+  ) {
+    this._build = build;
+    this._subscribe = subscribe;
+  }
+${methods.join("\n\n")}
+}`;
+}
+
+/**
+ * Emit a typed `subscribe` method for a `[SleipnirEvent]` (IObservable<T>) method.
+ * Builds the wire request via `SleipnirCall` (named params, case-sensitive) and
+ * delegates to the root client's `_subscribe<T>`, which sends `kind:"subscribe"`
+ * over WebSocket and routes the returned `SleipnirSubscription`'s event frames to
+ * the caller's handlers. Events are NOT chainable (no `exposes`/`@alias`).
+ */
+function emitEventMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: NamingResolver): string {
+  const payloadType = tsTypeOfRef(eventPayloadRef(m), resolver);
+  const params = m.parameters.map((p) => {
+    const tsName = toCamelCase(p.name);
+    const ty = tsTypeOfRef(p.typeRef, resolver);
+    return `${tsName}: ${ty}`;
+  });
+  const withEntries = m.parameters.map((p) => {
+    const tsName = toCamelCase(p.name);
+    // Wire key is the exact discovery parameter name (case-sensitive binding).
+    return `${p.name}: ${tsName}`;
+  });
+  const withCall = withEntries.length
+    ? `.with({ ${withEntries.join(", ")} })`
+    : "";
+  const handlerParam = `handlers: SubscribeHandlers<${payloadType}>`;
+  const doc = m.documentation ? `  /** ${m.documentation} */\n` : "";
+  return `${doc}  ${m.emittedName}(${[...params, handlerParam].join(", ")}): Promise<SleipnirSubscription> {
+    return this._subscribe<${payloadType}>(this._build("${ctrl.name}", "${m.methodName}")${withCall}.toRequest(), handlers);
+  }`;
 }
 
 function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: NamingResolver): string {
@@ -381,14 +440,34 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
 
 function emitClient(input: EmitterInput, opts: EmitTsOptions): string {
   const transport = opts.transport ?? "rest";
+  const events = hasEvents(input);
   const imports = input.controllers.map((c) => `import { ${c.className} } from "./controllers.js";`).join("\n");
   const accessors = input.controllers.map((c) => `  readonly ${c.accessor}: ${c.className};`);
-  const inits = input.controllers.map((c) => `    this.${c.accessor} = new ${c.className}(build);`);
+  // Event-Controller brauchen den `subscribe`-Callback als zweiten ctor-Arg; reine
+  // Call-Controller bleiben beim 1-arg-ctor (Snapshots von story01/story02 stabil).
+  const inits = input.controllers.map((c) => {
+    const args = c.methods.some(isEventMethod) ? "build, this._subscribe" : "build";
+    return `    this.${c.accessor} = new ${c.className}(${args});`;
+  });
+  // Typ-Import-Fragment + `_subscribe`-Feld, nur wenn Events vorhanden.
+  const subscribeTypes = events
+    ? ", SleipnirRequest, SubscribeHandlers, SleipnirSubscription"
+    : "";
+  const subscribeFieldWs = events
+    ? `  private readonly _subscribe = <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>): Promise<SleipnirSubscription> => this._ws.subscribe<T>(req, handlers);\n`
+    : "";
+  // REST-only: Events sind WS-exklusiv. `_subscribe` wirft synchron mit klarem
+  // Hinweis (der generierte Event-Methoden-Aufruf lehnt ab, statt einen falschen
+  // REST-Call abzusetzen). Der generische Typ-Parameter bleibt deklariert, damit
+  // die Aufrufseite `this._subscribe<Payload>(req, handlers)` typkorrekt ist.
+  const subscribeFieldRest = events
+    ? `  private readonly _subscribe = <T>(_req: SleipnirRequest, _handlers: SubscribeHandlers<T>): Promise<SleipnirSubscription> => {\n    throw new Error("Sleipnir events require WebSocket transport. Regenerate with --transport ws|both to subscribe.");\n  };\n`
+    : "";
 
   if (transport === "ws") {
     return `// Auto-generated root Sleipnir client (WebSocket transport). Compose with the sleipnir-client runtime.
 import { SleipnirCall, SleipnirWebSocketClient } from "sleipnir-client";
-import type { SleipnirWebSocketClientOptions, SleipnirResponse } from "sleipnir-client";
+import type { SleipnirWebSocketClientOptions, SleipnirResponse${subscribeTypes} } from "sleipnir-client";
 import { Batch, TypedCall } from "./typed-call.js";
 ${imports}
 
@@ -397,7 +476,7 @@ export type TypedResponse<T> = SleipnirResponse & { data: T | null };
 
 export class SleipnirClient {
   private readonly _ws: SleipnirWebSocketClient;
-${accessors.join("\n")}
+${subscribeFieldWs}${accessors.join("\n")}
 
   constructor(baseUrl: string, options: SleipnirWebSocketClientOptions = {}) {
     this._ws = new SleipnirWebSocketClient(baseUrl, options);
@@ -425,7 +504,7 @@ ${inits.join("\n")}
   if (transport === "both") {
     return `// Auto-generated root Sleipnir client (REST + WebSocket). Compose with the sleipnir-client runtime.
 import { SleipnirCall, SleipnirRestClient, SleipnirWebSocketClient } from "sleipnir-client";
-import type { SleipnirRestClientOptions, SleipnirWebSocketClientOptions, SleipnirResponse } from "sleipnir-client";
+import type { SleipnirRestClientOptions, SleipnirWebSocketClientOptions, SleipnirResponse${subscribeTypes} } from "sleipnir-client";
 import { Batch, TypedCall } from "./typed-call.js";
 ${imports}
 
@@ -441,7 +520,7 @@ export interface SleipnirClientOptions {
 export class SleipnirClient {
   private readonly _rest: SleipnirRestClient;
   private readonly _ws: SleipnirWebSocketClient;
-${accessors.join("\n")}
+${subscribeFieldWs}${accessors.join("\n")}
 
   constructor(baseUrl: string, options: SleipnirClientOptions = {}) {
     this._rest = new SleipnirRestClient(baseUrl, options.rest ?? {});
@@ -484,7 +563,7 @@ ${inits.join("\n")}
   // rest (default).
   return `// Auto-generated root Sleipnir client. Compose with the sleipnir-client runtime.
 import { SleipnirCall, SleipnirRestClient } from "sleipnir-client";
-import type { SleipnirRestClientOptions, SleipnirResponse } from "sleipnir-client";
+import type { SleipnirRestClientOptions, SleipnirResponse${subscribeTypes} } from "sleipnir-client";
 import { Batch, TypedCall } from "./typed-call.js";
 ${imports}
 
@@ -493,7 +572,7 @@ export type TypedResponse<T> = SleipnirResponse & { data: T | null };
 
 export class SleipnirClient {
   private readonly _rest: SleipnirRestClient;
-${accessors.join("\n")}
+${subscribeFieldRest}${accessors.join("\n")}
 
   constructor(baseUrl: string, options: SleipnirRestClientOptions = {}) {
     this._rest = new SleipnirRestClient(baseUrl, options);
@@ -555,6 +634,9 @@ function collectPathRecordImports(input: EmitterInput, resolver: NamingResolver)
   const used = new Set<string>();
   for (const c of input.controllers) {
     for (const m of c.methods) {
+      // Event-Methoden verwenden keinen TypedCall/path-record (sie sind nicht
+      // chainbar) → kein Import. Void-Methoden referenzieren _VoidPaths.
+      if (isEventMethod(m)) continue;
       if (m.isVoid) { used.add("_VoidPaths"); continue; }
       used.add(pathRecordForRef(m.returnType, resolver));
     }
@@ -572,6 +654,9 @@ function collectRefs(ref: ResolvedTypeRef, resolver: NamingResolver, used: Set<s
     case "array":
     case "set":
     case "stream":
+    case "event":
+      // Event-Payload (T aus IObservable<T>) kann ein ref sein → importieren,
+      // damit die `SubscribeHandlers<PayloadType>`-Signatur den Typ auflöst.
       if (ref.element) collectRefs(ref.element, resolver, used);
       break;
     case "map":

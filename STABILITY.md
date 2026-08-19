@@ -168,18 +168,31 @@ phases land.
   free to evolve.
 - **Telemetry `sleipnir.*` metric instruments** as currently emitted (`sleipnir.call.duration`,
   `sleipnir.call.count`, `sleipnir.error.count`, `sleipnir.batch.fan_out`, `sleipnir.batch.count`,
-  `sleipnir.event.dropped` (Phase 3)). The `Meter "Sleipnir"` name and the OTel RPC span tag names
+  `sleipnir.event.dropped` (Phase 3), and the live gauges `sleipnir.ws.connections` /
+  `sleipnir.subscriptions.active`). The `Meter "Sleipnir"` name and the OTel RPC span tag names
   (`rpc.system`/`rpc.service`/`rpc.method`) are stable; the *metric instrument names and tag
   keys* are stable in Phase 1/3 but may gain additional instruments/tags in minor versions
   (additive). See `ERROR_CATALOG.md` §6.
-- **Events / Server-Push (Phase 3)** — `[SleipnirEvent]` attribute, `IObservable<T>` subscribe
-  surface, `ISleipnirCore.SubscribeAsync`, the WS subscribe/unsubscribe/event-frame wire
+- **Observability endpoints** — `GET /api/sleipnir/metrics` (Prometheus-text scrape, opt-in via
+  `Sleipnir.Telemetry`'s `AddSleipnirPrometheusMetrics` + `UseSleipnirPrometheusScrapingEndpoint`)
+  and `GET /api/sleipnir/observability` (JSON snapshot, opt-in via
+  `SleipnirOptions.EnableObservability`), plus the backing `SleipnirConnectionRegistry` and the
+  DevUI Observability panel. Both are RequireAuth-gated like `/discovery`. The **Prometheus-text
+  `/metrics` interface is the durable contract** (any scraper / embedded stack reads it); the JSON
+  snapshot shape and the DevUI panel are conveniences that may settle in a minor version.
+  Experimental in v1 — see `PROTOCOL.md` → Observability Endpoints.
+- **Events / Server-Push (Phase 3)** — `[SleipnirEvent]` attribute (the **required marker** for
+  event methods as of 1.2.0 — a `[SleipnirMethod]` method returning `IObservable<T>` is rejected at
+  registration with a migration message; plain calls to event methods return `400`), `IObservable<T>`
+  subscribe surface, `ISleipnirCore.SubscribeAsync`, the WS subscribe/unsubscribe/event-frame wire
   (`kind:"subscribe"`/`kind:"unsubscribe"`/`{type:"event",...}`), the `SleipnirSubscriptionManager`,
   and `sleipnir.event.dropped` metric. **Experimental in v1**: the wire format, subscription
   lifecycle (pro-Connection, client-side re-subscribe, at-most-once-while-disconnected),
-  and backpressure (bounded buffer + drop-oldest) are implemented but may settle in a minor
-  version. WS-only in v1; SignalR and REST-Long-Polling are out of scope. `Last-Event-Id`-
-  resume and server-side buffer are v1.x+. See `docs/design/phase-3-events.md`.
+  and backpressure (configurable per-subscription buffer: `EventBackpressureStrategy`
+  `DropOldest`/`DropWrite`/`Block`/`Unbounded` + `EventBufferCapacity`, overridable per event via
+  `[SleipnirEvent]`) are implemented but may settle in a minor version. WS-only in v1; SignalR and
+  REST-Long-Polling are out of scope. `Last-Event-Id`-resume and server-side buffer are v1.x+. See
+  `docs/design/phase-3-events.md`.
 - **The `samples/`, `spikes/`, `stories/`, and `Sleipnir/` (sample app) projects.** Reference and
   demo material; no stability promise.
 

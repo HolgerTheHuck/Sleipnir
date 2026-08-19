@@ -4,6 +4,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using SleipnirCommon;
 using SleipnirCore.Services;
+using SleipnirCore.Tracing;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -20,14 +21,17 @@ public class SleipnirWebSocketMiddleware
     private readonly ISleipnirCore _sleipnirCore;
     private readonly ILogger<SleipnirWebSocketMiddleware>? _logger;
     private readonly JsonSerializerOptions _jsonOptions;
+    private readonly SleipnirConnectionRegistry _connectionRegistry;
 
     public SleipnirWebSocketMiddleware(
         RequestDelegate next,
         ISleipnirCore sleipnirCore,
+        SleipnirConnectionRegistry connectionRegistry,
         ILogger<SleipnirWebSocketMiddleware>? logger = null)
     {
         _next = next;
         _sleipnirCore = sleipnirCore;
+        _connectionRegistry = connectionRegistry;
         _logger = logger;
         _jsonOptions = new JsonSerializerOptions
         {
@@ -64,6 +68,7 @@ public class SleipnirWebSocketMiddleware
         }
 
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        _connectionRegistry.IncConnection();
         _logger?.LogInformation("WebSocket connection established: {ConnectionId}", context.Connection.Id);
 
         await HandleConnectionAsync(context, webSocket);
@@ -134,7 +139,7 @@ public class SleipnirWebSocketMiddleware
     private async Task HandleConnectionAsync(HttpContext context, WebSocket webSocket)
     {
         // Phase 3: per-connection subscription manager for events.
-        var subscriptions = new SleipnirSubscriptionManager(webSocket, _sleipnirCore, _logger);
+        var subscriptions = new SleipnirSubscriptionManager(webSocket, _sleipnirCore, _connectionRegistry, _logger);
         try
         {
             var buffer = new byte[1024 * 4];
@@ -183,6 +188,7 @@ public class SleipnirWebSocketMiddleware
         {
             // Auto-cleanup: dispose all subscriptions on disconnect.
             await subscriptions.DisposeAsync();
+            _connectionRegistry.DecConnection();
         }
     }
 

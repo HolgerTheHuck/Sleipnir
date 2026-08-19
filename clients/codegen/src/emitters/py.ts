@@ -14,7 +14,7 @@
 // — the server's ExecutionMode enum reads an int, not a string.
 
 import type { EmitterInput, ResolvedController, ResolvedMethod, ResolvedProperty, ResolvedTypeRef } from "../core/model.js";
-import { pyTypeOfRef } from "../core/model.js";
+import { pyTypeOfRef, isEventMethod, eventPayloadRef } from "../core/model.js";
 import { NamingResolver } from "../core/naming.js";
 
 export interface EmitPyOptions {
@@ -348,12 +348,25 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
     const ty = pyTypeOfRef(p.typeRef, resolver);
     return `${p.name}: ${ty}`;
   });
+  const snake = snakeCase(m.methodName);
+  if (isEventMethod(m)) {
+    // Server-Push-Events sind WS-exklusiv; der REST-only generierte Python-Client
+    // kann sie nicht abonnieren. Klare Ausnahme statt eines falschen REST-Calls.
+    const payload = pyTypeOfRef(eventPayloadRef(m), resolver);
+    return `    # TODO: ${m.methodName} is a [SleipnirEvent] (IObservable[${payload}]) — server-push events
+    # require WebSocket transport; the REST-only Python client cannot subscribe.
+    def ${snake}(self${params.length ? ", " + params.join(", ") : ""}):
+        """${m.documentation ? m.documentation + " — " : ""}[SleipnirEvent] IObservable[${payload}] (server-push; WebSocket-only)."""
+        raise NotImplementedError(
+            "${m.methodName} is a Sleipnir server-push event (IObservable[${payload}]); "
+            "the REST-only Python client cannot subscribe. Use a WebSocket client."
+        )`;
+  }
   const paramDict = m.parameters.map((p) => `"${p.name}": ${p.name}`).join(", ");
   const doc = m.documentation ? `    """${m.documentation}"""\n` : "";
   const todo = m.returnType.kind === "opaque" && !m.isVoid
     ? `    # TODO: return type "${m.returnType.nativeName ?? "?"}" is an opaque framework/BCL type not modelled in discovery.\n`
     : "";
-  const snake = snakeCase(m.methodName);
   return `${todo}${doc}    def ${snake}(self${params.length ? ", " + params.join(", ") : ""}) -> SleipnirCall:
         return SleipnirCall("${ctrl.name}", "${m.methodName}", {${paramDict}})`;
 }

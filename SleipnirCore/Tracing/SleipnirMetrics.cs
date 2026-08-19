@@ -30,6 +30,45 @@ public static class SleipnirMetrics
     /// <summary>Die Meter-Instanz (einmalig, Prozess-Lebensdauer).</summary>
     internal static readonly Meter Meter = new(MeterName, "1.0.0");
 
+    // ─── Live-Gauges (Verbindungen / Subscriptions — kein OTel-Äquivalent) ────
+    // Werden einmalig via SetConnectionRegistry an den Meter gehängt und lesen
+    // SleipnirConnectionRegistry (lock-free Interlocked) zum Scraping-Zeitpunkt.
+
+    private static ObservableGauge<int>? _connectionsGauge;
+    private static ObservableGauge<int>? _subscriptionsGauge;
+
+    /// <summary>
+    /// Hängt die <see cref="ObservableGauge{T}"/>-Instrumente
+    /// <c>sleipnir.ws.connections</c> und <c>sleipnir.subscriptions.active</c> an den
+    /// <see cref="Meter"/>. Einmal pro Prozess aus <c>AddSleipnir</c> gerufen; idempotent
+    /// (kein Duplikat-Gauge bei mehrfacher Registrierung). Die Callbacks lesen
+    /// <see cref="SleipnirConnectionRegistry.Current"/> — die prozess-global *aktuelle*
+    /// Registry, nicht das hier übergebene Objekt —, sodass ein Testprozess, der mehrere
+    /// Sleipnir-Hosts startet/stoppt, die Gauges nicht auf die erste Registry eingefroren
+    /// bleiben. <paramref name="registry"/> dient nur als Trigger zur einmaligen Erzeugung
+    /// (und wird von <c>AddSleipnir</c> ohnehin via <see cref="SleipnirConnectionRegistry.SetInstance"/>
+    /// als <c>Current</c> installiert). Die Gauges liefern nur Werte, wenn ein MetricReader
+    /// abonniert ist (z. B. via den Prometheus-Exporter in Sleipnir.Telemetry).
+    /// </summary>
+    public static void SetConnectionRegistry(SleipnirConnectionRegistry registry)
+    {
+        // Touch the parameter so a misused call (null) is visibly wrong at the call site;
+        // the actual value read at scrape time is Current (the latest registered registry).
+        _ = registry ?? throw new ArgumentNullException(nameof(registry));
+
+        _connectionsGauge ??= Meter.CreateObservableGauge<int>(
+            "sleipnir.ws.connections",
+            () => SleipnirConnectionRegistry.Current?.Connections ?? 0,
+            unit: "{connection}",
+            description: "Active WebSocket connections.");
+
+        _subscriptionsGauge ??= Meter.CreateObservableGauge<int>(
+            "sleipnir.subscriptions.active",
+            () => SleipnirConnectionRegistry.Current?.Subscriptions ?? 0,
+            unit: "{subscription}",
+            description: "Active event subscriptions across all WebSocket connections.");
+    }
+
     // ─── Call-Ebene (pro RPC-Invocation) ────────────────────────────────────
 
     /// <summary>
@@ -93,6 +132,9 @@ public static class SleipnirMetrics
     /// <summary>Recordet ein gedropptes Event (Backpressure-Metrik).</summary>
     public static void EventDropped(string subscriptionId)
     {
+        // Bump the registry accumulator unconditionally so /observability sees drops
+        // even without a subscribed MetricReader (the OTel Counter below is write-only).
+        SleipnirConnectionRegistry.Current?.RecordEventDrop();
         if (!EventDroppedCounter.Enabled) return;
         EventDroppedCounter.Add(1, new TagList { RpcSystemTag, new("sleipnir.subscription_id", subscriptionId) });
     }
@@ -109,10 +151,15 @@ public static class SleipnirMetrics
         double durationMs,
         SleipnirCommon.Results.SleipnirErrorCategory category = SleipnirCommon.Results.SleipnirErrorCategory.None)
     {
+        var success = response?.IsSuccess == true;
+
+        // Bump the registry accumulators unconditionally so /observability sees call/error
+        // totals even without a subscribed MetricReader (the OTel Counters below are write-only).
+        SleipnirConnectionRegistry.Current?.RecordCall(success);
+
         if (!CallDuration.Enabled && !CallCount.Enabled && !ErrorCount.Enabled)
             return;
 
-        var success = response?.IsSuccess == true;
         var tags = new TagList
         {
             RpcSystemTag,
@@ -131,6 +178,10 @@ public static class SleipnirMetrics
     /// <summary>Recordet einen Batch: FanOut + Count.</summary>
     public static void RecordBatch(IReadOnlyList<SleipnirRequest> requests, ExecutionMode mode)
     {
+        // Bump the registry accumulator unconditionally so /observability sees batch totals
+        // even without a subscribed MetricReader (the OTel Counters below are write-only).
+        SleipnirConnectionRegistry.Current?.RecordBatch();
+
         if (!BatchFanOut.Enabled && !BatchCount.Enabled)
             return;
 

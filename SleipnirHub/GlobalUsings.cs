@@ -7,4 +7,5 @@ global using SleipnirParameter = SleipnirCommon.Models.SleipnirParameter;
 global using SleipnirMultiRequest = SleipnirCommon.Models.SleipnirMultiRequest;
 global using ExecutionMode = SleipnirCommon.Models.ExecutionMode;
 global using AliasBindingMode = SleipnirCommon.Models.AliasBindingMode;
+global using EventBackpressureStrategy = SleipnirCommon.Models.EventBackpressureStrategy;
 global using SleipnirError = SleipnirCommon.Models.SleipnirError;

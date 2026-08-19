@@ -79,6 +79,25 @@ namespace SleipnirCore.Services
         public AliasBindingMode AliasBindingMode { get; set; } = AliasBindingMode.Weak;
 
         /// <summary>
+        /// Per-Subscription Buffer-Kapazität für Server-Push-Events
+        /// (<c>[SleipnirEvent]</c> + <c>IObservable&lt;T&gt;</c>). <c>null</c> (Default)
+        /// → Fallback 100. Ein positiver Wert deckelt den Buffer; Überschuss-Verhalten
+        /// steuert <see cref="EventBackpressureStrategy"/>. Ignoriert bei Strategie
+        /// <c>Unbounded</c>. Wird über AddSleipnir aus SleipnirOptions gesetzt; per-Event
+        /// überschreibbar via <c>[SleipnirEvent(BufferCapacity = …)]</c>. Experimental (Phase 3).
+        /// </summary>
+        public int? EventBufferCapacity { get; set; }
+
+        /// <summary>
+        /// Überschuss-Strategie für vollen Event-Buffer (Default
+        /// <see cref="EventBackpressureStrategy.DropOldest"/>). Wird über AddSleipnir aus
+        /// SleipnirOptions gesetzt; per-Event überschreibbar via
+        /// <c>[SleipnirEvent(BackpressureStrategy = …)]</c>. Experimental (Phase 3) —
+        /// siehe <c>STABILITY.md</c> §2 und <c>EventBackpressureStrategy</c>.
+        /// </summary>
+        public EventBackpressureStrategy EventBackpressureStrategy { get; set; } = EventBackpressureStrategy.DropOldest;
+
+        /// <summary>
         /// North-Bound-Default-Deny. Wenn <c>true</c>, verlangt jede Methode ohne
         /// <c>[SleipnirAnonymous]</c> einen authentifizierten User; <c>[SleipnirAuthorise]</c>
         /// prüft weiterhin Rolle/Authentication. Default <c>false</c> (South-Bound,
@@ -172,11 +191,38 @@ namespace SleipnirCore.Services
                 foreach (var methodInfo in controllerType.GetMethods())
                 {
                     var methodAttr = GetAttribute<SleipnirMethodAttribute>(methodInfo);
-                    if (methodAttr == null) continue;
+                    var eventAttr = GetAttribute<SleipnirEventAttribute>(methodInfo);
 
-                    string key = $"{controllerAttr.Name}_{methodAttr.Name}";
+                    // A method is either a request/response call ([SleipnirMethod]) or a
+                    // server-push event ([SleipnirEvent]) — never both. The two share the
+                    // {Controller}_{name} dispatch namespace, so exactly one marker must be set.
+                    if (methodAttr != null && eventAttr != null)
+                        throw new InvalidOperationException(
+                            $"Method '{controllerAttr.Name}.{methodInfo.Name}' is decorated with both " +
+                            $"[SleipnirMethod] and [SleipnirEvent] — use exactly one. [SleipnirMethod] for " +
+                            $"request/response calls, [SleipnirEvent] for server-push events (IObservable<T>).");
 
-                    // Gleichnamige Sleipnir-Methoden sind nicht erlaubt — Sleipnir hat keine
+                    if (methodAttr == null && eventAttr == null)
+                        continue;
+
+                    bool isEvent = eventAttr != null;
+                    string methodName = isEvent ? eventAttr!.Name : methodAttr!.Name;
+                    string key = $"{controllerAttr.Name}_{methodName}";
+
+                    // Return-type contract (fail-loud at registration, like name uniqueness below):
+                    // an event method must return IObservable<T> directly (not Task-wrapped); a call
+                    // method must NOT — a call returning IObservable<T> is a mis-marked event that
+                    // would otherwise surface as an opaque 500 at invoke time.
+                    if (isEvent && !IsIObservable(methodInfo.ReturnType))
+                        throw new InvalidOperationException(
+                            $"Method '{controllerAttr.Name}.{methodName}' is marked [SleipnirEvent] but does " +
+                            $"not return IObservable<T>. Event methods must return IObservable<T>.");
+                    if (!isEvent && IsIObservable(methodInfo.ReturnType))
+                        throw new InvalidOperationException(
+                            $"Method '{controllerAttr.Name}.{methodName}' returns IObservable<T> but is marked " +
+                            $"[SleipnirMethod]. Use [SleipnirEvent] for server-push events.");
+
+                    // Gleichnamige Sleipnir-Methoden/Events sind nicht erlaubt — Sleipnir hat keine
                     // parameterbasierte Überladungsauflösung, der Dispatch-Key ist rein
                     // namensbasiert. Eine stille TryAdd-First-wins-Doppelung wäre ein
                     // nicht-deterministischer Bug, also werfen wir laut zur Registrierungszeit.
@@ -185,15 +231,18 @@ namespace SleipnirCore.Services
                         && existing.MethodInfo != methodInfo)
                     {
                         throw new InvalidOperationException(
-                            $"Sleipnir method '{controllerAttr.Name}.{methodAttr.Name}' is already registered " +
+                            $"Sleipnir method '{controllerAttr.Name}.{methodName}' is already registered " +
                             $"on '{existing.MethodInfo.DeclaringType?.FullName}.{existing.MethodInfo.Name}'. " +
-                            $"Method names within a controller must be unique. Sleipnir does not resolve " +
-                            $"overloads by parameters — give each method a distinct [SleipnirMethod] name.");
+                            $"Method/event names within a controller must be unique. Sleipnir does not resolve " +
+                            $"overloads by parameters — give each method a distinct [SleipnirMethod]/[SleipnirEvent] name.");
                     }
 
                     var invokeInfo = new InvokeInfo()
                     {
                         MethodInfo = methodInfo,
+                        IsEvent = isEvent,
+                        EventBufferCapacity = isEvent ? eventAttr!.BufferCapacity : -1,
+                        EventBackpressureStrategy = isEvent ? eventAttr!.BackpressureStrategy : EventBackpressureStrategy.Inherit,
                         // Methoden-Level schlägt Controller-Level (Default); beides null
                         // → im RequireAuthentication-Modus verlangt CheckAuthorisation
                         // mindestens IsAuthenticated, sonst default-allow (South-Bound).
@@ -342,6 +391,13 @@ namespace SleipnirCore.Services
                 if (!_invokeCache.TryGetValue(key, out var invokeInfo))
                     return SleipnirSubscribeResult.Fail(BadRequest($"Method '{request.Method}' not found on controller '{request.Controller}'."));
 
+                // An event method is subscribable; a call method is not. Reject before auth/bind/
+                // invoke so a mis-targeted subscribe never executes the call method as a side effect.
+                if (!invokeInfo.IsEvent)
+                    return SleipnirSubscribeResult.Fail(BadRequest(
+                        $"Method '{request.Method}' on controller '{request.Controller}' is not an event; " +
+                        $"mark it with [SleipnirEvent] to make it subscribable."));
+
                 // Auth (wie Calls — 401/403 Unterscheidung, Phase 1).
                 try { await CheckAuthorisation(invokeInfo, context); }
                 catch (UnauthorizedAccessException) { return SleipnirSubscribeResult.Fail(Unauthorized()); }
@@ -367,7 +423,25 @@ namespace SleipnirCore.Services
                     return SleipnirSubscribeResult.Fail(BadRequest(
                         $"Method '{request.Method}' on controller '{request.Controller}' does not return an IObservable<T> — not a subscribable event."));
 
-                return SleipnirSubscribeResult.Ok(observable);
+                // Backpressure pro-Subscription auflösen: Per-Event-Override schlägt globale
+                // Option; Attribut-Sentinel (Inherit / -1) → globale Option; globale Option
+                // null/Inherit → Default 100 / DropOldest. Unbounded ignoriert die Kapazität
+                // (kapazitätslos). Die aufgelösten Werte trägt das Result an den
+                // SubscriptionManager, der den Buffer pro Subscription damit anlegt.
+                var globalStrategy = EventBackpressureStrategy == EventBackpressureStrategy.Inherit
+                    ? EventBackpressureStrategy.DropOldest
+                    : EventBackpressureStrategy;
+                var strategy = invokeInfo.EventBackpressureStrategy != EventBackpressureStrategy.Inherit
+                    ? invokeInfo.EventBackpressureStrategy
+                    : globalStrategy;
+                int capacity = strategy == EventBackpressureStrategy.Unbounded
+                    ? 0
+                    : (invokeInfo.EventBufferCapacity >= 0
+                        ? invokeInfo.EventBufferCapacity
+                        : (EventBufferCapacity ?? 100));
+                if (capacity < 0) capacity = 100;
+
+                return SleipnirSubscribeResult.Ok(observable, capacity, strategy);
             }
             catch (Exception ex)
             {
@@ -394,6 +468,13 @@ namespace SleipnirCore.Services
                 string key = $"{request.Controller}_{request.Method}";
                 if (!_invokeCache.TryGetValue(key, out var invokeInfo))
                     return BadRequest($"Method '{request.Method}' not found on controller '{request.Controller}'.");
+
+                // An event method is subscribable only (kind:"subscribe"); a plain call to it
+                // is a client misuse. Reject with an actionable 400 instead of attempting to
+                // serialize the IObservable<T> (which would surface as an opaque 500).
+                if (invokeInfo.IsEvent)
+                    return BadRequest($"Method '{request.Method}' on controller '{request.Controller}' is a " +
+                        $"server-push event; use kind:\"subscribe\" over WebSocket to subscribe.");
 
                 try
                 {
@@ -1270,6 +1351,14 @@ namespace SleipnirCore.Services
                 return new AuthDecision(null, null, TraceCallError(request,
                     BadRequest($"Method '{request.Method}' not found on controller '{request.Controller}'.")));
 
+            // An event method is subscribable only (kind:"subscribe"); a plain call to it is a
+            // client misuse. Reject with an actionable 400 instead of an opaque 500 at serialize
+            // time. Covers the parallel/serial/topological batch paths.
+            if (invokeInfo.IsEvent)
+                return new AuthDecision(null, null, TraceCallError(request,
+                    BadRequest($"Method '{request.Method}' on controller '{request.Controller}' is a " +
+                        $"server-push event; use kind:\"subscribe\" over WebSocket to subscribe.")));
+
             try
             {
                 await CheckAuthorisation(invokeInfo, context);
@@ -1840,6 +1929,14 @@ namespace SleipnirCore.Services
         private static T? GetAttribute<T>(MemberInfo member) where T : Attribute
             => (T?)member.GetCustomAttributes(typeof(T), false).FirstOrDefault();
 
+        /// <summary>
+        /// True if <paramref name="type"/> is <c>IObservable&lt;T&gt;</c> (the direct, non-task-
+        /// wrapped generic). Used by <c>Register</c> to enforce the [SleipnirEvent] return-type
+        /// contract at registration time. <c>Task&lt;IObservable&lt;T&gt;&gt;</c> returns false.
+        /// </summary>
+        private static bool IsIObservable(Type type)
+            => type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IObservable<>);
+
         private SleipnirResponse ReturnResponse(object? result, Type? instanceType)
         {
             // null-Ergebnis → 200 mit leerem Data (kein 204 — die Methode hat erfolgreich
@@ -2026,6 +2123,29 @@ namespace SleipnirCore.Services
         {
             public MethodInfo MethodInfo { get; set; } = null!;
             public SleipnirAuthoriseAttribute? AuthoriseAttribute { get; set; }
+
+            /// <summary>
+            /// True for [SleipnirEvent] methods — subscribable via <see cref="SubscribeAsync"/>,
+            /// not callable via the normal call path (InvokeDi returns a 400 for them).
+            /// </summary>
+            public bool IsEvent { get; set; }
+
+            /// <summary>
+            /// Per-Event Override der Buffer-Kapazität aus
+            /// <c>[SleipnirEvent(BufferCapacity = …)]</c>; <c>-1</c> → globale
+            /// <see cref="SleipnirInvoker.EventBufferCapacity"/>-Option. Nur für
+            /// <see cref="IsEvent"/>-Methoden relevant.
+            /// </summary>
+            public int EventBufferCapacity { get; set; } = -1;
+
+            /// <summary>
+            /// Per-Event Override der Überschuss-Strategie aus
+            /// <c>[SleipnirEvent(BackpressureStrategy = …)]</c>;
+            /// <see cref="EventBackpressureStrategy.Inherit"/> → globale
+            /// <see cref="SleipnirInvoker.EventBackpressureStrategy"/>-Option. Nur für
+            /// <see cref="IsEvent"/>-Methoden relevant.
+            /// </summary>
+            public EventBackpressureStrategy EventBackpressureStrategy { get; set; } = EventBackpressureStrategy.Inherit;
 
             /// <summary>
             /// Methoden-Level [SleipnirAnonymous] → Opt-out vom RequireAuthentication-

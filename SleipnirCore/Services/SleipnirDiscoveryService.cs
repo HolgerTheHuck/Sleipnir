@@ -128,13 +128,17 @@ namespace SleipnirCore.Services
 
                 var controllerMeta = new ControllerMeta { Name = controllerName };
 
-                // Collect every method decorated with [SleipnirMethod].
+                // Collect every method decorated with [SleipnirMethod] (a call) or [SleipnirEvent]
+                // (a server-push event). The two are mutually exclusive (enforced at registration),
+                // and both share the {Controller}_{name} dispatch namespace.
                 var methods = controllerType.GetMethods()
-                    .Where(m => m.GetCustomAttributes(typeof(SleipnirMethodAttribute), false).Any());
+                    .Where(m => m.GetCustomAttributes(typeof(SleipnirMethodAttribute), false).Any()
+                             || m.GetCustomAttributes(typeof(SleipnirEventAttribute), false).Any());
 
                 foreach (var method in methods)
                 {
                     var methodAttr = method.GetCustomAttribute<SleipnirMethodAttribute>();
+                    var eventAttr = method.GetCustomAttribute<SleipnirEventAttribute>();
 
                     // Effective return type (Task / Task<T> unwrapped; bare Task -> void).
                     Type effectiveReturnType = method.ReturnType;
@@ -160,7 +164,7 @@ namespace SleipnirCore.Services
                     var methodMeta = new MethodMeta
                     {
                         Documentation = methodDoc,
-                        MethodName = methodAttr?.Name ?? method.Name,
+                        MethodName = methodAttr?.Name ?? eventAttr?.Name ?? method.Name,
                         ReturnType = BuildTypeRef(effectiveReturnType, returnNullable, ctx),
                     };
 

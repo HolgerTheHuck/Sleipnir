@@ -163,6 +163,12 @@ Both coexist on one host, both above the same services where the bulk logic live
 
 Details and migration paths: [`BEST_PRACTICES.md`](BEST_PRACTICES.md) §4 *Interplay with REST*.
 
+**Serving media** (images, video, file downloads) follows the same split: Sleipnir is the *authority* —
+a command returns the resource URL and gates permission — and a co-hosted `GET /avatars/{id}.png`
+endpoint (same host, same DI, same auth pipeline) is the *delivery*, with a CDN/static store in front.
+Sleipnir deliberately does **not** put raw bytes or `GET` media routes in the RPC contract — see
+[Serving Media & Non-RPC Resources](README_DETAILS.md#serving-media--non-rpc-resources-images-video-downloads).
+
 ---
 
 ## Code-first contract
@@ -258,6 +264,32 @@ Details: [`README_DETAILS.md#developer-ui`](README_DETAILS.md#developer-ui)
 - Rate-limiting, expression-tree invocation (no reflection per call)
 - OpenTelemetry distributed tracing
 - JSON-RPC 2.0 compatibility mode
+
+## Server-push events
+
+Alongside request/response calls, Sleipnir pushes server→client events over WebSocket. Mark a
+method with `[SleipnirEvent]` (instead of `[SleipnirMethod]`) and return `IObservable<T>`;
+clients subscribe and receive typed values until they unsubscribe or the source completes.
+
+```csharp
+[SleipnirController("Chat")]
+public class ChatController(IChatService service)
+{
+    [SleipnirEvent("MessageReceived")]            // server-push event
+    public IObservable<Message> MessageReceived(int chatId, CancellationToken ct)
+        => service.SubscribeMessages(chatId, ct);
+}
+```
+
+```csharp
+// C# WebSocket client
+using var sub = await client.SubscribeAsync<Message>("Chat", "MessageReceived", new object?[] { 42 });
+sub.Subscribe(onNext: m => Console.WriteLine($"{m.From}: {m.Text}"));
+```
+
+WebSocket-only in v1; events are not chainable (`@alias`/`exposes` apply to call results, not
+push streams). Full guide + lifecycle/backpressure: [`README_DETAILS.md`](README_DETAILS.md) →
+"Server-Push Events"; wire spec: [`PROTOCOL.md`](PROTOCOL.md) → "Server-Push Events".
 
 ---
 

@@ -199,5 +199,74 @@ export async function semanticChain(): Promise<void> {
   }, { timeout: 60_000 });
 });
 
+// Story-03 compile gate: the generated typed subscribe surface must type-check —
+// `messageReceived(chatId, handlers)` returns Promise<SleipnirSubscription> with
+// onNext typed to the event payload (Message for the object event, number for the
+// scalar event), the mixed controller's call method stays a TypedCall, and the
+// @ts-expect-error guards prove the handler payload is enforced. Runs for all
+// transports: ws/both delegate to the WS runtime; rest has the throwing _subscribe
+// but the SAME typed signature, so it must still compile.
+const subscribeBody = `  // Object-payload event: onNext typed to Message; resolves to a subscription.
+  const sub: SleipnirSubscription = await client.chat.messageReceived(1, {
+    onNext: (m: Message) => { void m; },
+    onComplete: () => {},
+    onError: (err: Error) => { void err; },
+  });
+  await sub.unsubscribe();
+
+  // Scalar-payload event: onNext typed to number.
+  const ticks: SleipnirSubscription = await client.ticker.ticks({
+    onNext: (n: number) => { void n; },
+  });
+  await ticks.unsubscribe();
+
+  // A call method on the same (mixed) controller still type-checks as a TypedCall.
+  void client.chat.getHistory(1);
+
+  // --- Compile-time guarantees (must error without the suppression) ---
+  // @ts-expect-error — onNext payload is Message, not number.
+  client.chat.messageReceived(1, { onNext: (n: number) => { void n; } });
+  // @ts-expect-error — onNext is a required handler.
+  client.ticker.ticks({});
+`;
+
+function subscribeHarnessFor(t: Transport): string {
+  const ctor =
+    t === "ws" ? `  const client = new SleipnirClient("ws://localhost:5001/sleipnirws");`
+    : t === "both" ? `  const client = new SleipnirClient("http://localhost:5001", { rest: {}, ws: {} });`
+    : `  const client = new SleipnirClient("http://localhost:5001");`;
+  return `// Story-03: typed subscribe surface (transport: ${t}).
+import { SleipnirClient } from "./api/client.js";
+import type { SleipnirSubscription } from "sleipnir-client";
+import type { Message } from "./api/types.js";
+
+export async function subscribe(): Promise<void> {
+${ctor}
+${subscribeBody}}
+`;
+}
+
+describe.each<Transport>(["rest", "ws", "both"])("generated TS story03 compiles + typed subscribe type-checks (transport: %s)", (t) => {
+  it("tsc exits 0 against the story03 subscribe harness", () => {
+    const dir = join(compileDir, `story03-${t}`);
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(join(dir, "api"), { recursive: true });
+    const tree = emitTsClient(buildEmitterInput(readFixture("story03"), new NamingResolver()), { transport: t });
+    for (const [path, content] of Object.entries(tree)) {
+      const abs = join(dir, path);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, content, "utf8");
+    }
+    writeFileSync(join(dir, "harness.ts"), subscribeHarnessFor(t), "utf8");
+    writeFileSync(join(dir, "tsconfig.json"), tsconfig, "utf8");
+    const result = runTsc(dir);
+    if (result.status !== 0) {
+      console.error(`tsc stdout (story03 ${t}):\n` + result.stdout);
+      console.error(`tsc stderr (story03 ${t}):\n` + result.stderr);
+    }
+    expect(result.status).toBe(0);
+  }, { timeout: 60_000 });
+});
+
 // keep existsSync referenced for the guard in case the dir lingers.
 void existsSync;

@@ -56,9 +56,13 @@ public static class SleipnirPipelineExtensions
 
         // Rate Limiting nur durchreichen, wenn der Host die "sleipnir"-Policy registriert hat.
         // JSON-RPC-Compat nur auf ausdrücklichen Wunsch (SleipnirOptions.EnableJsonRpcCompat).
+        // Observability-Snapshot nur auf ausdrücklichen Wunsch (SleipnirOptions.EnableObservability);
+        // SignalR-Status wird für das transports-Block der Snapshot-Antwort durchgereicht.
         endpoints.MapSleipnirEndpoints(restPrefix,
             enableRateLimiting: options?.RateLimitPermitLimit > 0,
-            enableJsonRpcCompat: options?.EnableJsonRpcCompat == true);
+            enableJsonRpcCompat: options?.EnableJsonRpcCompat == true,
+            enableObservability: options?.EnableObservability == true,
+            signalREnabled: options?.UseSignalR == true);
         endpoints.MapSleipnirDeveloperUi(developerUiPath);
 
         if (options?.UseSignalR == true)

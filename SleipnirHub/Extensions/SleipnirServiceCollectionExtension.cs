@@ -48,6 +48,19 @@ namespace SleipnirHub.Extensions
             // (UseSleipnirTransports/MapSleipnir) can read UseSignalR etc. without parameters.
             services.AddSingleton(options);
 
+            // Observability registry (process-wide, lock-free): backs the
+            // sleipnir.ws.connections / sleipnir.subscriptions.active ObservableGauges
+            // (read by the Prometheus exporter at scrape time) and the JSON
+            // /observability snapshot (read directly). Created eagerly here so the
+            // static SleipnirConnectionRegistry.Instance / SleipnirMetrics gauge callbacks
+            // are wired before the first request — the registry must count calls/batches
+            // from the very first invocation, not only after a /observability GET resolves
+            // the DI singleton. See SleipnirCore.Tracing.SleipnirConnectionRegistry.
+            var connectionRegistry = new SleipnirCore.Tracing.SleipnirConnectionRegistry();
+            SleipnirCore.Tracing.SleipnirConnectionRegistry.SetInstance(connectionRegistry);
+            SleipnirCore.Tracing.SleipnirMetrics.SetConnectionRegistry(connectionRegistry);
+            services.AddSingleton(connectionRegistry);
+
             if (options.UseSignalR)
             {
                 // Add SignalR as the transport-layer.
@@ -128,6 +141,11 @@ namespace SleipnirHub.Extensions
                 // Propagate the alias binding mode (default Weak; Strict = fragment must
                 // fully cover the consumer type, otherwise 400 — see DEPENDENCY_BINDING.md).
                 invoker.AliasBindingMode = options.AliasBindingMode;
+                // Event backpressure (Phase 3, experimental): per-subscription buffer capacity
+                // + overflow strategy, overridable per event via [SleipnirEvent]. Defaults keep
+                // the 1.1.x behavior (capacity 100, drop-oldest) — see STABILITY.md §2.
+                invoker.EventBufferCapacity = options.EventBufferCapacity;
+                invoker.EventBackpressureStrategy = options.EventBackpressureStrategy;
                 // North-bound hardening (default non-breaking, see SECURITY.md):
                 // RequireAuthentication = default-deny for unattributed methods;
                 // MaximumBatchSize = fan-out DoS cap; JsonPath limits = client-path DoS cap.

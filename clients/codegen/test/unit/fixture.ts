@@ -13,7 +13,7 @@ const fixturesDir = join(here, "..", "fixtures");
 const cache = new Map<string, DiscoveryInfo>();
 
 /** Load + validate a discovery fixture by name (default `"story01"`). */
-export function readFixture(name: "story01" | "story02" = "story01"): DiscoveryInfo {
+export function readFixture(name: "story01" | "story02" | "story03" = "story01"): DiscoveryInfo {
   const cached = cache.get(name);
   if (cached) return cached;
   const text = readFileSync(join(fixturesDir, `${name}-discovery.json`), "utf8");

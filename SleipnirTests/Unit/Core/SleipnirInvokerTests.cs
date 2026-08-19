@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using Xunit;
 
 namespace SleipnirTests.Unit.Core;
@@ -110,7 +111,7 @@ public class SleipnirInvokerTests
 
         // Assert
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*method names within a controller must be unique*");
+            .WithMessage("*names within a controller must be unique*");
     }
 
     // Zwei verschiedene Controllertypen mit demselben Sleipnir-Controller-Namen
@@ -156,6 +157,179 @@ public class SleipnirInvokerTests
         act.Should().NotThrow();
         var discovery = invoker.GetDiscoveryInfo();
         discovery.Controllers.Should().Contain(c => c.Name == "TestInvoker");
+    }
+
+    #endregion
+
+    #region Event Marker Contract ([SleipnirEvent])
+
+    // [SleipnirEvent] is the required marker for server-push event methods. A method is either
+    // a call ([SleipnirMethod]) or an event ([SleipnirEvent]) — never both — and the return-type
+    // contract is enforced at registration (fail-loud, like name uniqueness).
+
+    private static SleipnirInvoker NewInvoker()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var sp = services.BuildServiceProvider();
+        return new SleipnirInvoker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<ILogger<SleipnirInvoker>>());
+    }
+
+    [Fact]
+    public void Register_EventMethodNotReturningObservable_Throws()
+    {
+        var invoker = NewInvoker();
+        var act = () => invoker.Register<EventNotObservableController>();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*[SleipnirEvent]*IObservable<T>*");
+    }
+
+    [Fact]
+    public void Register_CallMethodReturningObservable_Throws()
+    {
+        var invoker = NewInvoker();
+        var act = () => invoker.Register<MethodObservableButMarkedMethodController>();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IObservable<T>*[SleipnirMethod]*[SleipnirEvent]*");
+    }
+
+    [Fact]
+    public void Register_BothMarkersOnSameMethod_Throws()
+    {
+        var invoker = NewInvoker();
+        var act = () => invoker.Register<BothMarkersController>();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*both*[SleipnirMethod]*[SleipnirEvent]*");
+    }
+
+    [Fact]
+    public async Task Subscribe_ToCallMethod_Returns400AndDoesNotExecute()
+    {
+        // Arrange: a fresh invoker with a call method (Poke) that has an observable side effect.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddTransient<EventContractController>();
+        var sp = services.BuildServiceProvider();
+        var invoker = new SleipnirInvoker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<ILogger<SleipnirInvoker>>());
+        invoker.Register<EventContractController>();
+        EventContractController.PokeCount = 0;
+
+        // Act: subscribe to a [SleipnirMethod] call — must fail before the body runs.
+        var req = CreateRequest("EventContract", "Poke");
+        var result = await invoker.SubscribeAsync(req, null);
+
+        // Assert: 400, no observable, and the call method was NOT executed.
+        result.Error.Should().NotBeNull();
+        result.Error!.Code.Should().Be(400);
+        result.Observable.Should().BeNull();
+        EventContractController.PokeCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task InvokeDi_CallToEventMethod_Returns400Not500()
+    {
+        // "ObservableStrings" is a [SleipnirEvent] method — a plain call must return an
+        // actionable 400, not the opaque 500 ("Failed to serialize the response.") it used to.
+        var req = CreateRequest("TestInvoker", "ObservableStrings", ("count", "3"));
+        var resp = await _invoker.InvokeDi(req, null);
+
+        resp.Should().NotBeNull();
+        resp!.Code.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task Subscribe_ToEventMethod_ReturnsObservable()
+    {
+        // Happy path: a real [SleipnirEvent] method resolves to its IObservable (not serialized).
+        var req = CreateRequest("TestInvoker", "ObservableStrings", ("count", "3"));
+        var result = await _invoker.SubscribeAsync(req, null);
+
+        result.Error.Should().BeNull();
+        result.Observable.Should().NotBeNull();
+    }
+
+    // ── Backpressure resolution (per-event override ?? global option ?? default) ──
+
+    private static (SleipnirInvoker invoker, ServiceProvider sp) NewInvokerWithEvents()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddTransient<BackpressureEventController>();
+        var sp = services.BuildServiceProvider();
+        var invoker = new SleipnirInvoker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<ILogger<SleipnirInvoker>>());
+        invoker.Register<BackpressureEventController>();
+        return (invoker, sp);
+    }
+
+    [Fact]
+    public async Task Subscribe_PerEventOverride_WinsOverGlobal()
+    {
+        var (invoker, sp) = NewInvokerWithEvents();
+        invoker.EventBufferCapacity = 50;
+        invoker.EventBackpressureStrategy = EventBackpressureStrategy.DropOldest;
+        using (sp)
+        {
+            var req = CreateRequest("BpEvents", "OverrideEvent", ("count", "1"));
+            var result = await invoker.SubscribeAsync(req, null);
+
+            result.Error.Should().BeNull();
+            result.EventBufferCapacity.Should().Be(7);
+            result.EventBackpressureStrategy.Should().Be(EventBackpressureStrategy.DropWrite);
+        }
+    }
+
+    [Fact]
+    public async Task Subscribe_NoOverride_UsesGlobal()
+    {
+        var (invoker, sp) = NewInvokerWithEvents();
+        invoker.EventBufferCapacity = 42;
+        invoker.EventBackpressureStrategy = EventBackpressureStrategy.Block;
+        using (sp)
+        {
+            var req = CreateRequest("BpEvents", "PlainEvent", ("count", "1"));
+            var result = await invoker.SubscribeAsync(req, null);
+
+            result.Error.Should().BeNull();
+            result.EventBufferCapacity.Should().Be(42);
+            result.EventBackpressureStrategy.Should().Be(EventBackpressureStrategy.Block);
+        }
+    }
+
+    [Fact]
+    public async Task Subscribe_NoOverrideNoGlobal_FallsBackToDefault100DropOldest()
+    {
+        var (invoker, sp) = NewInvokerWithEvents();
+        using (sp)
+        {
+            var req = CreateRequest("BpEvents", "PlainEvent", ("count", "1"));
+            var result = await invoker.SubscribeAsync(req, null);
+
+            result.Error.Should().BeNull();
+            result.EventBufferCapacity.Should().Be(100);
+            result.EventBackpressureStrategy.Should().Be(EventBackpressureStrategy.DropOldest);
+        }
+    }
+
+    [Fact]
+    public async Task Subscribe_UnboundedStrategy_YieldsZeroCapacity_IgnoringGlobal()
+    {
+        var (invoker, sp) = NewInvokerWithEvents();
+        invoker.EventBufferCapacity = 50;   // ignored for an Unbounded event
+        using (sp)
+        {
+            var req = CreateRequest("BpEvents", "UnboundedEvent", ("count", "1"));
+            var result = await invoker.SubscribeAsync(req, null);
+
+            result.Error.Should().BeNull();
+            result.EventBufferCapacity.Should().Be(0);
+            result.EventBackpressureStrategy.Should().Be(EventBackpressureStrategy.Unbounded);
+        }
     }
 
     #endregion
@@ -1603,5 +1777,78 @@ public class SleipnirInvokerTests
     {
         [SleipnirMethod("Ping")]
         public string Ping() => "b";
+    }
+
+    // ─── Event marker contract fixtures ([SleipnirEvent]) ──────────────────────
+
+    /// <summary>[SleipnirEvent] on a non-IObservable return → registration must throw.</summary>
+    [SleipnirController("BadEventNonObservable", AutoDiscover = false)]
+    private class EventNotObservableController
+    {
+        [SleipnirEvent("NotObservable")]
+        public int NotObservable() => 1;
+    }
+
+    /// <summary>IObservable<T> return on a [SleipnirMethod] → registration must throw.</summary>
+    [SleipnirController("BadMethodObservable", AutoDiscover = false)]
+    private class MethodObservableButMarkedMethodController
+    {
+        [SleipnirMethod("IsObservable")]
+        public IObservable<string> IsObservable()
+            => new SimpleObservable<string>(_ => () => { });
+    }
+
+    /// <summary>Both [SleipnirMethod] and [SleipnirEvent] on one method → registration must throw.</summary>
+    [SleipnirController("BadBothMarkers", AutoDiscover = false)]
+    private class BothMarkersController
+    {
+        [SleipnirMethod("Both")]
+        [SleipnirEvent("Both")]
+        public IObservable<string> Both()
+            => new SimpleObservable<string>(_ => () => { });
+    }
+
+    /// <summary>
+    /// Valid mixed controller: a call method with an observable side effect (Poke) and a
+    /// proper event (GoodEvent). Used to prove a subscribe to a call method fails before
+    /// the call body runs (no side effect) and a call to an event method returns 400.
+    /// </summary>
+    [SleipnirController("EventContract", AutoDiscover = false)]
+    private class EventContractController
+    {
+        public static int PokeCount;
+
+        [SleipnirMethod("Poke")]
+        public int Poke() => Interlocked.Increment(ref PokeCount);
+
+        [SleipnirEvent("GoodEvent")]
+        public IObservable<string> GoodEvent(int count)
+            => new SimpleObservable<string>(observer =>
+            {
+                for (int i = 0; i < count; i++)
+                    observer.OnNext($"e{i}");
+                observer.OnCompleted();
+                return () => { };
+            });
+    }
+
+    /// <summary>
+    /// Backpressure-override fixture: three events exercising the per-event override
+    /// resolution (override ?? global ?? default 100/DropOldest; Unbounded → capacity 0).
+    /// </summary>
+    [SleipnirController("BpEvents", AutoDiscover = false)]
+    private class BackpressureEventController
+    {
+        [SleipnirEvent("OverrideEvent", BufferCapacity = 7, BackpressureStrategy = EventBackpressureStrategy.DropWrite)]
+        public IObservable<string> OverrideEvent(int count)
+            => new SimpleObservable<string>(o => { for (int i = 0; i < count; i++) o.OnNext($"e{i}"); o.OnCompleted(); return () => { }; });
+
+        [SleipnirEvent("PlainEvent")]
+        public IObservable<string> PlainEvent(int count)
+            => new SimpleObservable<string>(o => { for (int i = 0; i < count; i++) o.OnNext($"e{i}"); o.OnCompleted(); return () => { }; });
+
+        [SleipnirEvent("UnboundedEvent", BackpressureStrategy = EventBackpressureStrategy.Unbounded)]
+        public IObservable<string> UnboundedEvent(int count)
+            => new SimpleObservable<string>(o => { for (int i = 0; i < count; i++) o.OnNext($"e{i}"); o.OnCompleted(); return () => { }; });
     }
 }

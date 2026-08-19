@@ -5,7 +5,7 @@
 
 import type { EmitterInput, ResolvedController, ResolvedMethod, ResolvedTypeRef } from "../core/model.js";
 import { toCamelCase } from "../core/casing.js";
-import { tsTypeOfRef } from "../core/model.js";
+import { tsTypeOfRef, isEventMethod, eventPayloadRef, hasEvents } from "../core/model.js";
 import { NamingResolver } from "../core/naming.js";
 
 export interface EmitJsOptions {
@@ -66,14 +66,53 @@ ${classes.join("\n\n")}
 }
 
 function emitControllerClass(ctrl: ResolvedController, resolver: NamingResolver): string {
-  const methods = ctrl.methods.map((m) => emitMethod(ctrl, m, resolver));
-  return `export class ${ctrl.className} {
+  const events = ctrl.methods.some(isEventMethod);
+  const methods = ctrl.methods.map((m) =>
+    isEventMethod(m) ? emitEventMethod(ctrl, m, resolver) : emitMethod(ctrl, m, resolver),
+  );
+  if (!events) {
+    return `export class ${ctrl.className} {
   /** @param {(controller: string, method: string) => SleipnirCall} build */
   constructor(build) {
     this._build = build;
   }
 ${methods.join("\n\n")}
 }`;
+  }
+  return `export class ${ctrl.className} {
+  /**
+   * @param {(controller: string, method: string) => SleipnirCall} build
+   * @param {(req: SleipnirRequest, handlers: SubscribeHandlers<unknown>) => Promise<SleipnirSubscription>} subscribe
+   */
+  constructor(build, subscribe) {
+    this._build = build;
+    this._subscribe = subscribe;
+  }
+${methods.join("\n\n")}
+}`;
+}
+
+/**
+ * Emit a typed `subscribe` method (JSDoc) for a `[SleipnirEvent]` (IObservable<T>)
+ * method. Builds the wire request via `SleipnirCall` and delegates to the root
+ * client's `_subscribe`, which sends `kind:"subscribe"` over WebSocket. Events
+ * are NOT chainable (no exposes/@alias).
+ */
+function emitEventMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: NamingResolver): string {
+  const payloadType = tsTypeOfRef(eventPayloadRef(m), resolver);
+  const paramDocs = m.parameters.map((p) => {
+    const tsName = toCamelCase(p.name);
+    const ty = jsDocTypeOf(p.typeRef, resolver);
+    return `   * @param {${ty}} ${tsName}`;
+  });
+  const params = m.parameters.map((p) => toCamelCase(p.name));
+  const withEntries = m.parameters.map((p) => `${p.name}: ${toCamelCase(p.name)}`);
+  const withCall = withEntries.length ? `.with({ ${withEntries.join(", ")} })` : "";
+  const doc = m.documentation ? `   * ${m.documentation}\n` : "";
+  return `  /**\n${doc}${paramDocs.join("\n")}\n   * @param {SubscribeHandlers<${payloadType}>} handlers\n   * @returns {Promise<SleipnirSubscription>}\n   */
+  async ${m.emittedName}(${[...params, "handlers"].join(", ")}) {
+    return this._subscribe(this._build("${ctrl.name}", "${m.methodName}")${withCall}.toRequest(), handlers);
+  }`;
 }
 
 function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: NamingResolver): string {
@@ -101,8 +140,21 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
 
 function emitClient(input: EmitterInput, opts: EmitJsOptions): string {
   const transport = opts.transport ?? "rest";
+  const events = hasEvents(input);
   const imports = input.controllers.map((c) => `import { ${c.className} } from "./controllers.js";`).join("\n");
-  const accessors = input.controllers.map((c) => `  this.${c.accessor} = new ${c.className}(build);`);
+  // Event-Controller bekommen `this._subscribe` als zweites ctor-Arg; reine
+  // Call-Controller bleiben beim 1-arg-ctor (story01/story02-Snapshots stabil).
+  // 2-Space-Einrückung wie das Original (story01/story02-Snapshots byte-identisch).
+  const inits = input.controllers.map((c) => {
+    const args = c.methods.some(isEventMethod) ? "build, this._subscribe" : "build";
+    return `  this.${c.accessor} = new ${c.className}(${args});`;
+  });
+  const subscribeAssignWs = events
+    ? `  this._subscribe = (req, handlers) => this._ws.subscribe(req, handlers);\n`
+    : "";
+  const subscribeAssignRest = events
+    ? `  this._subscribe = async (_req, _handlers) => {\n    throw new Error("Sleipnir events require WebSocket transport. Regenerate with --transport ws|both to subscribe.");\n  };\n`
+    : "";
 
   if (transport === "ws") {
     return `// Auto-generated root Sleipnir client (JS, WebSocket transport).
@@ -117,7 +169,7 @@ export class SleipnirClient {
   constructor(baseUrl, options = {}) {
     this._ws = new SleipnirWebSocketClient(baseUrl, options);
     const build = (controller, method) => SleipnirCall.init(controller, method);
-${accessors.join("\n")}
+${subscribeAssignWs}${inits.join("\n")}
   }
 
   /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
@@ -152,7 +204,7 @@ export class SleipnirClient {
     this._rest = new SleipnirRestClient(baseUrl, options.rest ?? {});
     this._ws = new SleipnirWebSocketClient(baseUrl, options.ws ?? {});
     const build = (controller, method) => SleipnirCall.init(controller, method);
-${accessors.join("\n")}
+${subscribeAssignWs}${inits.join("\n")}
   }
 
   /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
@@ -201,7 +253,7 @@ export class SleipnirClient {
   constructor(baseUrl, options = {}) {
     this._rest = new SleipnirRestClient(baseUrl, options);
     const build = (controller, method) => SleipnirCall.init(controller, method);
-${accessors.join("\n")}
+${subscribeAssignRest}${inits.join("\n")}
   }
 
   /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */

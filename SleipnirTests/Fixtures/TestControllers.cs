@@ -82,7 +82,7 @@ public class TestInvokerController
     public async Task<IAsyncEnumerable<int>> StreamNumbersTask(int count, CancellationToken ct = default)
         => StreamNumbers(count, ct);
 
-    [SleipnirMethod("ObservableStrings")]
+    [SleipnirEvent("ObservableStrings")]
     public IObservable<string> ObservableStrings(int count)
         => new SimpleObservable<string>(observer =>
         {
@@ -99,7 +99,7 @@ public class TestInvokerController
     /// single-sender-channel regression: the synchronous <see cref="ObservableStrings"/>
     /// drains before any call traffic starts, so it cannot exercise the concurrent-send path.
     /// </summary>
-    [SleipnirMethod("ObservableStringsOverTime")]
+    [SleipnirEvent("ObservableStringsOverTime")]
     public IObservable<string> ObservableStringsOverTime(int count, int delayMs)
         => new SimpleObservable<string>(observer =>
         {

@@ -1,4 +1,5 @@
 using SleipnirCore.Services;
+using SleipnirCore.Tracing;
 using SleipnirCore.Model.Messages.Mex;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
@@ -29,7 +30,8 @@ namespace SleipnirRest
         /// </param>
         /// <returns>Der IEndpointRouteBuilder für weitere Konfigurationen.</returns>
         public static IEndpointRouteBuilder MapSleipnirEndpoints(this IEndpointRouteBuilder endpoints,
-            string prefix = "/api/sleipnir", bool enableRateLimiting = false, bool enableJsonRpcCompat = false)
+            string prefix = "/api/sleipnir", bool enableRateLimiting = false, bool enableJsonRpcCompat = false,
+            bool enableObservability = false, bool signalREnabled = false)
         {
             // Erstellt eine Gruppe für alle Routen — sauber und konfliktfrei.
             var group = endpoints.MapGroup(prefix);
@@ -94,6 +96,39 @@ namespace SleipnirRest
                 var json = JsonSerializer.Serialize(allControllers, DiscoverySerialization.Options);
                 return Results.Content(json, "application/json");
             });
+
+            // Observability snapshot endpoint (Opt-in via SleipnirOptions.EnableObservability).
+            // Returns a small JSON document with live transport/runtime state for the Developer
+            // UI Observability panel. RequireAuth-gated like /discovery — the same transport-level
+            // gate protects the framework surface; per-method auth is the invoker's job.
+            if (enableObservability)
+            {
+                group.MapGet("/observability", (
+                    ISleipnirCore sleipnirService,
+                    SleipnirConnectionRegistry registry,
+                    HttpContext httpContext) =>
+                {
+                    if (sleipnirService.RequireAuthentication && !(httpContext.User?.Identity?.IsAuthenticated ?? false))
+                        return Results.Unauthorized();
+
+                    var snap = registry.GetSnapshot();
+                    // Transport flags: REST is on (this endpoint lives in the REST group), WebSocket
+                    // is the default-on primary channel in v1 (Task #11 will add a toggle), SignalR is
+                    // the only optional transport — its state is threaded in from SleipnirOptions.
+                    var payload = new
+                    {
+                        transports = new { rest = true, webSocket = true, signalR = signalREnabled },
+                        activeConnections = snap.ActiveConnections,
+                        activeSubscriptions = snap.ActiveSubscriptions,
+                        eventDroppedTotal = snap.EventDroppedTotal,
+                        callCount = snap.CallCount,
+                        errorCount = snap.ErrorCount,
+                        batchCount = snap.BatchCount,
+                        uptimeMs = (long)(DateTimeOffset.UtcNow - registry.StartedAtUtc).TotalMilliseconds,
+                    };
+                    return Results.Json(payload);
+                });
+            }
 
             // JSON-RPC 2.0 Kompatibilitäts-Endpoint (Opt-in). Liest den Body roh
             // (Object = Einzel-Request, Array = Batch), delegiert an den Dispatcher,

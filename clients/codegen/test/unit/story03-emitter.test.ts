@@ -30,7 +30,7 @@ function readTree(dir: string, base = dir): Record<string, string> {
 // --- TS: golden + typed subscribe surface ---
 
 describe("emitTsClient story03 (events, golden)", () => {
-  for (const t of ["rest", "ws", "both"] as const) {
+  for (const t of ["rest", "sse", "ws", "both"] as const) {
     const suffix = t === "rest" ? "" : `.${t}`;
     // eslint-disable-next-line @typescript-eslint/no-loop-func
     it(`--transport ${t} matches the committed story03${suffix}.ts snapshot byte-for-byte`, () => {
@@ -75,12 +75,28 @@ describe("emitTsClient story03 (events, golden)", () => {
     // Rest client still constructs event controllers (with the throwing _subscribe).
     expect(rest).toContain("this.chat = new ChatClient(build, this._subscribe);");
   });
+
+  it("sse client delegates _subscribe to the SSE runtime (REST calls + SSE events)", () => {
+    const tree = emitTsClient(buildEmitterInput(readFixture("story03"), new NamingResolver()), { transport: "sse" });
+    const sse = tree["api/client.ts"];
+    // Wires REST (calls) + SSE (events) — not WebSocket.
+    expect(sse).toContain("import { SleipnirCall, SleipnirRestClient, SleipnirSseClient } from \"sleipnir-client\";");
+    expect(sse).toContain("private readonly _sse: SleipnirSseClient;");
+    // The adapter destructures the SleipnirRequest into (controller, method, params).
+    expect(sse).toContain("return this._sse.subscribe<T>(req.controller, req.method, handlers, params);");
+    // Calls go over REST; SSE is the event escape hatch.
+    expect(sse).toContain("get rest(): SleipnirRestClient");
+    expect(sse).toContain("get sse(): SleipnirSseClient");
+    expect(sse).not.toContain("SleipnirWebSocketClient");
+    // Event controllers constructed with the SSE-backed _subscribe.
+    expect(sse).toContain("this.chat = new ChatClient(build, this._subscribe);");
+  });
 });
 
 // --- JS: golden + subscribe surface ---
 
 describe("emitJsClient story03 (events, golden)", () => {
-  for (const t of ["rest", "ws", "both"] as const) {
+  for (const t of ["rest", "sse", "ws", "both"] as const) {
     const suffix = t === "rest" ? "" : `.${t}`;
     // eslint-disable-next-line @typescript-eslint/no-loop-func
     it(`--transport ${t} matches the committed story03${suffix}.js snapshot byte-for-byte`, () => {

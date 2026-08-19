@@ -67,7 +67,7 @@ export async function executeBatch(request: SleipnirMultiRequest): Promise<Sleip
 // ist.
 
 export interface ObservabilitySnapshot {
-  transports: { rest: boolean; webSocket: boolean; signalR: boolean };
+  transports: { rest: boolean; webSocket: boolean; signalR: boolean; sse: boolean };
   activeConnections: number;
   activeSubscriptions: number;
   eventDroppedTotal: number;

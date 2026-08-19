@@ -81,8 +81,9 @@ public class WebSocketResumeTests : IClassFixture<TransportTestFixture>
             id = "sub-resume",
         }));
 
-        // Replayed frames may race the response (the replay pump enqueues them around the
-        // response enqueue) — ReadResponseAsync buffers any that arrive first.
+        // The manager enqueues the resume-ack before starting the durable pump, so replayed
+        // frames cannot race the response — ReadResponseAsync buffers any as a defensive
+        // fallback (normally empty here).
         var (resumedId, replayedFrom, bufferedReplay) = await ReadResponseAsync(client2);
         resumedId.Should().Be(durableId, "the durable subscriptionId is stable across reconnects");
         replayedFrom.Should().Be(3, "the first replayed event is the one after lastEventId=2");
@@ -141,8 +142,10 @@ public class WebSocketResumeTests : IClassFixture<TransportTestFixture>
 
     /// <summary>
     /// Reads until the subscribe response arrives, BUFFERING any event frames that raced
-    /// ahead of it (the durable replay pump may enqueue replayed frames before the response).
-    /// Returns the response fields plus the buffered events so the caller can fold them in.
+    /// ahead of it. The manager now enqueues the subscribe-ack before starting the durable
+    /// pump, so the ack is guaranteed to precede the replayed-gap / live frames and the buffer
+    /// stays empty in practice — it is kept as a defensive fallback. Returns the response fields
+    /// plus the (normally empty) buffered events so the caller can fold them in.
     /// </summary>
     private static async Task<(string subscriptionId, long? replayedFrom, List<EventFrame> buffered)>
         ReadResponseAsync(WebSocket ws, int timeoutMs = 5000)

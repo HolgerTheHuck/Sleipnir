@@ -142,7 +142,7 @@ public class SleipnirWebSocketMiddleware
     private async Task HandleConnectionAsync(HttpContext context, WebSocket webSocket)
     {
         // Phase 3: per-connection subscription manager for events.
-        var subscriptions = new SleipnirSubscriptionManager(webSocket, _sleipnirCore, _connectionRegistry, _subscriptionStore, _logger);
+        var subscriptions = new SleipnirSubscriptionManager(webSocket, _sleipnirCore, _connectionRegistry, _subscriptionStore, _jsonOptions, _logger);
         try
         {
             var buffer = new byte[1024 * 4];
@@ -240,7 +240,7 @@ public class SleipnirWebSocketMiddleware
                         resumeSubscriptionId = sid.GetString();
                 }
                 var response = await subscriptions.HandleSubscribeAsync(
-                    request, context, context.RequestAborted, lastEventId, resumeSubscriptionId);
+                    request, context, context.RequestAborted, lastEventId, resumeSubscriptionId, id);
                 if (response != null)
                 {
                     if (string.IsNullOrEmpty(response.Id)) response.Id = request.Id ?? id ?? string.Empty;

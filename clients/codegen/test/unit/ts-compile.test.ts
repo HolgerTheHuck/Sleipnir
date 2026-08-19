@@ -24,7 +24,7 @@ const compileDir = join(pkgRoot, ".tsc-compile");
 const require = createRequire(import.meta.url);
 const tscPath = require.resolve("typescript/bin/tsc");
 
-type Transport = "rest" | "ws" | "both";
+type Transport = "rest" | "sse" | "ws" | "both";
 
 /** Shared Story-01 diamond body — identical across transports; only the client
  * construction + transport-specific surface (in `harnessFor`) differ. */
@@ -234,6 +234,7 @@ function subscribeHarnessFor(t: Transport): string {
   const ctor =
     t === "ws" ? `  const client = new SleipnirClient("ws://localhost:5001/sleipnirws");`
     : t === "both" ? `  const client = new SleipnirClient("http://localhost:5001", { rest: {}, ws: {} });`
+    : t === "sse" ? `  const client = new SleipnirClient("http://localhost:5001", { rest: {}, sse: {} });`
     : `  const client = new SleipnirClient("http://localhost:5001");`;
   return `// Story-03: typed subscribe surface (transport: ${t}).
 import { SleipnirClient } from "./api/client.js";
@@ -246,7 +247,7 @@ ${subscribeBody}}
 `;
 }
 
-describe.each<Transport>(["rest", "ws", "both"])("generated TS story03 compiles + typed subscribe type-checks (transport: %s)", (t) => {
+describe.each<Transport>(["rest", "sse", "ws", "both"])("generated TS story03 compiles + typed subscribe type-checks (transport: %s)", (t) => {
   it("tsc exits 0 against the story03 subscribe harness", () => {
     const dir = join(compileDir, `story03-${t}`);
     rmSync(dir, { recursive: true, force: true });

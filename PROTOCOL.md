@@ -527,6 +527,8 @@ alongside Sleipnir; the v1.x+ binary-transfer plan is in [ROADMAP.md](ROADMAP.md
 | `POST /api/sleipnir/json` | POST | SleipnirRequest | SleipnirResponse |
 | `POST /api/sleipnir/json/multi` | POST | SleipnirMultiRequest | array of SleipnirResponse |
 | `GET /api/sleipnir/discovery` | GET | – | DiscoveryInfo |
+| `GET /api/sleipnir/events/{controller}/{method}` | GET | query params | `text/event-stream` (server-push events, opt-in `UseSse`) |
+| `GET /api/sleipnir/events/{subscriptionId}` | GET | `Last-Event-Id:` header | `text/event-stream` (resume) |
 
 **Content-Type**: `application/json`
 
@@ -594,9 +596,11 @@ Sleipnir supports server→client push via `IObservable<T>` **event** methods, i
 request/response **calls**. An event method is marked with `[SleipnirEvent("name")]` on the
 server (not `[SleipnirMethod]`) and returns `IObservable<T>`; a client **subscribes** to it and
 receives an unbounded stream of event frames until it unsubscribes or the observable completes.
-**WebSocket-only in v1** (no REST, no SignalR event surface). Events are **not chainable** —
-they carry no `id`/`exposes`/`@alias` semantics (a stream of push values has no single result to
-expose). See `STABILITY.md` §2 for the experimental-status scope.
+Events are **not chainable** — they carry no `id`/`exposes`/`@alias` semantics (a stream of push
+values has no single result to expose). The subscribe/event/resume wire described below is the
+**WebSocket** surface; the same events are also available over **REST via SSE
+(`text/event-stream`)** — see [REST Events (SSE)](#rest-events-sse) below. SignalR has no
+event surface in v1. See `STABILITY.md` §2 for the experimental-status scope.
 
 > **Status:** experimental in v1. The wire format, subscription lifecycle, and backpressure
 > may settle in a minor version. **`Last-Event-Id` resume + a server-side disconnect buffer ship as
@@ -861,6 +865,59 @@ the return type (there is no method-level `kind` field):
 
 A consumer detects a subscribable method by `returnType.kind == "event"`; the element type is
 `returnType.element`. The `[SleipnirEvent]` name is the `methodName`.
+
+### REST Events (SSE)
+
+For clients that can only do REST — corporate proxies/firewalls that block WebSocket
+upgrades — the same `[SleipnirEvent]` methods are available over **Server-Sent Events**
+(`text/event-stream`), opt-in via `SleipnirOptions.UseSse` (default `true`). SSE reuses the
+exact Phase R resume machinery (durable subscriptions, the replay ring, `Last-Event-Id`),
+maps each logical event frame onto an SSE block, and shares the process-wide subscription
+store with WebSocket — so **a subscription created over WebSocket can be resumed over SSE
+and vice-versa** (cross-transport resume).
+
+**Endpoints** (under the existing `/api/sleipnir` group):
+
+| Endpoint | Method | Args | Resume |
+|----------|--------|------|--------|
+| `/api/sleipnir/events/{controller}/{method}` | GET | method args as **query params** (GET has no body) | fresh subscribe |
+| `/api/sleipnir/events/{subscriptionId}` | GET | `Last-Event-Id:` header (and/or `?lastEventId=`) | resume a durable subscription |
+
+**Fresh subscribe.** The transport `RequireAuthentication` gate returns `401` (no stream) for an
+unauthenticated request; per-method `[SleipnirAuthorise]` runs at subscribe time via the same
+`SubscribeAsync`/`AuthorizeSubscribeAsync` path as WebSocket. Each query parameter is parsed as
+JSON when valid (`JsonNode.Parse`), else as a string — so a caller sends `?chatId=42` for an int
+or `?name=%22hi%22` for a string. On success the response is `Content-Type: text/event-stream`,
+`Cache-Control: no-cache`, `X-Accel-Buffering: no`; the server writes the `ack` event, then live
+frames.
+
+**Resume.** `store.Lookup(subscriptionId)` → not found (GC'd / TTL-expired) → **HTTP 410 Gone**
+(the client falls back to a fresh subscribe). Found → `AuthorizeSubscribeAsync` re-runs auth
+against the **original** event route recorded at create time (a role revoked during the gap does
+not silently resume) → 401/403 + `store.Destroy` on failure → `Attach(lastEventId)` → the `ack`
+carries `replayedFrom`, then the gap is replayed, then live frames continue.
+
+**Wire mapping** — each logical frame becomes one SSE block (separated by a blank line):
+
+| Phase R (WS, in-frame) | SSE block |
+|---|---|
+| `eventId` (monotonic) | `id: {eventId}` line (→ `EventSource` auto-sends `Last-Event-Id`) |
+| `type: "event"\|"complete"\|"error"` | `event: {type}` line |
+| `{type,subscriptionId,eventId[,data][,message]}` | `data: {frame}` (one JSON object per block) |
+| ack `{subscriptionId, replayedFrom?}` | first block: `id: 0` / `event: ack` / `data: {…}` |
+
+The `ack` is written **before** any live frame (the same ack-before-first-frame invariant as
+the WebSocket race fix), so a client never sees an `eventId` for a `subscriptionId` it has not
+yet learned.
+
+**Backpressure** mirrors WebSocket: unbounded durable tap → bounded `EventBuffer` (DropOldest,
+drop-counted via `sleipnir_event_dropped`) → `Response.Body`. A dropped live frame is **not
+lost** — it remains in the replay ring for resume. No subscription-store change.
+
+**Auth note.** Native `EventSource` **cannot set the `Authorization` header**, so Bearer-auth
+hosts need a fetch-based client (the TS `SleipnirSseClient` controls both headers and URL). For
+cookie-auth hosts, native `EventSource` against the resume URL reconnects with `Last-Event-Id`
+for free. The server reads auth from `HttpContext.User` as on every other path.
 
 ---
 

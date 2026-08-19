@@ -200,7 +200,12 @@ phases land.
   non-resumable events), and backpressure (configurable per-subscription buffer:
   `EventBackpressureStrategy` `DropOldest`/`DropWrite`/`Block`/`Unbounded` + `EventBufferCapacity`,
   overridable per event via `[SleipnirEvent]`) are implemented but may settle in a minor version.
-  WS-only in v1; SignalR and REST-Long-Polling are out of scope. **`Last-Event-Id` resume + the
+  WebSocket is the primary event transport; **SSE over REST (`text/event-stream`, opt-in
+  `SleipnirOptions.UseSse`, default true) ships as experimental (Phase S)** — same events,
+  same Phase R resume (durable subscriptions live in the process-wide store, so a WS subscription
+  can be resumed over SSE and vice-versa). Events beyond the replay window are still lost and
+  counted in `sleipnir.event.dropped`. SignalR events and REST-Long-Polling remain out of scope.
+  **`Last-Event-Id` resume + the
   server-side disconnect buffer ship as experimental (Phase R)** for opt-in
   `[SleipnirEvent(Resumable = true)]` events — at-least-once-within-the-replay-window (client
   dedups by `eventId`), with a reconnect auth re-check (a revoked role does not silently resume),

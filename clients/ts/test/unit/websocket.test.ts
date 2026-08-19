@@ -373,7 +373,7 @@ describe("SleipnirWebSocketClient — Phase 3 subscribe", () => {
     const { client, ref } = makeClient();
     const seen: number[] = [];
     const p = client.subscribe<{ value: number }>(
-      { controller: "Chat", method: "MessageReceived", params: [{ name: "chatId", data: 1 }], id: "sub1" },
+      { controller: "Chat", method: "MessageReceived", params: [{ parameterName: "chatId", data: 1 }], id: "sub1" },
       { onNext: (m) => seen.push(m.value) },
     );
     const ws = ref.ws!;

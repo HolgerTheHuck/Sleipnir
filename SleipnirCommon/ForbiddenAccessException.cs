@@ -11,7 +11,7 @@ namespace SleipnirCommon;
 /// <remarks>
 /// Phase 1 — siehe <c>docs/design/phase-1-interceptor-pipeline.md</c>. Unterscheidet
 /// <c>401</c> (Unauthenticated) von <c>403</c> (PermissionDenied), wie in
-/// <c>SECURITY.md</c> / <c>RELEASE-PLAN.md</c> als Roadmap-Item gefordert.
+/// <c>SECURITY.md</c> als Roadmap-Item gefordert.
 /// </remarks>
 public class ForbiddenAccessException : Exception
 {

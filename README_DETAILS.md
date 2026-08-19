@@ -485,9 +485,12 @@ Authorization is checked **per request**, not per batch. A `401` on one request 
 
 Alongside request/response **calls**, Sleipnir supports server→client **push** via `IObservable<T>`
 event methods. The server declares an event; clients subscribe to it over WebSocket and receive a
-stream of typed values until they unsubscribe or the source completes. **WebSocket-only in v1**
-(no REST, no SignalR event surface). The full wire spec is in [`PROTOCOL.md`](PROTOCOL.md) →
-"Server-Push Events"; the design rationale is in [`docs/design/phase-3-events.md`](docs/design/phase-3-events.md).
+stream of typed values until they unsubscribe or the source completes. **WebSocket is the primary
+event transport; the same events are also available over REST via SSE (`text/event-stream`)** for
+clients behind proxies/firewalls that block WebSocket upgrades — see
+[REST Events (SSE)](#rest-events-sse) below. SignalR has no event surface in v1. The full wire spec
+is in [`PROTOCOL.md`](PROTOCOL.md) → "Server-Push Events"; the design rationale is in
+[`docs/design/phase-3-events.md`](docs/design/phase-3-events.md).
 
 > **Status:** experimental in v1 (`STABILITY.md` §2). The wire format, subscription lifecycle, and
 > backpressure may settle in a minor version. **`Last-Event-Id` resume + a server-side disconnect
@@ -500,7 +503,7 @@ stream of typed values until they unsubscribe or the source completes. **WebSock
 |---------|-----------|----------|--------|-----------|
 | **Call** | request/response | one result (or batch) | `[SleipnirMethod]` | REST, WS, SignalR |
 | **Stream** | response, many items | finite — completes with the call | `[SleipnirMethod]` + `IAsyncEnumerable<T>` | WS, SignalR (REST materializes) |
-| **Event** | server→client push | **unbounded** until unsubscribe/complete | `[SleipnirEvent]` + `IObservable<T>` | WS only |
+| **Event** | server→client push | **unbounded** until unsubscribe/complete | `[SleipnirEvent]` + `IObservable<T>` | WS, SSE |
 
 A stream is *one call that yields many elements then ends*; an event is *subscribe once, receive
 push values indefinitely*. Events are **not chainable** — there is no single result to feed into
@@ -755,13 +758,58 @@ Plain calls to event methods now return `400` (was: an opaque `500`); subscribin
 method returns `400` without executing it. This is an experimental-surface change (no SemVer
 major) — see `CHANGELOG.md` and `STABILITY.md` §2/§3.7.
 
+### REST Events (SSE)
+
+**Phase S (experimental).** The same `[SleipnirEvent]` methods are available over REST via
+Server-Sent Events (`text/event-stream`), opt-in via `SleipnirOptions.UseSse` (default `true`).
+This brings server-push to clients that can only do REST — corporate proxies/firewalls that
+block WebSocket upgrades — over plain HTTP/1.1. SSE reuses the Phase R resume machinery and the
+process-wide subscription store, so **a subscription created over WebSocket can be resumed over
+SSE and vice-versa**.
+
+**Endpoints.** `GET /api/sleipnir/events/{controller}/{method}` (fresh subscribe; method args as
+query parameters, each JSON-encoded) and `GET /api/sleipnir/events/{subscriptionId}` (resume, with
+`Last-Event-Id:`). Each logical event frame becomes an SSE block (`id:`/`event:`/`data:`); the
+first block is an `ack` carrying the `subscriptionId`. Unknown/GC'd durable id on resume →
+`410 Gone` (the client falls back to a fresh subscribe). Backpressure mirrors WS
+(`sleipnir.event.dropped` on overflow). See [`PROTOCOL.md`](PROTOCOL.md) → "REST Events (SSE)"
+for the full wire.
+
+**TypeScript client.** Use the fetch-based `SleipnirSseClient` (native `EventSource` cannot set the
+`Authorization` header, so Bearer-auth hosts need `fetch`):
+
+```typescript
+import { SleipnirSseClient } from "sleipnir-client";
+
+const sse = new SleipnirSseClient("https://localhost:5001", {
+  bearer: () => getToken(),          // rotating JWT
+  onResume: () => "resume",          // reconnect → resume from Last-Event-Id (default "fresh")
+});
+
+const sub = await sse.subscribe<Message>(
+  "Chat", "MessageReceived",
+  { onNext: (m) => console.log(m), onComplete: () => console.log("done") },
+  { chatId: 42 },                    // method args → query params (?chatId=42)
+);
+// ... later, the client dedups replayed frames by eventId after a reconnect ...
+await sub.unsubscribe();
+```
+
+For a **cookie-auth** host, native `EventSource` against the resume URL also works (it
+auto-reconnects with `Last-Event-Id` for free) — but cannot send a Bearer token.
+
+**Generated typed client.** `sleipnir-gen --transport sse` wires `SleipnirRestClient` (calls) +
+`SleipnirSseClient` (events) into one `SleipnirClient` with `.rest`/`.sse` accessors; the generated
+`chat.messageReceived(chatId, handlers)` delegates to SSE. Without event methods, `sse` is
+byte-identical to `rest` (no SSE client wired).
+
 ## Known Limitations (v1)
 
 Sleipnir v1 is intentionally focused. The following are deliberate scope decisions, not bugs — documented here so adopters can plan around them:
 
 - **No built-in API versioning.** The `controller` field is a free-form string. There is no framework-level versioning mechanism. The recommended convention is to encode the version in the controller name, e.g. `[SleipnirController("Customer.v1")]`, so a v2 can coexist without breaking v1 clients. Build-time version enforcement via a source generator (the `wsdl.exe` model) is planned for v1.1 — see [ROADMAP.md](ROADMAP.md).
 - **No Native AOT.** Method discovery uses runtime reflection, and invocation uses `Expression.Compile`-produced delegates. This is incompatible with Native AOT trimming. Standard (JIT) publishing is the supported deployment model.
-- **REST streaming is materialized.** An `IAsyncEnumerable<T>` result is fully consumed server-side and serialized as a JSON array before the REST response is sent. True streamed delivery over REST is not supported — use the WebSocket or SignalR transport for streaming semantics.
+- **REST streaming is materialized.** An `IAsyncEnumerable<T>` *call* result is fully consumed server-side and serialized as a JSON array before the REST response is sent. True streamed delivery of a *call* over REST is not supported — use the WebSocket or SignalR transport for streaming semantics. (Server-push **events** — `IObservable<T>` — *are* available over REST via SSE; that is a different path from `IAsyncEnumerable<T>` call materialization — see [REST Events (SSE)](#rest-events-sse).)
 - **Attribute-based registration only.** Controllers and methods are discovered via `[SleipnirController]` / `[SleipnirMethod]` attribute scanning. Direct/fluent registration of individual handlers in code (without attributes) is on the roadmap, not in v1.
 - **No parameter-based overloading.** A call is addressed by `Controller.Method` only — the parameter set is **not** part of the dispatch key, so Sleipnir does not resolve C# overloads by signature over the wire. Two `[SleipnirMethod]`s on the same controller, or two `[SleipnirController]`s app-wide, must therefore carry distinct names; otherwise `SleipnirInvoker.Register` throws `InvalidOperationException` at startup rather than silently shadowing one with the other (the dispatch key is `{Controller}_{Method}`, purely name-based). Model what would be C# overloads with distinct Sleipnir names (`add`, `addAll`, `addRange`). To exclude a controller from the auto-discovery bulk scan (e.g. a test fixture you register only by hand), set `[SleipnirController("name", AutoDiscover = false)]` and register it explicitly via `Register<T>()` or `SleipnirControllerBuilder.Add<T>()`.
 - **Dotted namespaces, not URL hierarchies.** The `controller` field accepts a dotted namespace (e.g. `Customer.Address.Contact`) to express arbitrarily deep groupings, but it is a single string key — it is not translated into a nested URL path. Routing stays two-part (`controller` + `method`) at the protocol level.

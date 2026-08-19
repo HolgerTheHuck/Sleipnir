@@ -31,7 +31,8 @@ namespace SleipnirRest
         /// <returns>Der IEndpointRouteBuilder für weitere Konfigurationen.</returns>
         public static IEndpointRouteBuilder MapSleipnirEndpoints(this IEndpointRouteBuilder endpoints,
             string prefix = "/api/sleipnir", bool enableRateLimiting = false, bool enableJsonRpcCompat = false,
-            bool enableObservability = false, bool signalREnabled = false, bool useWebSocket = true)
+            bool enableObservability = false, bool signalREnabled = false, bool useWebSocket = true,
+            bool useSse = true, int sseBufferCapacity = 100)
         {
             // Erstellt eine Gruppe für alle Routen — sauber und konfliktfrei.
             var group = endpoints.MapGroup(prefix);
@@ -118,7 +119,7 @@ namespace SleipnirRest
                     // configured transport surface even though REST is the only channel you can scrape.
                     var payload = new
                     {
-                        transports = new { rest = true, webSocket = useWebSocket, signalR = signalREnabled },
+                        transports = new { rest = true, webSocket = useWebSocket, signalR = signalREnabled, sse = useSse },
                         activeConnections = snap.ActiveConnections,
                         activeSubscriptions = snap.ActiveSubscriptions,
                         eventDroppedTotal = snap.EventDroppedTotal,
@@ -129,6 +130,17 @@ namespace SleipnirRest
                     };
                     return Results.Json(payload);
                 });
+            }
+
+            // SSE (Server-Sent Events) event transport — toggleable via the useSse flag threaded
+            // from SleipnirOptions.UseSse (default true). Adds the two GET /events/… endpoints to
+            // this group so they share the prefix, rate-limiting, and RequestSizeLimit metadata.
+            // REST-only clients behind proxies/firewalls that block WebSocket upgrades get a
+            // server-push event surface; durable subscriptions are shared with WS (cross-transport
+            // resume). See SleipnirSseEndpointExtensions + SleipnirRest/Sse/SleipnirSseConnection.cs.
+            if (useSse)
+            {
+                group.MapSleipnirSseEndpoints(defaultBufferCapacity: sseBufferCapacity);
             }
 
             // JSON-RPC 2.0 Kompatibilitäts-Endpoint (Opt-in). Liest den Body roh

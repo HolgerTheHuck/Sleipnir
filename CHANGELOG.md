@@ -9,6 +9,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(nothing yet)_
 
+## [1.3.1] - 2026-08-19
+
+### Added — Events over REST: SSE (`text/event-stream`) transport
+- **Server-push events (`[SleipnirEvent]` + `IObservable<T>`, previously WebSocket/SignalR-only)
+  now also ship over REST via Server-Sent Events** — for clients behind corporate
+  proxies/firewalls that block WebSocket upgrades. SSE travels over plain HTTP/1.1 and
+  reuses the exact Phase R resume machinery (`Last-Event-Id`, durable subscriptions, the
+  replay ring) already delivered over WebSocket.
+- **Two REST endpoints** under the existing `/api/sleipnir` group (opt-in via
+  `SleipnirOptions.UseSse`, default `true`):
+  - `GET /api/sleipnir/events/{controller}/{method}` — fresh subscribe; method arguments
+    travel as **query parameters** (GET has no body), each JSON-encoded so the server
+    re-parses the native type. `RequireAuthentication` gate (401); per-method
+    `[SleipnirAuthorise]` runs at subscribe time.
+  - `GET /api/sleipnir/events/{subscriptionId}` — resume, with `Last-Event-Id:` header
+    (and/or `?lastEventId=`). Unknown / GC'd / TTL-expired durable id → **410 Gone** (the
+    client falls back to a fresh subscribe); resume re-runs authorization against the
+    original route (a revoked role does not silently resume).
+- **Wire mapping** — each logical event frame `{type:"event"|"complete"|"error",
+  subscriptionId, eventId[, data][, message]}` is emitted as an SSE block
+  `id:{eventId}` / `event:{type}` / `data:{frame}\n\n`. The first event is an `ack`:
+  `id: 0` / `event: ack` / `data: {subscriptionId[, replayedFrom]}` — written before any
+  live frame (the same ack-before-first-frame invariant as the WS race fix). `EventSource`
+  auto-sends `Last-Event-Id` on reconnect; native `EventSource` works for cookie-auth
+  hosts, but **cannot set a Bearer header** → the supported auth path is the fetch-based
+  TS client.
+- **Backpressure mirrors WS** — unbounded durable tap → bounded `EventBuffer` (DropOldest,
+  drop-counted via `sleipnir.event.dropped`) → `Response.Body`. No subscription-store
+  change. **Cross-transport resume** — durable subscriptions live in the process-wide
+  DI-singleton store, so a subscription created over WebSocket can be resumed over SSE and
+  vice-versa with no extra wiring.
+- **TS client** (`sleipnir-client`): new fetch-based `SleipnirSseClient` (`clients/ts/src/sse.ts`)
+  — `fetch` + `ReadableStream` decode, auto-reconnect to the resume URL with
+  `Last-Event-Id`, dedup by `eventId`, 410 → degrade to fresh. Reuses the WebSocket
+  `ResumeDecision`/`ResumePolicy` shape. Exposed from `index.ts`. Tests:
+  `clients/ts/test/unit/sse.test.ts` (fresh / reconnect-resume / dedup / auth-header /
+  410-degrade / drop-policy / unsubscribe-abort — 7 tests).
+- **Codegen** (`sleipnir-codegen`): new `--transport sse` (REST calls + SSE events — the
+  REST-only-with-events mode). `sse` without event methods is byte-identical to `rest`
+  (no SSE client wired), so existing rest/ws/both snapshots are unchanged. The generated
+  `_subscribe` adapter destructures the `SleipnirRequest` into the SSE client's
+  `(controller, method, handlers, params)` shape. TS + JS emitters; `--selfcheck`
+  validates SSE trees. README transport docs updated.
+
+### Fixed — Events: cold-observable frame-ordering race (ack must precede the first event)
+- A **cold** `IObservable<T>` could emit its first `OnNext` synchronously inside the
+  `Subscribe` call, *before* the subscribe `ack` (carrying the `subscriptionId`) was
+  enqueued — so the client received event frames referencing a `subscriptionId` it had
+  not yet learned. The WS subscribe paths now subscribe the observer in the pre-check
+  (buffering into the per-subscription buffer) and write the `ack` first, then drain the
+  buffer — guaranteeing ack-before-first-frame in all three WS subscribe paths. The SSE
+  transport inherits the same invariant (the `ack` SSE event is written before the pump
+  drains). Safety-net test: `Subscribe_AckArrivesBeforeFirstEventFrame_SynchronousCold`.
+
+### Changed — Versioning: NuGet + npm move in lockstep
+- NuGet and npm now share **one version** and move together. Server-only changes still
+  bump and dispatch the npm packages (identical content) so the numbers stay aligned.
+- This release converges the drift: NuGet `1.2.1 → 1.3.1`, npm `1.3.0 → 1.3.1`. No npm
+  `1.3.0` republish.
+
 ## [1.2.1] - 2026-08-19
 
 ### Fixed — Events: value-type-element `IObservable<T>` was wrongly rejected at subscribe time

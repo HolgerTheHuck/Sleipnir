@@ -118,6 +118,9 @@
         <span class="pill" class:success={snapshot.transports.signalR} class:warning={!snapshot.transports.signalR}>
           SignalR {snapshot.transports.signalR ? 'on' : 'off'}
         </span>
+        <span class="pill" class:success={snapshot.transports.sse} class:warning={!snapshot.transports.sse}>
+          SSE {snapshot.transports.sse ? 'on' : 'off'}
+        </span>
       </div>
     </div>
 

@@ -38,8 +38,10 @@ public class WebSocketEventTests : IClassFixture<TransportTestFixture>
         await SendAsync(client, JsonSerializer.Serialize(subscribeReq));
 
         // Assert: Subscribe-Response mit code 200 + 3 Event-Frames + complete.
-        // Robust: die erste Nachricht kann ein Event-Frame sein (SimpleObservable feuert
-        // synchron, der Send-Loop kann Events vor der Subscribe-Response liefern).
+        // The manager now guarantees the ack is sent before any event frame (it enqueues the
+        // ack before starting the pump), so the ack is always first. This loop still tolerates
+        // either order as a defensive fallback; the strict invariant is asserted by
+        // Subscribe_AckArrivesBeforeFirstEventFrame_SynchronousCold.
         var events = new List<JsonElement>();
         string? subscriptionId = null;
         int eventsReceived = 0;
@@ -84,6 +86,61 @@ public class WebSocketEventTests : IClassFixture<TransportTestFixture>
     }
 
     [Fact]
+    public async Task Subscribe_AckArrivesBeforeFirstEventFrame_SynchronousCold()
+    {
+        // Regression guard for the cold-observable frame-ordering race: a synchronous cold
+        // observable (SimpleObservable pushes ALL frames inside Subscribe, before the subscribe
+        // call returns) used to be able to put event frames on the wire BEFORE the subscribe-ack,
+        // because the event pump started before the middleware enqueued the ack. The manager now
+        // enqueues the ack itself before starting the pump, so the ack MUST be the first frame.
+        // Unlike Subscribe_ReceivesEvents_AndComplete (which tolerates either order), this test
+        // asserts STRICT ack-first ordering — no buffering branch, an event before the ack fails.
+        var wsUrl = _fixture.BaseUrl.Replace("http://", "ws://") + "sleipnirws";
+        using var client = new ClientWebSocket();
+        await client.ConnectAsync(new Uri(wsUrl), CancellationToken.None);
+
+        var subscribeReq = new
+        {
+            kind = "subscribe",
+            controller = "TestInvoker",
+            method = "ObservableStrings",
+            @params = new[] { new { parameterName = "count", data = 3 } },
+            id = "sub-ack-first",
+        };
+        await SendAsync(client, JsonSerializer.Serialize(subscribeReq));
+
+        // Frame 1 MUST be the subscribe-ack (code:200) — not an event frame.
+        var ackMsg = await ReceiveAsync(client);
+        var ackDoc = JsonDocument.Parse(ackMsg);
+        ackDoc.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
+        ackDoc.RootElement.TryGetProperty("type", out _).Should().BeFalse(
+            "the first frame must be the subscribe-ack, not an event frame");
+        ackDoc.RootElement.GetProperty("code").GetInt32().Should().Be(200);
+        ackDoc.RootElement.GetProperty("id").GetString().Should().Be("sub-ack-first");
+        var subscriptionId = ackDoc.RootElement.GetProperty("data").GetProperty("subscriptionId").GetString();
+        subscriptionId.Should().NotBeNullOrEmpty();
+
+        // Only after the ack: 3 event frames in order, sharing the ack's subscriptionId.
+        for (int i = 1; i <= 3; i++)
+        {
+            var msg = await ReceiveAsync(client);
+            var doc = JsonDocument.Parse(msg);
+            doc.RootElement.GetProperty("type").GetString().Should().Be("event");
+            doc.RootElement.GetProperty("subscriptionId").GetString().Should().Be(subscriptionId);
+            doc.RootElement.GetProperty("eventId").GetInt64().Should().Be(i);
+            doc.RootElement.GetProperty("data").GetString().Should().Be($"evt-{i - 1}");
+        }
+
+        // Then the complete frame.
+        var completeMsg = await ReceiveAsync(client);
+        var completeDoc = JsonDocument.Parse(completeMsg);
+        completeDoc.RootElement.GetProperty("type").GetString().Should().Be("complete");
+        completeDoc.RootElement.GetProperty("subscriptionId").GetString().Should().Be(subscriptionId);
+
+        await client.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Unsubscribe_Returns200_AndStopsEvents()
     {
         var wsUrl = _fixture.BaseUrl.Replace("http://", "ws://") + "sleipnirws";
@@ -102,8 +159,9 @@ public class WebSocketEventTests : IClassFixture<TransportTestFixture>
         };
         await SendAsync(client, JsonSerializer.Serialize(subscribeReq));
 
-        // Subscribe-Response + 10 Events + complete ablesen (robust: Frames können in
-        // beliebiger Reihenfolge kommen — SimpleObservable feuert synchron).
+        // Subscribe-Response + 10 Events + complete ablesen. The ack is now guaranteed to
+        // arrive first (manager enqueues it before the pump); this loop still tolerates any
+        // order as a defensive fallback.
         string? subscriptionId = null;
         int eventsReceived = 0;
         bool completeReceived = false;

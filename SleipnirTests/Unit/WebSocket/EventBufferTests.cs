@@ -1,19 +1,20 @@
 using FluentAssertions;
 using SleipnirCommon.Models;
-using SleipnirWebSocket;
 using Xunit;
 
 namespace SleipnirTests.Unit.EventBuffer;
 
 /// <summary>
-/// Unit tests for the per-subscription <see cref="SleipnirSubscriptionManager.EventBuffer"/>
-/// backpressure buffer. Covers all four <see cref="EventBackpressureStrategy"/> modes and the
-/// drop-counting fix (the old BoundedChannel(DropOldest) path could not detect saturation —
-/// TryWrite returned true unconditionally, so sleipnir.event.dropped was dead code).
+/// Unit tests for the per-subscription <see cref="SleipnirCore.Events.EventBuffer"/> backpressure
+/// buffer. Covers all four <see cref="EventBackpressureStrategy"/> modes and the drop-counting
+/// fix (the old BoundedChannel(DropOldest) path could not detect saturation — TryWrite returned
+/// true unconditionally, so sleipnir.event.dropped was dead code). The buffer is
+/// transport-agnostic (SleipnirCore.Events); the WebSocket and SSE transports drain it into
+/// their respective sinks.
 /// </summary>
 public class EventBufferTests
 {
-    private static SleipnirSubscriptionManager.EventBuffer NewBuffer(
+    private static SleipnirCore.Events.EventBuffer NewBuffer(
         int capacity, EventBackpressureStrategy strategy, CancellationToken ct = default)
         => new(capacity, strategy, ct);
 

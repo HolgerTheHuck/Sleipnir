@@ -143,7 +143,7 @@ Events-Subscription-Lifecycle verkomplizieren. Phase 2 ist das natürliche Fenst
 
 | Item | Was | Verknüpfung |
 |---|---|---|
-| **3** | Events/Server-Push: `[SleipnirEvent]` + typisierte Subscribe-Oberfläche; Discovery-`kind: "event"`; Lifecycle (subscribe/unsubscribe, Reconnect-Resubscribe, gap-Semantik dokumentiert); WS/SignalR-only; Auth pro Subscription. | **Kompositionsregel festnageln:** Events *nicht chainbar* (wie Streams) — Compile-Fehler im Codegen, nicht Laufzeit-Überraschung. |
+| **3** | Events/Server-Push: `[SleipnirEvent]` + typisierte Subscribe-Oberfläche; Discovery-`kind: "event"`; Lifecycle (subscribe/unsubscribe, Reconnect-Resubscribe, gap-Semantik dokumentiert); WS + SSE (Phase S); Auth pro Subscription. | **Kompositionsregel festnageln:** Events *nicht chainbar* (wie Streams) — Compile-Fehler im Codegen, nicht Laufzeit-Überraschung. |
 | **B** | Client-Test-Doubles: generierte Clients gegen mockbare `ISleipnirClient`-Schnittstelle + In-Memory-Test-Transport. | **Bei Events-Codegen-Erweiterung gleich designen** — Events brauchen Codegen-Erweiterung → dort mockbare Subscribe-Oberfläche mit designen. |
 
 **Erfolgskriterium:** `client.chat.onMessageReceived(id).subscribe(…)` typisiert; Reconnect
@@ -408,6 +408,13 @@ transfer. The v1.x+ plan raises binary to that level without breaking the JSON w
 
 ## Later (v1.x+, unsorted)
 
+- **REST-Events über SSE.** Server-Push-Events (`[SleipnirEvent]` + `IObservable<T>`) waren in v1
+  WS/SignalR-only (Entscheidung 5). **Geliefert als Phase S (experimental, 1.3.1)** —
+  `text/event-stream` über HTTP/1.1 für Clients hinter Proxies/Firewalls, die WebSocket-Upgrades
+  blockieren; reuses Phase-R-Resume (`Last-Event-Id`, prozessweite Store → Cross-Transport-Resume),
+  Backpressure via `sleipnir.event.dropped`; TS-fetch-Client (Bearer) + Codegen `--transport sse`.
+  Siehe `PROTOCOL.md` → *REST Events (SSE)*, `STABILITY.md` §2. — *Nicht* zu verwechseln mit
+  *True REST streams* (unten), dem materialisierten `IAsyncEnumerable<T>`-Call-Pfad.
 - **SignalR client for JS/TS.** The `clients/ts/` client (v1) covers REST + WebSocket. A SignalR
   transport (`/sleipnirhub` hub, MessagePack) for browser/Node follows in v1.1 — deliberately not in
   v1, to keep the heavy `@microsoft/signalr` dependency + MessagePack out of the default build.
@@ -425,7 +432,9 @@ transfer. The v1.x+ plan raises binary to that level without breaking the JSON w
 - **Input validation** of parameters (DataAnnotations / FluentValidation) in the interceptor
   pipeline — **→ gehoben in [Benutzbarkeit-Roadmap Phase 1](#phase-1--architektur-fundament-gekoppelt-ein-durchgang)** (als weiterer Interceptor, nachdem die Pipeline aus Punkt 1/4/A steht).
 - **True REST streams** instead of materialization to a JSON array (currently a limitation;
-  WebSocket/SignalR offer streaming semantics).
+  WebSocket/SignalR offer streaming semantics). This is the `IAsyncEnumerable<T>` *call* path
+  (materialized server-side to a JSON array) — distinct from server-push **events** over SSE
+  (`IObservable<T>`, delivered as Phase S, see above).
 - **Optional ASP.NET-Controller-Codegen-Template** — ein `sleipnir-gen --lang aspnet`-Template, das
   aus der Sleipnir-Declaration einen normalen ASP.NET-Controller-Stub generiert (`[HttpGet]`/`[Route]`
   + Service-Calls). Output ist Standard-ASP.NET (Swagger/Model-Binding inklusive), kein

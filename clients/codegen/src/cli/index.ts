@@ -8,8 +8,10 @@
 // `--discovery` accepts a live URL (http(s)://…), a file path, or `-` (stdin).
 // `--lang ts` emits TypeScript; `js` JSDoc-typed JS; `cs` a single C# file
 // calling the SleipnirClient runtime; `py` a self-contained httpx async client.
-// `--transport rest|ws|both` (ts|js only, default rest) picks which sleipnir-client
-// runtime client the generated `SleipnirClient` wires up.
+// `--transport rest|sse|ws|both` (ts|js only, default rest) picks which sleipnir-client
+// runtime client the generated `SleipnirClient` wires up: `rest` (REST calls; event
+// methods throw), `sse` (REST calls + SSE server-push events), `ws` (WebSocket calls +
+// events), `both` (REST + WebSocket, events over WebSocket).
 //
 // Exit codes: 0 ok · 1 usage/runtime error · 2 discovery shape mismatch · 3 I/O
 //            · 4 selfcheck drift (--selfcheck found the committed client tree out of date).
@@ -35,11 +37,11 @@ interface ParsedArgs {
   baseUrl: string | undefined;
   bearer: string | undefined;
   timeout: number | undefined;
-  transport: "rest" | "ws" | "both" | undefined;
+  transport: "rest" | "sse" | "ws" | "both" | undefined;
 }
 
 const SUPPORTED_LANGS = new Set(["ts", "js", "cs", "py"]);
-const SUPPORTED_TRANSPORTS = new Set(["rest", "ws", "both"]);
+const SUPPORTED_TRANSPORTS = new Set(["rest", "sse", "ws", "both"]);
 /** Languages whose runtime only ships a REST client (no WS/SignalR to wire). */
 const REST_ONLY_LANGS = new Set(["cs", "py"]);
 
@@ -77,9 +79,9 @@ function parseTimeout(s: string): number {
   return n;
 }
 
-function parseTransport(s: string): "rest" | "ws" | "both" {
-  if (!SUPPORTED_TRANSPORTS.has(s)) failUsage(`--transport must be one of rest|ws|both, got "${s}"`);
-  return s as "rest" | "ws" | "both";
+function parseTransport(s: string): "rest" | "sse" | "ws" | "both" {
+  if (!SUPPORTED_TRANSPORTS.has(s)) failUsage(`--transport must be one of rest|sse|ws|both, got "${s}"`);
+  return s as "rest" | "sse" | "ws" | "both";
 }
 
 async function main(): Promise<void> {
@@ -162,7 +164,7 @@ async function main(): Promise<void> {
 }
 
 /** Dispatch the emitter for a language, threading the base-url hint + transport. */
-function emitForLang(lang: string, input: import("../core/model.js").EmitterInput, baseUrl: string | undefined, transport: "rest" | "ws" | "both"): Record<string, string> {
+function emitForLang(lang: string, input: import("../core/model.js").EmitterInput, baseUrl: string | undefined, transport: "rest" | "sse" | "ws" | "both"): Record<string, string> {
   switch (lang) {
     case "ts": return emitTsClient(input, { baseUrl, transport });
     case "js": return emitJsClient(input, { baseUrl, transport });
@@ -197,7 +199,7 @@ function printHelp(): void {
     `\n` +
     `Usage:\n` +
     `  sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdout]\n` +
-    `           [--base-url <url>] [--transport <rest|ws|both>] [--bearer <token>] [--timeout <ms>]\n` +
+    `           [--base-url <url>] [--transport <rest|sse|ws|both>] [--bearer <token>] [--timeout <ms>]\n` +
     `           [--selfcheck]\n` +
     `\n` +
     `Options:\n` +
@@ -206,7 +208,9 @@ function printHelp(): void {
     `  --out <dir>          Write the client tree to this directory.\n` +
     `  --stdout             Concatenate all files to stdout (with file banners).\n` +
     `  --base-url <url>     Rendered into the client header comment (hint only).\n` +
-    `  --transport <rest|ws|both>  Transport the generated client wires (ts|js only; default rest).\n` +
+    `  --transport <rest|sse|ws|both>  Transport the generated client wires (ts|js only; default rest).\n` +
+    `                      rest = REST calls (events throw); sse = REST calls + SSE events;\n` +
+    `                      ws = WebSocket calls + events; both = REST + WebSocket (events over WS).\n` +
     `  --bearer <token>    Authorization bearer for URL discovery.\n` +
     `  --timeout <ms>       Request timeout for URL discovery.\n` +
     `  --selfcheck          Compare the regenerated client tree against the committed --out tree;\n` +

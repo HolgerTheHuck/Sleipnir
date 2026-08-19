@@ -68,8 +68,9 @@ public class ChatController(IChatService service)
 ### Transport-Story
 
 - **WS + SignalR**: ja, native Push.
-- **REST**: nein. Kein Long-Polling. Klares Statement: "Events sind WS/SignalR-only; ein
-  REST-Client ruft `GetMessages` periodisch oder nutzt WS."
+- **REST via SSE (Phase S)**: ja — `text/event-stream` über HTTP/1.1, für Clients, deren
+  Proxy/Firewall WebSocket-Upgrades blockiert. Reuses Phase-R-Resume + prozessweite Store.
+  Kein Long-Polling.
 
 ---
 
@@ -151,9 +152,13 @@ und der Fehler zurückgegeben (kein stilles Resume nach widerrufener Rolle). Aut
 Discovery deklariert Subscribe-Methoden als `kind: "event"` (neu, Analog zu `kind: "stream"`).
 Element-Typ aus `IObservable<T>`. Parameter wie Call-Methoden.
 
-### Entscheidung 5 — WS-only für v1, SignalR folgt
+### Entscheidung 5 — WS-only für v1, SignalR folgt, SSE als Phase S
 v1: WS-Transport bekommt den Push-Kanal (Text-Frame pro Event). SignalR folgt später (hat
-eingebauten Push, aber andere Hub-Methode-Form). REST: nein.
+eingebauten Push, aber andere Hub-Methode-Form). **REST via SSE (`text/event-stream`) als
+Phase S nachgeliefert** — für Clients hinter Proxies/Firewalls, die WebSocket-Upgrades
+blockieren. SSE reuses die Phase-R-Resume-Maschinerie (durable Subscriptions, Replay-Ring,
+`Last-Event-Id`) und die prozessweite Subscription-Store → Cross-Transport-Resume (WS
+subscribe, SSE resume und umgekehrt). Siehe `PROTOCOL.md` → *REST Events (SSE)*.
 
 ### Entscheidung 6 — Reconnect: subscriptionId pro-Connection + client-side Re-Subscribe
 Reconnect = neue Connection = neue `subscriptionId`s. Der Client merkt sich die Subscribe-
@@ -191,7 +196,7 @@ Subscribe-Response ist eine `SleipnirResponse`, die die `subscriptionId` trägt.
   (braucht per-Event-Acks) und Cross-Process-Durable (über Server-Restart) bleiben future.
 - **Kein Bidirektionales Streaming** (Client→Server-Push) — das ist ein separates Modell.
 - **Keine SignalR-Events in v1** (WS-only; SignalR folgt).
-- **Kein REST-Long-Polling.**
+- **Kein REST-Long-Polling.** (REST-Events gehen über SSE — Phase S — nicht über Long-Polling.)
 
 ---
 
@@ -255,5 +260,6 @@ Client dedup'd per `eventId`; `subscriptionId` durable (stabil über Reconnects)
 - **Client-Test-Doubles** (Schritt 5) — mockbare ISleipnirClient + In-Memory-Transport
 - **Reconnect → Resubscribe im WS-Client** (Schritt 6) — Subscribe/Unsubscribe im SleipnirWebSocketClient + Reconnect-Logik ✓ (Phase R2)
 - **SignalR-Events** (v1.x+) — WS-only in v1
+- **REST-Events über SSE** ✓ (Phase S geliefert, experimental — `text/event-stream`, opt-in `UseSse`)
 - **Last-Event-Id-Resume** (v1.x+) ✓ (Phase R geliefert, experimental)
 - **Genau-once / Cross-Process-Durable** (future — braucht per-Event-Acks bzw. persistenten Backend)

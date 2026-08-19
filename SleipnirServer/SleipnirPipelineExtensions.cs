@@ -82,7 +82,9 @@ public static class SleipnirPipelineExtensions
                 enableJsonRpcCompat: options?.EnableJsonRpcCompat == true,
                 enableObservability: options?.EnableObservability == true,
                 signalREnabled: options?.UseSignalR == true,
-                useWebSocket: options?.UseWebSocket != false);
+                useWebSocket: options?.UseWebSocket != false,
+                useSse: options?.UseSse != false,
+                sseBufferCapacity: options?.EventBufferCapacity ?? 100);
             endpoints.MapSleipnirDeveloperUi(developerUiPath);
         }
 
@@ -119,9 +121,10 @@ public static class SleipnirPipelineExtensions
         var useRest = options?.UseRest != false;
         var useWebSocket = options?.UseWebSocket != false;
         var useSignalR = options?.UseSignalR == true;
+        var useSse = options?.UseSse != false;
 
         loggerFactory.CreateLogger("Sleipnir").LogInformation(
-            "Sleipnir transports: REST={Rest}, WebSocket={WebSocket}, SignalR={SignalR}",
-            useRest, useWebSocket, useSignalR);
+            "Sleipnir transports: REST={Rest}, WebSocket={WebSocket}, SignalR={SignalR}, SSE={Sse}",
+            useRest, useWebSocket, useSignalR, useSse);
     }
 }

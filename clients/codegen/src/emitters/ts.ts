@@ -27,11 +27,16 @@ export interface EmitTsOptions {
   /**
    * Which transport the generated `SleipnirClient` wires up.
    * - `rest` (default): `SleipnirRestClient` + `.rest`; `call`/`batch` over REST.
+   *   Event methods throw (REST has no push channel in this mode — pick `sse`/`ws`/`both`).
+   * - `sse`: `SleipnirRestClient` + `SleipnirSseClient` + `.rest`/`.sse`; `call`/`batch`
+   *   over REST, event `subscribe` over SSE (`text/event-stream`). The REST-only-with-events
+   *   mode for clients behind proxies/firewalls that block WebSocket upgrades. Without event
+   *   methods it is identical to `rest` (no SSE client is wired).
    * - `ws`: `SleipnirWebSocketClient` + `.ws`; `call`/`batch` over WebSocket.
    * - `both`: both clients + `.rest`/`.ws`; `call`/`batch` over REST (default),
    *   `callWs`/`batchWs` over WebSocket.
    */
-  transport?: "rest" | "ws" | "both";
+  transport?: "rest" | "sse" | "ws" | "both";
 }
 
 /** Emit the full TS client as a file tree. */
@@ -463,6 +468,62 @@ function emitClient(input: EmitterInput, opts: EmitTsOptions): string {
   const subscribeFieldRest = events
     ? `  private readonly _subscribe = <T>(_req: SleipnirRequest, _handlers: SubscribeHandlers<T>): Promise<SleipnirSubscription> => {\n    throw new Error("Sleipnir events require WebSocket transport. Regenerate with --transport ws|both to subscribe.");\n  };\n`
     : "";
+  // SSE: Events reisen über `text/event-stream`. Der generierte Event-Methoden-Aufruf
+  // übergibt ein `SleipnirRequest` (gebaut via `SleipnirCall`); der Adapter baut daraus
+  // das `(controller, method, handlers, params)`-Interface des SSE-Clients. Die
+  // Param-Names sind die discovery-Namen (case-sensitive); Werte sind die nativen
+  // JSON-Werte — der SSE-Client JSON-stringifiziert sie pro Query-Param.
+  const subscribeFieldSse = events
+    ? `  private readonly _subscribe = <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>): Promise<SleipnirSubscription> => {\n    const params: Record<string, unknown> = {};\n    for (const p of (req.params ?? [])) params[p.parameterName] = p.data;\n    return this._sse.subscribe<T>(req.controller, req.method, handlers, params);\n  };\n`
+    : "";
+
+  if (transport === "sse" && events) {
+    return `// Auto-generated root Sleipnir client (REST + SSE transport). Compose with the sleipnir-client runtime.
+import { SleipnirCall, SleipnirRestClient, SleipnirSseClient } from "sleipnir-client";
+import type { SleipnirRestClientOptions, SleipnirSseClientOptions, SleipnirResponse${subscribeTypes} } from "sleipnir-client";
+import { Batch, TypedCall } from "./typed-call.js";
+${imports}
+
+/** A SleipnirResponse whose \`data\` is narrowed to T (the wire shape is unchanged). */
+export type TypedResponse<T> = SleipnirResponse & { data: T | null };
+
+/** Per-transport options for the combined REST + SSE client. */
+export interface SleipnirClientOptions {
+  rest?: SleipnirRestClientOptions;
+  sse?: SleipnirSseClientOptions;
+}
+
+export class SleipnirClient {
+  private readonly _rest: SleipnirRestClient;
+  private readonly _sse: SleipnirSseClient;
+${subscribeFieldSse}${accessors.join("\n")}
+
+  constructor(baseUrl: string, options: SleipnirClientOptions = {}) {
+    this._rest = new SleipnirRestClient(baseUrl, options.rest ?? {});
+    this._sse = new SleipnirSseClient(baseUrl, options.sse ?? {});
+    const build = (controller: string, method: string) => SleipnirCall.init(controller, method);
+${inits.join("\n")}
+  }
+
+  /** Execute a single typed call over REST; \`response.data\` is narrowed to T. */
+  async call<T, TPaths extends Record<string, unknown>>(call: TypedCall<T, TPaths>): Promise<TypedResponse<T>> {
+    return (await this._rest.call(call.toRequest())) as TypedResponse<T>;
+  }
+
+  /** Execute a typed batch over REST (Serial — required for @alias resolution). */
+  async batch<A extends Record<string, unknown>>(b: Batch<A>): Promise<SleipnirResponse[]> {
+    const multi = b.toMulti();
+    return this._rest.callBatch(multi.requests, multi.mode);
+  }
+
+  /** The underlying REST client (escape hatch for raw calls). */
+  get rest(): SleipnirRestClient { return this._rest; }
+
+  /** The underlying SSE client (escape hatch for raw subscriptions / lifecycle). */
+  get sse(): SleipnirSseClient { return this._sse; }
+}
+`;
+}
 
   if (transport === "ws") {
     return `// Auto-generated root Sleipnir client (WebSocket transport). Compose with the sleipnir-client runtime.

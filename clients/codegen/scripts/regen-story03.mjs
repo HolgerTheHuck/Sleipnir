@@ -1,9 +1,11 @@
 // One-off: regenerate the Story-03 (server-push events) emitter golden snapshots
-// across rest/ws/both for TS + JS. Run after an intentional codegen/fixture change
+// across rest/sse/ws/both for TS + JS. Run after an intentional codegen/fixture change
 // affecting the event subscribe surface (requires `npm run build` first, since it
 // imports the compiled dist — mirroring regen-snapshots.mjs):
 //   node scripts/regen-story03.mjs
 // The snapshots are byte-for-byte; story03-emitter.test.ts pins them.
+// `sse` is REST calls + SSE events; without event methods it is identical to `rest`
+// (no SSE client wired), so its snapshot diverges from `rest` only in client.ts.
 import { writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -31,7 +33,7 @@ function writeTree(dir, tree) {
   }
 }
 
-const transports = ["rest", "ws", "both"];
+const transports = ["rest", "sse", "ws", "both"];
 for (const t of transports) {
   const suffix = t === "rest" ? "" : `.${t}`;
   writeTree(join(snapRoot, `story03${suffix}.ts`), emitTsClient(input, { transport: t }));

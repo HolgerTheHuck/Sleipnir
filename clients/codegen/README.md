@@ -34,7 +34,7 @@ needed).
 ```bash
 sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdout]
              [--base-url <url>] [--bearer <token>] [--timeout <s>]
-             [--transport rest|ws|both] [--selfcheck]
+             [--transport rest|sse|ws|both] [--selfcheck]
 ```
 
 - `--lang` (required): `ts` | `js` | `cs` | `py`.
@@ -50,9 +50,13 @@ sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdo
 - `--bearer`: bearer token used **only** to fetch `--discovery` over HTTP
   (never written into the generated code).
 - `--timeout`: HTTP timeout (seconds) for fetching `--discovery` from a URL.
-- `--transport rest|ws|both` (ts|js only, default `rest`): which
+- `--transport rest|sse|ws|both` (ts|js only, default `rest`): which
   `sleipnir-client` runtime client the generated `SleipnirClient` wires up.
-  `cs` and `py` are REST-only (no WS/SignalR runtime to wire).
+  `rest` = REST calls (event methods throw — REST has no push channel here);
+  `sse` = REST calls + SSE server-push events (`text/event-stream`, for clients
+  behind proxies/firewalls that block WebSocket upgrades); `ws` = WebSocket calls +
+  events; `both` = REST + WebSocket (events over WebSocket). `cs` and `py` are
+  REST-only (no WS/SSE runtime to wire).
 - `--selfcheck`: regenerate the client tree from `--discovery` in memory and
   compare it against the committed tree at `--out`; exit `4` on drift (a missing
   or changed generated file), `0` if clean. **No files are written.** This is the
@@ -78,6 +82,10 @@ npx sleipnir-gen --lang ts --discovery https://localhost:5001/api/sleipnir/disco
 # WS transport for the TS client
 npx sleipnir-gen --lang ts --transport ws --discovery https://localhost:5001/api/sleipnir/discovery --out src/api
 
+# REST + SSE transport — REST calls + server-push events over text/event-stream
+# (for clients behind proxies/firewalls that block WebSocket upgrades)
+npx sleipnir-gen --lang ts --transport sse --discovery https://localhost:5001/api/sleipnir/discovery --out src/api
+
 # Saved contract file → self-contained Python client to stdout
 npx sleipnir-gen --lang py --discovery contract.sleipnir.json --stdout > client.py
 
@@ -98,8 +106,8 @@ npx sleipnir-gen --lang ts --discovery https://api.example.com/api/sleipnir/disc
 
 | `--lang` | Output | Runtime dependency | Transports |
 |---|---|---|---|
-| `ts` | `api/client.ts`, `api/controllers.ts`, `api/index.ts`, `api/typed-call.ts`, `api/types.ts` | `sleipnir-client` | `rest` / `ws` / `both` |
-| `js` | `api/client.js`, `api/controllers.js`, `api/index.js`, `api/types.js` (JSDoc-typed) | `sleipnir-client` | `rest` / `ws` / `both` |
+| `ts` | `api/client.ts`, `api/controllers.ts`, `api/index.ts`, `api/typed-call.ts`, `api/types.ts` | `sleipnir-client` | `rest` / `sse` / `ws` / `both` |
+| `js` | `api/client.js`, `api/controllers.js`, `api/index.js`, `api/types.js` (JSDoc-typed) | `sleipnir-client` | `rest` / `sse` / `ws` / `both` |
 | `cs` | `SleipnirGenerated.cs` (single file) | `SleipnirClient` (.NET, referenced) | REST only |
 | `py` | `client.py`, `types.py`, `__init__.py` | `httpx` (self-contained) | REST only |
 

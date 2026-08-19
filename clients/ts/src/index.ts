@@ -22,6 +22,12 @@ export {
   type SubscriptionResumeContext,
   type ResumePolicy,
 } from "./websocket.js";
+export {
+  SleipnirSseClient,
+  type SleipnirSseClientOptions,
+  type SseSubscribeOptions,
+  type SseFetchLike,
+} from "./sse.js";
 export { buildParams, buildSingle, buildMulti, toBase64, fromBase64 } from "./request.js";
 
 import { SleipnirRestClient, type SleipnirRestClientOptions } from "./rest.js";

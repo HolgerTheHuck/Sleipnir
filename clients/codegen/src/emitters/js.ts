@@ -11,7 +11,7 @@ import { NamingResolver } from "../core/naming.js";
 export interface EmitJsOptions {
   baseUrl?: string;
   /** Same transport contract as the TS emitter (see EmitTsOptions.transport). */
-  transport?: "rest" | "ws" | "both";
+  transport?: "rest" | "sse" | "ws" | "both";
 }
 
 /** Emit the full JS client as a file tree. */
@@ -155,6 +155,50 @@ function emitClient(input: EmitterInput, opts: EmitJsOptions): string {
   const subscribeAssignRest = events
     ? `  this._subscribe = async (_req, _handlers) => {\n    throw new Error("Sleipnir events require WebSocket transport. Regenerate with --transport ws|both to subscribe.");\n  };\n`
     : "";
+  // SSE: Adapter baut aus dem `SleipnirRequest` das `(controller, method, handlers,
+  // params)`-Interface des SSE-Clients (derselbe Grund wie im TS-Emitter).
+  const subscribeAssignSse = events
+    ? `  this._subscribe = (req, handlers) => {\n    const params = {};\n    for (const p of (req.params ?? [])) params[p.parameterName] = p.data;\n    return this._sse.subscribe(req.controller, req.method, handlers, params);\n  };\n`
+    : "";
+
+  if (transport === "sse" && events) {
+    return `// Auto-generated root Sleipnir client (JS, REST + SSE transport).
+import { SleipnirCall, SleipnirRestClient, SleipnirSseClient } from "sleipnir-client";
+${imports}
+
+export class SleipnirClient {
+  /**
+   * @param {string} baseUrl
+   * @param {{ rest?: SleipnirRestClientOptions, sse?: SleipnirSseClientOptions }} [options]
+   */
+  constructor(baseUrl, options = {}) {
+    this._rest = new SleipnirRestClient(baseUrl, options.rest ?? {});
+    this._sse = new SleipnirSseClient(baseUrl, options.sse ?? {});
+    const build = (controller, method) => SleipnirCall.init(controller, method);
+${subscribeAssignSse}${inits.join("\n")}
+  }
+
+  /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
+  async call(call) {
+    return this._rest.call(call.toRequest());
+  }
+
+  /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
+  async batch(b) {
+    const m = b.toMulti();
+    return this._rest.callBatch(m.requests, m.mode);
+  }
+
+  get rest() {
+    return this._rest;
+  }
+
+  get sse() {
+    return this._sse;
+  }
+}
+`;
+  }
 
   if (transport === "ws") {
     return `// Auto-generated root Sleipnir client (JS, WebSocket transport).

@@ -385,9 +385,11 @@ public class ResumeTests
 
     /// <summary>
     /// Reads until the subscribe response arrives, BUFFERING any event frames that raced ahead of
-    /// it (the durable replay pump may enqueue replayed frames before the response). Returns the
-    /// response <c>code</c>, the <c>subscriptionId</c> + <c>replayedFrom</c> (null when the response
-    /// is not a 200 or the field is absent), and the buffered events.
+    /// it. The manager now enqueues the subscribe-ack before starting the durable pump, so the ack
+    /// is guaranteed to precede the replayed-gap / live frames and the buffer stays empty in
+    /// practice — it is kept as a defensive fallback. Returns the response <c>code</c>, the
+    /// <c>subscriptionId</c> + <c>replayedFrom</c> (null when the response is not a 200 or the field
+    /// is absent), and the (normally empty) buffered events.
     /// </summary>
     private static async Task<(int code, string? subscriptionId, long? replayedFrom, List<EventFrame> buffered)>
         ReadResponseAsync(WebSocket ws, int timeoutMs = 5000)

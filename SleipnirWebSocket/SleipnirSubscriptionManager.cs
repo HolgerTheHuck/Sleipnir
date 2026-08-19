@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using System.Net.WebSockets;
 using SleipnirCommon.Models;
 using SleipnirCommon.Results;
+using SleipnirCore.Events;
 using SleipnirCore.Services;
 using SleipnirCore.Tracing;
 
@@ -48,8 +49,15 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
     private readonly EventBackpressureStrategy _defaultStrategy;
     private readonly CancellationTokenSource _disposeCts = new();
 
+    // JSON options shared with the WS middleware (include the SleipnirResponseJsonConverter —
+    // explicit nulls, fixed field order). Used to serialize the subscribe-ack HERE so the ack is
+    // byte-identical to what the middleware would have sent, while letting the manager enqueue it
+    // BEFORE the event pump starts (ack-before-first-frame invariant). See CreateEphemeralAsync /
+    // CreateDurableAsync / the resume path.
+    private readonly JsonSerializerOptions _jsonOptions;
+
     // subscriptionId → Subscription-State (Channel, eventId-Counter, IDisposable vom IObservable).
-    private readonly ConcurrentDictionary<string, SubscriptionState> _subscriptions = new();
+    private readonly ConcurrentDictionary<string, EphemeralSubscriptionState> _subscriptions = new();
 
     // Phase R: durable subscription ids currently attached to THIS connection. The real
     // state lives in the SleipnirSubscriptionStore (process-wide); this set is only for
@@ -67,6 +75,7 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         ISleipnirCore sleipnirCore,
         SleipnirConnectionRegistry connectionRegistry,
         SleipnirSubscriptionStore store,
+        JsonSerializerOptions jsonOptions,
         ILogger? logger,
         int bufferCapacity = 100,
         EventBackpressureStrategy backpressureStrategy = EventBackpressureStrategy.DropOldest)
@@ -75,6 +84,7 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         _sleipnirCore = sleipnirCore;
         _connectionRegistry = connectionRegistry;
         _store = store;
+        _jsonOptions = jsonOptions;
         _logger = logger;
         _defaultBufferCapacity = bufferCapacity > 0 ? bufferCapacity : 100;
         _defaultStrategy = backpressureStrategy;
@@ -94,7 +104,7 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
     /// <summary>Verarbeitet einen Subscribe-Request: ruft SubscribeAsync, subscribiert das Observable, pusht Events.</summary>
     public async Task<SleipnirResponse?> HandleSubscribeAsync(
         SleipnirRequest request, HttpContext? context, CancellationToken ct,
-        long? lastEventId = null, string? resumeSubscriptionId = null)
+        long? lastEventId = null, string? resumeSubscriptionId = null, string? correlationId = null)
     {
         // ── Phase R: resume path ──────────────────────────────────────────────
         // A resume carries the durable subscriptionId + the last eventId the client processed.
@@ -120,15 +130,13 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
             var tap = existingState.Attach(lastEventId ?? 0);
             _attachedDurable[tap.SubscriptionId] = 1;
             _store.OnAttached();   // gauge: a client is (re)attached to this durable subscription
+            // Ack BEFORE the pump: enqueue the subscribe-ack on the send channel before any
+            // replayed-gap / live frame can be drained, so the ack is always sent first for this
+            // subscription (frame-ordering invariant). Returns null → the middleware skips its
+            // own enqueue. See EnqueueSubscribeAckAsync for the wire-format rationale.
+            await EnqueueSubscribeAckAsync(tap.SubscriptionId, tap.ReplayedFrom, request.Id, correlationId, ct);
             StartDurablePump(tap, ct);
-            return new SleipnirResponse
-            {
-                Code = SleipnirErrorCodes.Ok,
-                Data = JsonSerializer.SerializeToElement(
-                    new { subscriptionId = tap.SubscriptionId, replayedFrom = tap.ReplayedFrom },
-                    SleipnirJsonOptions.Default),
-                Id = request.Id,
-            };
+            return null;
         }
 
         // ── Fresh subscribe path ──────────────────────────────────────────────
@@ -140,13 +148,39 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         // disconnects, replay ring buffer, stable subscriptionId). Non-resumable events keep
         // the v1 ephemeral per-connection path unchanged.
         if (result.Resumable)
-            return await CreateDurableAsync(request, result, ct);
+            return await CreateDurableAsync(request, result, correlationId, ct);
 
-        return CreateEphemeral(request, result);
+        return await CreateEphemeralAsync(request, result, correlationId);
+    }
+
+    /// <summary>
+    /// Builds the subscribe-ack (<c>{subscriptionId[, replayedFrom]}</c>) and enqueues it on the
+    /// send channel <b>before</b> the event pump starts — the ack is therefore guaranteed to
+    /// precede any event frame for this subscription on the wire (cold-observable /
+    /// replay-snapshot frame-ordering invariant). Serialized with the middleware's JSON options
+    /// (<see cref="SleipnirResponseJsonConverter"/>: explicit nulls, fixed field order) so the
+    /// bytes are identical to what the middleware would have produced. The <c>Data</c> element is
+    /// built with <see cref="SleipnirJsonOptions.Default"/> (<c>WhenWritingNull</c>) as before, so
+    /// a null <paramref name="replayedFrom"/> is omitted (fresh subscribe) and a present one is
+    /// written (resume). <paramref name="requestId"/>/<paramref name="correlationId"/> replicate
+    /// the middleware's <c>Id</c> fallback (<c>request.Id ?? envelopeId ?? ""</c>).
+    /// </summary>
+    private async Task EnqueueSubscribeAckAsync(
+        string subscriptionId, long? replayedFrom, string? requestId, string? correlationId, CancellationToken ct)
+    {
+        var ack = new SleipnirResponse
+        {
+            Code = SleipnirErrorCodes.Ok,
+            Data = JsonSerializer.SerializeToElement(
+                new { subscriptionId, replayedFrom }, SleipnirJsonOptions.Default),
+            Id = requestId ?? correlationId ?? string.Empty,
+        };
+        await EnqueueSendAsync(JsonSerializer.Serialize(ack, _jsonOptions), ct);
     }
 
     /// <summary>Fresh durable subscribe: register state, subscribe the observer, attach the tap.</summary>
-    private async Task<SleipnirResponse?> CreateDurableAsync(SleipnirRequest request, SleipnirSubscribeResult result, CancellationToken ct)
+    private async Task<SleipnirResponse?> CreateDurableAsync(
+        SleipnirRequest request, SleipnirSubscribeResult result, string? correlationId, CancellationToken ct)
     {
         var observable = result.Observable!;
         var state = _store.BeginCreate(result.EventBackpressureStrategy);
@@ -167,14 +201,12 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         var tap = state.Attach(0);
         _attachedDurable[tap.SubscriptionId] = 1;
         _store.OnAttached();
+        // Ack BEFORE the pump: enqueue the subscribe-ack before the durable pump can drain the
+        // replay snapshot / live tap, so the ack is sent first (frame-ordering invariant).
+        // Returns null → the middleware skips its own enqueue.
+        await EnqueueSubscribeAckAsync(tap.SubscriptionId, replayedFrom: null, request.Id, correlationId, ct);
         StartDurablePump(tap, ct);
-
-        return new SleipnirResponse
-        {
-            Code = SleipnirErrorCodes.Ok,
-            Data = JsonSerializer.SerializeToElement(new { subscriptionId = tap.SubscriptionId }, SleipnirJsonOptions.Default),
-            Id = request.Id,
-        };
+        return null;
     }
 
     /// <summary>Durable live-tap pump: drains the tap (replayed + live frames) into the send channel.</summary>
@@ -195,7 +227,8 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
     }
 
     /// <summary>Fresh ephemeral subscribe (v1 path, non-resumable events): per-connection state + buffer.</summary>
-    private SleipnirResponse CreateEphemeral(SleipnirRequest request, SleipnirSubscribeResult result)
+    private async Task<SleipnirResponse?> CreateEphemeralAsync(
+        SleipnirRequest request, SleipnirSubscribeResult result, string? correlationId)
     {
         var observable = result.Observable!;
         var subscriptionId = Guid.NewGuid().ToString("N");
@@ -205,7 +238,7 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         // Manager-Defaults (reiner Safety-Net, regulärer Pfad liefert immer konkrete Werte).
         var capacity = result.EventBufferCapacity > 0 ? result.EventBufferCapacity : _defaultBufferCapacity;
         var strategy = result.EventBackpressureStrategy;
-        var state = new SubscriptionState(subscriptionId, capacity, strategy, _disposeCts.Token);
+        var state = new EphemeralSubscriptionState(subscriptionId, capacity, strategy, _disposeCts.Token);
         if (!_subscriptions.TryAdd(subscriptionId, state))
         {
             state.Dispose();
@@ -215,8 +248,19 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         // Observability: count the now-active subscription (process-wide gauge + JSON snapshot).
         _connectionRegistry.IncSubscription();
 
-        // Auf dem Observable subscribieren; jedes OnNext → Event-Frame in den Send-Channel.
+        // Auf dem Observable subscribieren; jedes OnNext → Event-Frame in den per-Subscription-
+        // Buffer. Subscribe stays BEFORE the ack enqueue so synchronous-cold frames land in the
+        // buffer (no event is lost) — only the pump (which drains the buffer onto the wire) is
+        // deferred until after the ack is enqueued, which guarantees ack-before-first-frame
+        // without opening a hot-observable event-loss window.
         state.Disposable = observable.Subscribe(new EventObserver<object?>(state, subscriptionId, _logger));
+
+        // Ack BEFORE the pump: enqueue the subscribe-ack on the send channel before the pump
+        // starts draining the per-subscription buffer, so the ack is always sent first for this
+        // subscription (frame-ordering invariant — fixes the cold-observable race where a sync
+        // cold observable's frames could reach the wire before the ack). Returns null → the
+        // middleware skips its own enqueue.
+        await EnqueueSubscribeAckAsync(subscriptionId, replayedFrom: null, request.Id, correlationId, CancellationToken.None);
 
         // Pump-Task: liest aus dem per-Subscription-Buffer und schreibt in den Send-Channel.
         _ = Task.Run(async () =>
@@ -232,13 +276,7 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
             catch (Exception ex) { _logger?.LogError(ex, "Pump task failed for subscription {SubscriptionId}", subscriptionId); }
         }, _disposeCts.Token);
 
-        // Subscribe-Response: subscriptionId an den Client.
-        return new SleipnirResponse
-        {
-            Code = SleipnirErrorCodes.Ok,
-            Data = JsonSerializer.SerializeToElement(new { subscriptionId }, SleipnirJsonOptions.Default),
-            Id = request.Id,
-        };
+        return null;
     }
 
     /// <summary>
@@ -323,296 +361,4 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         _disposeCts.Dispose();
     }
 
-    private sealed class SubscriptionState : IDisposable
-    {
-        public string SubscriptionId { get; }
-        public EventBuffer Buffer { get; }
-        public IDisposable? Disposable { get; set; }
-        public long DroppedCount => Interlocked.Read(ref _droppedCount);
-        private long _eventIdCounter;
-        private long _droppedCount;
-
-        public SubscriptionState(string subscriptionId, int bufferCapacity, EventBackpressureStrategy strategy, CancellationToken disposeToken)
-        {
-            SubscriptionId = subscriptionId;
-            Buffer = new EventBuffer(bufferCapacity, strategy, disposeToken);
-        }
-
-        public long NextEventId() => Interlocked.Increment(ref _eventIdCounter);
-
-        public void RecordDrop() => Interlocked.Increment(ref _droppedCount);
-
-        public void Dispose()
-        {
-            Disposable?.Dispose();
-            Buffer.Complete();
-        }
-    }
-
-    /// <summary>
-    /// Pro-Subscription Backpressure-Buffer mit wählbarer Überschuss-Strategie
-    /// (<see cref="EventBackpressureStrategy"/>). Single-Writer (der EventObserver),
-    /// Single-Reader (der Pump-Task). Im Gegensatz zu einem
-    /// <c>BoundedChannel(DropOldest)</c> (dessen <c>TryWrite</c> bei Sättigung immer
-    /// <c>true</c> liefert und so Drops verdeckt) zählt dieser Buffer verlorene Events
-    /// korrekt über den <c>onDropped</c>-Callback → <c>sleipnir.event.dropped</c>.
-    /// </summary>
-    internal sealed class EventBuffer
-    {
-        private readonly int _capacity;                  // 0 = unbounded
-        private readonly EventBackpressureStrategy _strategy;
-        private readonly bool _unbounded;
-        private readonly Queue<string> _queue = new();
-        private readonly object _lock = new();
-        private readonly SemaphoreSlim _items;           // freigegeben pro enqueue; Reader wartet darauf
-        private readonly SemaphoreSlim? _space;          // nur Block: freie Slots; Writer wartet darauf
-        private readonly CancellationToken _disposeToken;
-        private bool _completed;
-
-        public EventBuffer(int capacity, EventBackpressureStrategy strategy, CancellationToken disposeToken)
-        {
-            _disposeToken = disposeToken;
-            _strategy = strategy;
-            _unbounded = strategy == EventBackpressureStrategy.Unbounded || capacity <= 0;
-            _capacity = _unbounded ? 0 : capacity;
-            _items = new SemaphoreSlim(0);
-            _space = (strategy == EventBackpressureStrategy.Block && !_unbounded) ? new SemaphoreSlim(_capacity) : null;
-        }
-
-        public long Count { get { lock (_lock) return _queue.Count; } }
-
-        /// <summary>
-        /// Versucht, einen Event-Frame zu enqueuen. Bei DropOldest wird bei vollem Buffer
-        /// das älteste Element evicted und <paramref name="onDropped"/> gerufen (liefert
-        /// <c>true</c>). Bei DropWrite wird das neueste verworfen und <paramref name="onDropped"/>
-        /// gerufen (liefert <c>false</c>). Bei Block wartet der Aufrufer synchron auf einen
-        /// freien Slot (Producer-Backpressure; niemals <paramref name="onDropped"/>). Bei
-        /// Unbounded immer <c>true</c>. <paramref name="onDropped"/> wird synchron unter dem
-        /// Lock gerufen — der Callback darf das Lock nicht erneutnehmen.
-        /// </summary>
-        public bool TryEnqueue(string frame, Action onDropped)
-        {
-            if (_unbounded)
-            {
-                lock (_lock)
-                {
-                    if (_completed) return false;
-                    _queue.Enqueue(frame);
-                }
-                _items.Release();
-                return true;
-            }
-
-            if (_strategy == EventBackpressureStrategy.Block)
-            {
-                // Producer-Backpressure: synchron auf einen freien Slot warten. Ein Dispose
-                // weckt über den CancellationToken (OCE → wir verwerfen still, kein Drop-Zähler).
-                try { _space!.Wait(_disposeToken); }
-                catch (OperationCanceledException) { return false; }
-                lock (_lock)
-                {
-                    if (_completed)
-                    {
-                        // Während des Wartens wurde disposed — Slot nicht freigeben (Buffer ist tot).
-                        return false;
-                    }
-                    _queue.Enqueue(frame);
-                }
-                _items.Release();
-                return true;
-            }
-
-            lock (_lock)
-            {
-                if (_completed) return false;
-                if (_queue.Count >= _capacity)
-                {
-                    if (_strategy == EventBackpressureStrategy.DropOldest)
-                    {
-                        _queue.Dequeue();   // ältestes evicten
-                        _queue.Enqueue(frame);
-                        onDropped();        // synchron, ohne Lock-Reentrancy
-                        _items.Release();
-                        return true;
-                    }
-                    // DropWrite: neuestes verwerfen
-                    onDropped();
-                    return false;
-                }
-                _queue.Enqueue(frame);
-            }
-            _items.Release();
-            return true;
-        }
-
-        /// <summary>
-        /// Enqueuet einen Terminal-Frame (complete/error) ohne Kapazitätsprüfung — er muss
-        /// den Client erreichen, unabhängig von Backpressure. Danach ist der Buffer komplett.
-        /// </summary>
-        public void EnqueueTerminal(string frame)
-        {
-            lock (_lock)
-            {
-                if (_completed) return;
-                _queue.Enqueue(frame);
-                _completed = true;
-            }
-            // Reader wecken (falls er auf einem leeren Buffer wartet) + ggf. Slot freigeben.
-            _items.Release();
-        }
-
-        public async IAsyncEnumerable<string> ReadAllAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
-        {
-            while (true)
-            {
-                string? frame = null;
-                bool mustWait = false;
-                lock (_lock)
-                {
-                    if (_queue.Count > 0)
-                    {
-                        frame = _queue.Dequeue();
-                        _space?.Release();
-                    }
-                    else if (_completed)
-                    {
-                        yield break;               // drained + completed → stop without blocking
-                    }
-                    else
-                    {
-                        mustWait = true;           // empty + live → wait for an item / completion wake
-                    }
-                }
-                if (frame != null)
-                {
-                    yield return frame;
-                    continue;                      // re-check the queue before blocking again
-                }
-                if (mustWait)
-                {
-                    await _items.WaitAsync(ct).ConfigureAwait(false);
-                    // loop: re-check under lock (item arrived, or a completion wake)
-                }
-            }
-        }
-
-        public void Complete()
-        {
-            bool wake;
-            lock (_lock)
-            {
-                if (_completed) return;
-                _completed = true;
-                wake = _queue.Count == 0;   // nur wecken, falls der Reader blockiert (leere Queue)
-            }
-            if (wake) _items.Release();
-        }
-    }
-
-    /// <summary>
-    /// IObserver-Implementierung, die OnNext/OnCompleted/OnError in Event-Frames
-    /// serialisiert und in den per-Subscription-Buffer schreibt.
-    /// </summary>
-    private sealed class EventObserver<T> : IObserver<T>
-    {
-        private readonly SubscriptionState _state;
-        private readonly string _subscriptionId;
-        private readonly ILogger? _logger;
-
-        public EventObserver(SubscriptionState state, string subscriptionId, ILogger? logger)
-        {
-            _state = state;
-            _subscriptionId = subscriptionId;
-            _logger = logger;
-        }
-
-        public void OnNext(T value)
-        {
-            var eventId = _state.NextEventId();
-            var frame = JsonSerializer.Serialize(new
-            {
-                type = "event",
-                subscriptionId = _subscriptionId,
-                eventId,
-                data = value,
-            }, SleipnirJsonOptions.Default);
-            // Drop zählt korrekt: DropOldest evictet (TryEnqueue liefert true, onDropped
-            // gerufen), DropWrite verwirft (TryEnqueue liefert false, onDropped gerufen),
-            // Block verliert nie, Unbounded verliert nie. Der frühere DropOldest-Channel
-            // lieferte bei Sättigung immer true → onDropped war unreachable Dead Code.
-            if (!_state.Buffer.TryEnqueue(frame, OnDropped))
-            {
-                // TryEnqueue hat bereits onDropped gerufen (DropWrite) bzw. false ohne Drop
-                // bei Dispose/Block-Abbruch — kein doppelter Drop-Zähler.
-            }
-        }
-
-        private void OnDropped()
-        {
-            _state.RecordDrop();
-            SleipnirMetrics.EventDropped(_subscriptionId);
-            _logger?.LogWarning("Event dropped for subscription {SubscriptionId} (buffer full)", _subscriptionId);
-        }
-
-        public void OnCompleted()
-        {
-            var frame = JsonSerializer.Serialize(new { type = "complete", subscriptionId = _subscriptionId }, SleipnirJsonOptions.Default);
-            _state.Buffer.EnqueueTerminal(frame);
-        }
-
-        public void OnError(Exception error)
-        {
-            var frame = JsonSerializer.Serialize(new { type = "error", subscriptionId = _subscriptionId, message = error.Message }, SleipnirJsonOptions.Default);
-            _state.Buffer.EnqueueTerminal(frame);
-        }
-    }
-
-    /// <summary>
-    /// IObserver implementation for <b>durable</b> subscriptions (Phase R): serializes
-    /// each event frame with the <see cref="DurableSubscriptionState"/>-owned monotonic
-    /// <c>eventId</c> (stable across reconnects) and forwards it to the store state
-    /// (replay ring buffer + optional live tap). OnCompleted/OnError are recorded as a
-    /// terminal frame (replayed on resume) and forwarded to the live tap.
-    /// </summary>
-    private sealed class DurableEventObserver<T> : IObserver<T>
-    {
-        private readonly DurableSubscriptionState _state;
-        private readonly ILogger? _logger;
-
-        public DurableEventObserver(DurableSubscriptionState state, ILogger? logger)
-        {
-            _state = state;
-            _logger = logger;
-        }
-
-        public void OnNext(T value)
-        {
-            var eventId = _state.NextEventId();
-            var frame = JsonSerializer.Serialize(new
-            {
-                type = "event",
-                subscriptionId = _state.SubscriptionId,
-                eventId,
-                data = value,
-            }, SleipnirJsonOptions.Default);
-            // AppendEvent records into the replay ring buffer (evict-oldest on cap → drop
-            // counter via the store) AND forwards to the attached live tap, if any. With no
-            // tap (disconnected) the frame lives only in the ring buffer → replayed on resume.
-            _state.AppendEvent(eventId, frame);
-        }
-
-        public void OnCompleted()
-        {
-            var frame = JsonSerializer.Serialize(new { type = "complete", subscriptionId = _state.SubscriptionId }, SleipnirJsonOptions.Default);
-            _state.SetTerminal(frame);
-        }
-
-        public void OnError(Exception error)
-        {
-            var frame = JsonSerializer.Serialize(new { type = "error", subscriptionId = _state.SubscriptionId, message = error.Message }, SleipnirJsonOptions.Default);
-            _state.SetTerminal(frame);
-            _logger?.LogError(error, "Durable event source errored for subscription {SubscriptionId}", _state.SubscriptionId);
-        }
-    }
 }

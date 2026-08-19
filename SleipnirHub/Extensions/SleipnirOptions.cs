@@ -81,6 +81,20 @@ namespace SleipnirHub.Extensions
         public bool UseRest { get; set; } = true;
 
         /// <summary>
+        /// When <c>true</c> (default), <c>MapSleipnir</c> maps the SSE (Server-Sent Events) REST
+        /// event transport — the two <c>GET {prefix}/events/…</c> endpoints that bring server-push
+        /// events (<c>[SleipnirEvent]</c> + <c>IObservable&lt;T&gt;</c>, otherwise
+        /// WebSocket/SignalR-only) to REST-only clients behind proxies/firewalls that block
+        /// WebSocket upgrades. When <c>false</c>, no SSE endpoints are mapped. Additive (default
+        /// keeps current behavior — REST-only clients simply had no event surface before); only
+        /// honored by the unified <c>MapSleipnir</c> pipeline. SSE reuses the transport-agnostic
+        /// event core + the process-wide <see cref="SleipnirCore.Services.SleipnirSubscriptionStore"/>
+        /// so a durable subscription created over WebSocket can be resumed over SSE and vice-versa.
+        /// Experimental (Phase S) — see <c>STABILITY.md</c> §2.
+        /// </summary>
+        public bool UseSse { get; set; } = true;
+
+        /// <summary>
         /// When <c>true</c> (default), <c>UseSleipnirTransports</c> wires
         /// <c>UseWebSockets</c> + <c>UseSleipnirWebSocket</c> (the primary channel).
         /// When <c>false</c>, both are skipped — no WebSocket transport. Additive

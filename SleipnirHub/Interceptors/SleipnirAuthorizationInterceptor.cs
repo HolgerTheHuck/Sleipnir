@@ -19,9 +19,8 @@ namespace SleipnirHub.Interceptors;
 /// <remarks>
 /// <para>
 /// Unterscheidet <c>401</c> (nicht authentifiziert) von <c>403</c> (authentifiziert,
-/// aber Rolle/Policy verweigert) — das Roadmap-Item aus <c>SECURITY.md</c> /
-/// <c>RELEASE-PLAN.md</c> Phase 3.1. Heute (1.0.0) liefert Sleipnir für beides <c>401</c>;
-/// mit Phase 1 wird <c>403</c> für PermissionDenied eingeführt.
+/// aber Rolle/Policy verweigert) — das Roadmap-Item aus <c>SECURITY.md</c>.
+/// Mit Phase 1 wird <c>403</c> für PermissionDenied eingeführt.
 /// </para>
 /// <para>
 /// <c>resource</c> ist in v1.1 <c>null</c> (command-orientiert, kein Resource-Begriff).

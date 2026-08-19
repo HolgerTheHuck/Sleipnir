@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Startup transport-introspection log** — `UseSleipnirTransports` now emits one
   `Information` line at startup naming the active transports
   (`Sleipnir transports: REST=True, WebSocket=True, SignalR=False`).
+- **`/observability` snapshot reflects the WebSocket toggle** — the `transports.webSocket` field
+  in the JSON observability snapshot now reports the configured `UseWebSocket` value (threaded
+  from `SleipnirOptions` via `MapSleipnir`), instead of a hard-coded `true`. `transports.rest`
+  stays `true` (the endpoint lives in the REST group, so REST is on whenever it is reachable);
+  `transports.signalR` was already threaded.
 
 ### Added — Events: configurable per-event backpressure (experimental surface)
 - **`SleipnirOptions.EventBufferCapacity`** (int?, fallback 100) and

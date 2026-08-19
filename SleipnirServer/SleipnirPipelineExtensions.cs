@@ -81,7 +81,8 @@ public static class SleipnirPipelineExtensions
                 enableRateLimiting: options?.RateLimitPermitLimit > 0,
                 enableJsonRpcCompat: options?.EnableJsonRpcCompat == true,
                 enableObservability: options?.EnableObservability == true,
-                signalREnabled: options?.UseSignalR == true);
+                signalREnabled: options?.UseSignalR == true,
+                useWebSocket: options?.UseWebSocket != false);
             endpoints.MapSleipnirDeveloperUi(developerUiPath);
         }
 

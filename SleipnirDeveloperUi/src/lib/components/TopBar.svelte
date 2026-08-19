@@ -237,6 +237,13 @@
       Dependency Builder
     </button>
 
+    <button class="ghost small" onclick={() => tabState.createObservabilityTab()} title="Observability — live Verbindungen / Subscriptions / Metriken (opt-in EnableObservability)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 12h4l3 8 4-16 3 8h4"></path>
+      </svg>
+      Observability
+    </button>
+
     <button class="ghost small" onclick={() => historyState.toggle()} title="History">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="10"></circle>

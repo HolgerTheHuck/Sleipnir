@@ -57,3 +57,34 @@ export async function executeRequest(request: SleipnirRequest): Promise<Sleipnir
 export async function executeBatch(request: SleipnirMultiRequest): Promise<SleipnirResponse[]> {
   return client.callBatch(request.requests, request.mode);
 }
+
+// ─── Observability ───────────────────────────────────────────────────────────
+// Roher fetch (nicht über SleipnirRestClient, der keine /observability-Methode
+// hat) — spiegelt die Verbindung (baseUrl/apiPath/bearer) aus dem Modul-Zustand.
+// Der Endpoint ist opt-in (SleipnirOptions.EnableObservability) und wie /discovery
+// RequireAuth-gated; ein 401/non-2xx wird zum Error. Die DevUI dogfood-et hier
+// bewusst einen dünnen fetch, da /observability ein Framework-Endpoint (kein RPC)
+// ist.
+
+export interface ObservabilitySnapshot {
+  transports: { rest: boolean; webSocket: boolean; signalR: boolean };
+  activeConnections: number;
+  activeSubscriptions: number;
+  eventDroppedTotal: number;
+  callCount: number;
+  errorCount: number;
+  batchCount: number;
+  uptimeMs: number;
+}
+
+export async function fetchObservability(): Promise<ObservabilitySnapshot> {
+  const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  const url = `${base}${apiPath}/observability`;
+  const headers: Record<string, string> = {};
+  if (bearer) headers['Authorization'] = `Bearer ${bearer}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    throw new Error(`Observability fetch failed: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as ObservabilitySnapshot;
+}

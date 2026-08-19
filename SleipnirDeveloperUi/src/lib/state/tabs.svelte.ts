@@ -3,7 +3,7 @@ import { formatJson } from '../utils/json';
 import { defaultValueForParam, serializeValueByRef } from '../utils/params';
 import { discoveryState } from './discovery.svelte.ts';
 
-export type TabType = 'request' | 'codegen' | 'dependency';
+export type TabType = 'request' | 'codegen' | 'dependency' | 'observability';
 
 // --- Dependency-Builder-Modell ----------------------------------------------
 // Ein DepStep entspricht einem SleipnirRequest innerhalb eines Serial-Batches mit
@@ -204,6 +204,34 @@ class TabState {
       duration: '-- ms',
       log: '',
       steps: [makeDefaultStep('step1')],
+    };
+    this.tabs.push(tab);
+    this.activeTabId = tab.id;
+    this.persist();
+    return tab;
+  }
+
+  createObservabilityTab(): Tab {
+    // Existierenden Observability-Tab wiederverwenden (wie Codegen/Dependency).
+    const existing = this.tabs.find((t) => t.type === 'observability');
+    if (existing) {
+      this.activeTabId = existing.id;
+      this.persist();
+      return existing;
+    }
+    const tab: Tab = {
+      type: 'observability',
+      id: generateId(),
+      title: 'Observability',
+      controller: null,
+      method: null,
+      params: [],
+      requestText: '',
+      responseText: '',
+      status: '',
+      respIdText: '',
+      duration: '',
+      log: '',
     };
     this.tabs.push(tab);
     this.activeTabId = tab.id;

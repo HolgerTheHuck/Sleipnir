@@ -14,6 +14,7 @@
   import CodegenPanel from './CodegenPanel.svelte';
   import CodegenPage from './CodegenPage.svelte';
   import DependencyBuilderPage from './DependencyBuilderPage.svelte';
+  import ObservabilityPage from './ObservabilityPage.svelte';
 
   // `requestText` ist ein JSON-String für die Anzeige (formatiert zum Editieren);
   // für den Wire-Call muss er in das native `params`-Array geparst werden.
@@ -180,6 +181,8 @@
       <CodegenPage />
     {:else if tabState.activeTab.type === 'dependency'}
       <DependencyBuilderPage tab={tabState.activeTab} />
+    {:else if tabState.activeTab.type === 'observability'}
+      <ObservabilityPage />
     {:else}
       <div class="toolbar">
         {#if tabState.activeTab.controller && tabState.activeTab.method}

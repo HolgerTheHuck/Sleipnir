@@ -123,6 +123,11 @@ builder.Services.AddSleipnir(o =>
     o.UseSignalR = true;
     o.UseMessagePack = true;
     o.MaximumParallelInvocationsPerClient = 100;
+    // Transport toggles (all default true, non-breaking). UseRest=false → headless WS/SignalR-only
+    // (no /discovery, /json, /jsonrpc, DevUI backend); UseWebSocket=false → no WebSocket transport.
+    // UseSleipnirTransports also logs one startup line: "Sleipnir transports: REST=…, WebSocket=…, SignalR=…"
+    o.UseRest = true;
+    o.UseWebSocket = true;
 });
 
 var app = builder.Build();

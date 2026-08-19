@@ -32,6 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transport pills, active connections/subscriptions with sparklines, cumulative counters,
   uptime, and a pointer to `/metrics` for the full instrument set.
 
+### Added — Transport toggles + startup introspection log
+- **`SleipnirOptions.UseRest`** and **`SleipnirOptions.UseWebSocket`** (both default `true`,
+  non-breaking) now gate the unified pipeline: `UseRest=false` skips the REST endpoint group
+  (`/json`, `/json/multi`, `/discovery`, JSON-RPC compat, Developer UI backend) → headless
+  WebSocket/SignalR-only mode; `UseWebSocket=false` skips `UseWebSockets`+`UseSleipnirWebSocket`.
+  `UseSignalR` was already opt-in — the three now form a symmetric transport-toggle trio. Only
+  honored by the unified `UseSleipnirTransports`/`MapSleipnir` pipeline; hosts that call the
+  low-level extensions directly bypass the toggles. See `STABILITY.md` §1.3.
+- **Startup transport-introspection log** — `UseSleipnirTransports` now emits one
+  `Information` line at startup naming the active transports
+  (`Sleipnir transports: REST=True, WebSocket=True, SignalR=False`).
+
 ### Added — Events: configurable per-event backpressure (experimental surface)
 - **`SleipnirOptions.EventBufferCapacity`** (int?, fallback 100) and
   **`SleipnirOptions.EventBackpressureStrategy`** (enum, default `DropOldest`) now configure the

@@ -49,6 +49,7 @@
     <ProjectReference Include="..\SleipnirHub\SleipnirHub.csproj" />
     <ProjectReference Include="..\SleipnirRest\SleipnirRest.csproj" />
     <ProjectReference Include="..\SleipnirWebSocket\SleipnirWebSocket.csproj" />
+    <ProjectReference Include="..\SleipnirServer\SleipnirServer.csproj" />
     <ProjectReference Include="..\Sleipnir\Sleipnir.csproj" />
     <ProjectReference Include="..\Sleipnir.Codegen.Core\Sleipnir.Codegen.Core.csproj" />
     <ProjectReference Include="..\Sleipnir.Client.Linq\Sleipnir.Client.Linq.csproj" />

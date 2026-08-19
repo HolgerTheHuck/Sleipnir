@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Codegen: `sleipnir-gen --selfcheck` drift gate (npm `sleipnir-codegen`)
+- New `--selfcheck` mode regenerates the client tree from `--discovery` in memory and
+  compares it against the committed tree at `--out`; exits `4` on drift (a missing or
+  changed generated file), `0` if clean, and **writes no files**. The client-side
+  contract-drift gate — the CLI counterpart of the server-side MSBuild drift check
+  (`ROADMAP.md` §3): a server change without regen leaves the client build green and
+  the drift surfaces only at runtime as a `400`. The comparison is one-directional
+  (generated ⊆ committed): a file in `--out` the emitter no longer produces is not
+  flagged (`--out` may hold hand-written files); a removed controller still shows up
+  as a `changed` entry. Requires `--out`; mutually exclusive with `--stdout`.
+- Fix (dev-local `npm run typecheck`): `ts-compile.test.ts` had a `// @ts-expect-error`
+  written as prose inside a comment block that TypeScript misread as an unused
+  directive (TS2578); reworded so the directive is no longer misparsed. (Pre-existing
+  on `main`; not a CI gate — CI runs the .NET suite, not `npm run typecheck`.)
+
 ### Added — Observability: `/metrics` scrape + `/observability` snapshot + DevUI panel (experimental)
 - **`GET /api/sleipnir/metrics`** — opt-in Prometheus-text scrape endpoint exposing the
   `Meter "Sleipnir"` instruments (`sleipnir.call.duration/count`, `sleipnir.error.count`,

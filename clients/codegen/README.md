@@ -34,7 +34,7 @@ needed).
 ```bash
 sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdout]
              [--base-url <url>] [--bearer <token>] [--timeout <s>]
-             [--transport rest|ws|both]
+             [--transport rest|ws|both] [--selfcheck]
 ```
 
 - `--lang` (required): `ts` | `js` | `cs` | `py`.
@@ -53,10 +53,21 @@ sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdo
 - `--transport rest|ws|both` (ts|js only, default `rest`): which
   `sleipnir-client` runtime client the generated `SleipnirClient` wires up.
   `cs` and `py` are REST-only (no WS/SignalR runtime to wire).
+- `--selfcheck`: regenerate the client tree from `--discovery` in memory and
+  compare it against the committed tree at `--out`; exit `4` on drift (a missing
+  or changed generated file), `0` if clean. **No files are written.** This is the
+  client-side contract-drift gate — the CLI counterpart of the server-side MSBuild
+  drift check (`ROADMAP.md` §3): without it, a server change without regen leaves
+  the client build green and the drift surfaces only at runtime as a `400`. The
+  comparison is one-directional (generated ⊆ committed): a file present in `--out`
+  that the emitter no longer produces is not flagged (`--out` is a project client
+  dir that may hold hand-written files); a removed controller still shows up as a
+  `changed` entry (its generated file shrinks). Requires `--out`; mutually
+  exclusive with `--stdout`.
 - `--help` / `-h`, `--version` / `-v`.
 
 Exit codes: `0` ok · `1` usage/runtime error · `2` discovery shape mismatch ·
-`3` I/O error.
+`3` I/O error · `4` `--selfcheck` drift (committed tree out of date).
 
 ### Examples
 
@@ -76,6 +87,11 @@ cat contract.sleipnir.json | npx sleipnir-gen --lang cs --discovery - --stdout >
 # Authenticated discovery fetch (token never reaches the generated code)
 npx sleipnir-gen --lang ts --discovery https://api.example.com/api/sleipnir/discovery \
   --bearer "$TOKEN" --out src/api
+
+# Drift gate: fail CI if the committed src/api tree is out of date vs the live
+# server contract (no files written; exit 4 on drift, 0 if clean).
+npx sleipnir-gen --lang ts --discovery https://api.example.com/api/sleipnir/discovery \
+  --out src/api --selfcheck
 ```
 
 ## What each emitter produces

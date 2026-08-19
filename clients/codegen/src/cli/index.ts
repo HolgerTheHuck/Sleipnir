@@ -11,7 +11,8 @@
 // `--transport rest|ws|both` (ts|js only, default rest) picks which sleipnir-client
 // runtime client the generated `SleipnirClient` wires up.
 //
-// Exit codes: 0 ok · 1 usage/runtime error · 2 discovery shape mismatch · 3 I/O.
+// Exit codes: 0 ok · 1 usage/runtime error · 2 discovery shape mismatch · 3 I/O
+//            · 4 selfcheck drift (--selfcheck found the committed client tree out of date).
 
 import { writeFile, mkdir } from "node:fs/promises";
 import { readFileSync } from "node:fs";
@@ -23,12 +24,14 @@ import { emitTsClient } from "../emitters/ts.js";
 import { emitJsClient } from "../emitters/js.js";
 import { emitCsClient } from "../emitters/cs.js";
 import { emitPyClient } from "../emitters/py.js";
+import { selfcheck } from "./selfcheck.js";
 
 interface ParsedArgs {
   lang: string | undefined;
   discovery: string | undefined;
   out: string | undefined;
   stdout: boolean;
+  selfcheck: boolean;
   baseUrl: string | undefined;
   bearer: string | undefined;
   timeout: number | undefined;
@@ -41,7 +44,7 @@ const SUPPORTED_TRANSPORTS = new Set(["rest", "ws", "both"]);
 const REST_ONLY_LANGS = new Set(["cs", "py"]);
 
 function parseArgs(argv: string[]): ParsedArgs {
-  const args: ParsedArgs = { lang: undefined, discovery: undefined, out: undefined, stdout: false, baseUrl: undefined, bearer: undefined, timeout: undefined, transport: undefined };
+  const args: ParsedArgs = { lang: undefined, discovery: undefined, out: undefined, stdout: false, selfcheck: false, baseUrl: undefined, bearer: undefined, timeout: undefined, transport: undefined };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = (): string => {
@@ -57,6 +60,7 @@ function parseArgs(argv: string[]): ParsedArgs {
       case "--bearer": args.bearer = next(); break;
       case "--timeout": args.timeout = parseTimeout(next()); break;
       case "--transport": args.transport = parseTransport(next()); break;
+      case "--selfcheck": args.selfcheck = true; break;
       case "--help": case "-h": printHelp(); process.exit(0);
       case "--version": case "-v": printVersion(); process.exit(0);
       default:
@@ -92,6 +96,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   if (!args.discovery) failUsage("--discovery is required (url | file | -)");
+  if (args.selfcheck && args.stdout) failUsage("--selfcheck and --stdout are mutually exclusive (--selfcheck compares against --out)");
+  if (args.selfcheck && !args.out) failUsage("--selfcheck requires --out <dir> (the committed client tree to compare against)");
   if (!args.stdout && !args.out) failUsage("either --out <dir> or --stdout is required");
   if (args.stdout && args.out) failUsage("--stdout and --out are mutually exclusive");
 
@@ -119,6 +125,24 @@ async function main(): Promise<void> {
   const resolver = new NamingResolver();
   const input = buildEmitterInput(discoveryRaw, resolver);
   const files = emitForLang(args.lang, input, args.baseUrl, transport);
+
+  if (args.selfcheck) {
+    // Regenerated in memory; compare against the committed tree at --out. No writes.
+    const outDir = resolve(args.out!);
+    const result = selfcheck(files, outDir);
+    if (result.clean) {
+      process.stdout.write(
+        `sleipnir-gen: selfcheck OK — ${result.unchanged} file${result.unchanged === 1 ? "" : "s"} unchanged (of ${result.total}).\n`);
+      return;
+    }
+    for (const e of result.drift) {
+      stderr(`  ${e.status === "missing" ? "missing" : "changed"}  ${e.path}`);
+    }
+    stderr(
+      `sleipnir-gen: selfcheck found ${result.drift.length} drifted file${result.drift.length === 1 ? "" : "s"} ` +
+      `(of ${result.total} generated) — regenerate with \`sleipnir-gen --lang ${args.lang} --discovery <src> --out <dir>${args.transport ? " --transport " + args.transport : ""}\`.`);
+    process.exit(4);
+  }
 
   if (args.stdout) {
     for (const [path, content] of Object.entries(files)) {
@@ -174,6 +198,7 @@ function printHelp(): void {
     `Usage:\n` +
     `  sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdout]\n` +
     `           [--base-url <url>] [--transport <rest|ws|both>] [--bearer <token>] [--timeout <ms>]\n` +
+    `           [--selfcheck]\n` +
     `\n` +
     `Options:\n` +
     `  --lang <ts|js|cs|py>  Output language.\n` +
@@ -184,6 +209,8 @@ function printHelp(): void {
     `  --transport <rest|ws|both>  Transport the generated client wires (ts|js only; default rest).\n` +
     `  --bearer <token>    Authorization bearer for URL discovery.\n` +
     `  --timeout <ms>       Request timeout for URL discovery.\n` +
+    `  --selfcheck          Compare the regenerated client tree against the committed --out tree;\n` +
+    `                      exit 4 on drift (missing/changed files), 0 if clean. No files written.\n` +
     `  -h, --help           Show this help.\n` +
     `  -v, --version        Show the version.\n`,
   );

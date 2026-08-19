@@ -203,9 +203,9 @@ export async function semanticChain(): Promise<void> {
 // `messageReceived(chatId, handlers)` returns Promise<SleipnirSubscription> with
 // onNext typed to the event payload (Message for the object event, number for the
 // scalar event), the mixed controller's call method stays a TypedCall, and the
-// @ts-expect-error guards prove the handler payload is enforced. Runs for all
-// transports: ws/both delegate to the WS runtime; rest has the throwing _subscribe
-// but the SAME typed signature, so it must still compile.
+// `@ts-expect-error` guards inside subscribeBody prove the handler payload is
+// enforced. Runs for all transports: ws/both delegate to the WS runtime; rest has
+// the throwing _subscribe but the SAME typed signature, so it must still compile.
 const subscribeBody = `  // Object-payload event: onNext typed to Message; resolves to a subscription.
   const sub: SleipnirSubscription = await client.chat.messageReceived(1, {
     onNext: (m: Message) => { void m; },

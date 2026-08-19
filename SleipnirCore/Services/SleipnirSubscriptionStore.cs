@@ -178,6 +178,13 @@ public sealed class DurableSubscriptionState : IDisposable
 {
     public string SubscriptionId { get; }
     public IDisposable? SourceSubscription { get; set; }
+    /// <summary>
+    /// Phase R (resume auth): the controller/method of the ORIGINAL subscribe, recorded at create
+    /// time so a reconnect resume can re-run authorization against the real event route (not the
+    /// client-claimed one — a caller cannot lie about the route to land a weaker auth check).
+    /// </summary>
+    public string? Controller { get; set; }
+    public string? Method { get; set; }
     public EventBackpressureStrategy Strategy { get; }
     public DateTimeOffset LastActiveUtc { get; private set; } = DateTimeOffset.UtcNow;
     public bool Completed { get; private set; }

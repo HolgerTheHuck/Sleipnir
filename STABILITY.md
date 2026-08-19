@@ -196,11 +196,19 @@ phases land.
   subscribe surface, `ISleipnirCore.SubscribeAsync`, the WS subscribe/unsubscribe/event-frame wire
   (`kind:"subscribe"`/`kind:"unsubscribe"`/`{type:"event",...}`), the `SleipnirSubscriptionManager`,
   and `sleipnir.event.dropped` metric. **Experimental in v1**: the wire format, subscription
-  lifecycle (pro-Connection, client-side re-subscribe, at-most-once-while-disconnected),
-  and backpressure (configurable per-subscription buffer: `EventBackpressureStrategy`
-  `DropOldest`/`DropWrite`/`Block`/`Unbounded` + `EventBufferCapacity`, overridable per event via
-  `[SleipnirEvent]`) are implemented but may settle in a minor version. WS-only in v1; SignalR and
-  REST-Long-Polling are out of scope. `Last-Event-Id`-resume and server-side buffer are v1.x+. See
+  lifecycle (pro-Connection, client-side re-subscribe, at-most-once-while-disconnected for
+  non-resumable events), and backpressure (configurable per-subscription buffer:
+  `EventBackpressureStrategy` `DropOldest`/`DropWrite`/`Block`/`Unbounded` + `EventBufferCapacity`,
+  overridable per event via `[SleipnirEvent]`) are implemented but may settle in a minor version.
+  WS-only in v1; SignalR and REST-Long-Polling are out of scope. **`Last-Event-Id` resume + the
+  server-side disconnect buffer ship as experimental (Phase R)** for opt-in
+  `[SleipnirEvent(Resumable = true)]` events — at-least-once-within-the-replay-window (client
+  dedups by `eventId`), with a reconnect auth re-check (a revoked role does not silently resume),
+  a bounded replay ring (`EventReplayBufferCapacity`, fallback 1000), an idle TTL
+  (`EventResumeTtl`, fallback 60s), and a durable-subscription cap
+  (`EventMaxDurableSubscriptions`, fallback 10 000); the durable store is in-process (no
+  cross-restart persistence). Events beyond the replay window are still lost and counted in
+  `sleipnir.event.dropped`. See `PROTOCOL.md` → *Resume (Last-Event-Id)* and
   `docs/design/phase-3-events.md`.
 - **The `samples/`, `spikes/`, `stories/`, and `Sleipnir/` (sample app) projects.** Reference and
   demo material; no stability promise.

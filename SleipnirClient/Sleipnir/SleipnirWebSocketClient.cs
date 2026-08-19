@@ -54,6 +54,9 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
     private readonly bool _autoReconnect;
     private readonly TimeSpan[] _reconnectDelays;
     private readonly Action<SleipnirConnectionState>? _onStateChanged;
+    // Phase R: client-side resume policy consulted per subscription on reconnect. Null → Fresh
+    // for every subscription (non-breaking default, today's behavior). Overridable per subscribe.
+    private readonly ResumePolicy? _resumePolicy;
 
     private readonly TimeSpan? _callTimeout;
     private CancellationTokenSource? _readerCts;
@@ -104,7 +107,8 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
         ILogger<SleipnirWebSocketClient>? logger = null,
         bool autoReconnect = true, TimeSpan[]? reconnectDelays = null,
         Func<ClientWebSocket>? socketFactory = null,
-        Action<SleipnirConnectionState>? onStateChanged = null)
+        Action<SleipnirConnectionState>? onStateChanged = null,
+        ResumePolicy? resumePolicy = null)
         : base()
     {
         if (string.IsNullOrWhiteSpace(serverBaseUrl))
@@ -126,6 +130,7 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
         if (_reconnectDelays.Length == 0)
             _autoReconnect = false; // empty array explicitly disables reconnect
         _onStateChanged = onStateChanged;
+        _resumePolicy = resumePolicy;
     }
 
     /// <summary>Current connection state (observer surface for UI/logs).</summary>
@@ -653,7 +658,8 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
     /// (auto-reconnect on) the client re-subscribes automatically with the same parameters.
     /// </summary>
     public async Task<SleipnirSubscription<T>> SubscribeAsync<T>(
-        string controller, string method, object?[]? args = null, CancellationToken ct = default)
+        string controller, string method, object?[]? args = null,
+        ResumePolicy? resumePolicy = null, CancellationToken ct = default)
     {
         await EnsureConnectedAsync(ct);
 
@@ -669,7 +675,11 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
 
         var holder = new TcsHolder<SleipnirResponse>();
         _pendingRequests[requestId] = holder;
-        _subscribeRequests[requestId] = new SubscribeRequestRecord(controller, method, args);
+        // Phase R: the record (args + per-subscribe resume policy) is keyed by subscriptionId once
+        // the response arrives — ResubscribeAllAsync looks it up by the live subscriptionId, so it
+        // must NOT be keyed by the transient requestId (that was the pre-R2 bug: the record was
+        // unreachable on reconnect/unsubscribe, silently leaked, and re-subscribe was skipped).
+        var record = new SubscribeRequestRecord(controller, method, args, resumePolicy);
 
         await SendRawAsync(subscribeJson, ct);
 
@@ -686,6 +696,8 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
 
         var subscription = new SleipnirSubscription<T>(subscriptionId!, UnsubscribeAsync, ct);
         _subscriptions[subscriptionId!] = new SleipnirSubscriptionHandler<T>(subscription);
+        record.SubscriptionId = subscriptionId;
+        _subscribeRequests[subscriptionId!] = record;
 
         return subscription;
     }
@@ -732,8 +744,14 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
             switch (type)
             {
                 case "event":
+                    // Phase R: capture the per-subscription monotonic eventId for client-side dedup
+                    // of replayed frames (at-least-once within the replay window). Absent on
+                    // non-resumable event sources → no dedup, forwarded verbatim.
+                    long? eventId = null;
+                    if (root.TryGetProperty("eventId", out var evIdProp) && evIdProp.ValueKind == JsonValueKind.Number)
+                        eventId = evIdProp.GetInt64();
                     if (root.TryGetProperty("data", out var dataProp))
-                        handler.OnNext(dataProp.GetRawText());
+                        handler.OnNext(eventId, dataProp.GetRawText());
                     return true;
                 case "complete":
                     handler.OnCompleted();
@@ -756,8 +774,12 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
     }
 
     /// <summary>
-    /// Re-subscribes all active subscriptions after a reconnect (decision 6:
-    /// client-side re-subscribe with new subscriptionIds, since the connection is new).
+    /// Re-subscribes all active subscriptions after a reconnect. Per subscription the resume policy
+    /// is consulted (per-subscribe override → client-wide → Fresh): <b>Fresh</b> starts a new
+    /// subscription (new id, gap lost — today's behavior); <b>Resume</b> sends the durable
+    /// subscriptionId + lastEventId so the server replays the disconnect gap; <b>Drop</b> ends the
+    /// subscription without re-subscribing. A Resume that the server cannot satisfy (TTL expired,
+    /// non-resumable event) degrades to Fresh — the server returns a fresh subscriptionId.
     /// </summary>
     private async Task ResubscribeAllAsync(CancellationToken ct)
     {
@@ -773,32 +795,104 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
             var handler = kv.Value;
             if (!_subscribeRequests.TryRemove(oldId, out var record)) continue;
 
+            // Phase R: resolve the reconnect decision. Per-subscribe policy wins, then the
+            // client-wide policy, then Fresh (non-breaking default). LastEventId is the cursor the
+            // server replays past; null when no event was received yet (replay from the start).
+            var policy = record.ResumePolicy ?? _resumePolicy;
+            var lastEventId = handler.LastEventId;
+            var context = new SubscriptionResumeContext(
+                record.Controller, record.Method, oldId,
+                lastEventId > 0 ? lastEventId : (long?)null);
+            var decision = policy?.Invoke(context) ?? ResumeDecision.Fresh;
+
+            if (decision == ResumeDecision.Drop)
+            {
+                _logger?.LogDebug("Drop resume decision for {Controller}.{Method} — not re-subscribing",
+                    record.Controller, record.Method);
+                handler.OnCompleted();
+                continue;
+            }
+
+            var isResume = decision == ResumeDecision.Resume;
+
             try
             {
                 var requestId = NextId();
-                var subscribeJson = JsonSerializer.Serialize(new
+                string subscribeJson;
+                if (isResume)
                 {
-                    kind = "subscribe",
-                    controller = record.Controller,
-                    method = record.Method,
-                    @params = BuildParams(record.Args),
-                    id = requestId,
-                }, JsonOptions);
+                    // Resume: send the durable subscriptionId + lastEventId. The server attaches to
+                    // the existing durable state and replays buffered frames with eventId > lastEventId.
+                    subscribeJson = JsonSerializer.Serialize(new
+                    {
+                        kind = "subscribe",
+                        controller = record.Controller,
+                        method = record.Method,
+                        @params = BuildParams(record.Args),
+                        id = requestId,
+                        subscriptionId = oldId,
+                        lastEventId,
+                    }, JsonOptions);
+                    // Race fix: replay frames arrive immediately after the response, and the response
+                    // continuation runs async (RunContinuationsAsynchronously) — the reader would
+                    // dispatch the first replay frame before the post-response handler registration
+                    // and drop it. The durable id is known up-front, so pre-register the handler
+                    // under oldId before sending. If the server degrades to Fresh (returns a new id),
+                    // re-key below.
+                    _subscriptions[oldId] = handler;
+                }
+                else
+                {
+                    subscribeJson = JsonSerializer.Serialize(new
+                    {
+                        kind = "subscribe",
+                        controller = record.Controller,
+                        method = record.Method,
+                        @params = BuildParams(record.Args),
+                        id = requestId,
+                    }, JsonOptions);
+                }
 
                 var holder = new TcsHolder<SleipnirResponse>();
                 _pendingRequests[requestId] = holder;
-                _subscribeRequests[requestId] = record;
 
                 await SendRawAsync(subscribeJson, ct);
                 var response = await holder.Tcs.Task;
                 _pendingRequests.TryRemove(requestId, out _);
 
                 var newSubId = ExtractSubscriptionId(response);
-                if (!string.IsNullOrEmpty(newSubId))
+                if (string.IsNullOrEmpty(newSubId))
+                {
+                    if (isResume) _subscriptions.TryRemove(oldId, out _);
+                    handler.OnError(new SleipnirException("Re-subscribe response missing subscriptionId."));
+                    continue;
+                }
+
+                // Resume keeps the durable id (newSubId == oldId); a degraded-to-fresh resume gets a
+                // new id. Either way, re-key the record + handler under the live id.
+                if (newSubId != oldId)
+                {
+                    if (isResume)
+                    {
+                        _subscriptions.TryRemove(oldId, out _);
+                        // Degrade-to-fresh: the new server subscription restarts its eventId counter
+                        // at 1, so the stale pre-reconnect cursor must be reset or the fresh stream
+                        // would be deduped away.
+                        handler.ResetEventCursor();
+                    }
                     _subscriptions[newSubId!] = handler;
+                }
+                else if (!isResume)
+                {
+                    // Fresh path did not pre-register.
+                    _subscriptions[newSubId!] = handler;
+                }
+                record.SubscriptionId = newSubId;
+                _subscribeRequests[newSubId!] = record;
             }
             catch (Exception ex)
             {
+                if (isResume) _subscriptions.TryRemove(oldId, out _);
                 _logger?.LogWarning(ex, "Re-subscribe failed for {Controller}.{Method}", record.Controller, record.Method);
                 handler.OnError(ex);
             }
@@ -845,18 +939,42 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
 
     private interface ISleipnirSubscriptionHandler
     {
-        void OnNext(string dataJson);
+        /// <summary>Highest event eventId processed for this subscription (0 = none yet).</summary>
+        long LastEventId { get; }
+        void OnNext(long? eventId, string dataJson);
         void OnCompleted();
         void OnError(Exception ex);
+        /// <summary>
+        /// Reset the dedup cursor to "no event seen". Used when a Resume degrades to Fresh: the new
+        /// server subscription restarts its eventId counter at 1, so the stale pre-reconnect cursor
+        /// would otherwise drop the fresh stream as duplicates.
+        /// </summary>
+        void ResetEventCursor();
     }
 
     private sealed class SleipnirSubscriptionHandler<T> : ISleipnirSubscriptionHandler
     {
         private readonly SleipnirSubscription<T> _subscription;
+        // Phase R: max eventId processed (0 = none). Atomic — the reader task is single, but the
+        // field is read cross-thread by ResubscribeAllAsync to build the resume context.
+        private long _lastEventId;
         public SleipnirSubscriptionHandler(SleipnirSubscription<T> subscription) => _subscription = subscription;
 
-        public void OnNext(string dataJson)
+        public long LastEventId => Interlocked.Read(ref _lastEventId);
+
+        public void OnNext(long? eventId, string dataJson)
         {
+            // Phase R: at-least-once dedup. The server replays the disconnect gap from its buffer;
+            // drop any frame whose eventId we have already processed (eventId <= last seen). Frames
+            // without an eventId (non-resumable sources) are forwarded verbatim — no dedup.
+            if (eventId.HasValue)
+            {
+                long id = eventId.GetValueOrDefault();
+                if (id <= Interlocked.Read(ref _lastEventId))
+                    return;
+                Interlocked.Exchange(ref _lastEventId, id);
+            }
+
             try
             {
                 var value = JsonSerializer.Deserialize<T>(dataJson, JsonOptions);
@@ -867,7 +985,28 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
 
         public void OnCompleted() => _subscription.Subject.OnCompleted();
         public void OnError(Exception ex) => _subscription.Subject.OnError(ex);
+        public void ResetEventCursor() => Interlocked.Exchange(ref _lastEventId, 0);
     }
 
-    private sealed record SubscribeRequestRecord(string Controller, string Method, object?[]? Args);
+    /// <summary>
+    /// Survives reconnect: the original subscribe arguments plus the per-subscribe resume policy
+    /// (null → fall back to the client-wide <c>_resumePolicy</c>, then Fresh). Keyed by the live
+    /// subscriptionId in <c>_subscribeRequests</c> so ResubscribeAllAsync can find it.
+    /// </summary>
+    private sealed class SubscribeRequestRecord
+    {
+        public SubscribeRequestRecord(string controller, string method, object?[]? args, ResumePolicy? resumePolicy)
+        {
+            Controller = controller;
+            Method = method;
+            Args = args;
+            ResumePolicy = resumePolicy;
+        }
+
+        public string Controller { get; }
+        public string Method { get; }
+        public object?[]? Args { get; }
+        public ResumePolicy? ResumePolicy { get; }
+        public string? SubscriptionId { get; set; }
+    }
 }

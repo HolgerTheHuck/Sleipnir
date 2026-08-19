@@ -49,6 +49,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stays `true` (the endpoint lives in the REST group, so REST is on whenever it is reachable);
   `transports.signalR` was already threaded.
 
+### Added — Events: Last-Event-Id resume + server disconnect buffer (Phase R, experimental)
+- **`[SleipnirEvent(Resumable = true)]`** opts an event in to **durable subscriptions** that
+  survive a WebSocket disconnect: the `IObservable<T>` source is kept subscribed across
+  disconnects, and a per-subscription replay ring buffer accumulates events produced during the
+  gap. On reconnect the client sends `lastEventId` and the server replays the gap — the contract
+  changes from at-most-once-while-disconnected to **at-least-once within the replay-buffer
+  window** (the client dedups by `eventId`; events beyond the window are still lost and counted
+  in `sleipnir.event.dropped`). Non-resumable events keep the v1 ephemeral behavior unchanged.
+- **Client resume hook** — `ResumeDecision { Fresh, Resume, Drop }` + `ResumePolicy` delegate
+  (C# `SleipnirClient.Sleipnir.ResumeDecision`; TS `clients/ts` `ResumeDecision` /
+  `ResumePolicy`). Wired via the `SleipnirWebSocketClient` constructor `resumePolicy` and a
+  per-`SubscribeAsync` override (TS: `onResume` on the WS client options / per-subscribe
+  `SubscribeOptions.resumePolicy`). **Fresh** is the default (preserves v1 behavior); **Resume**
+  sends `lastEventId` + the durable `subscriptionId`; **Drop** does not re-subscribe. A Resume on
+  a non-resumable event, an unknown/GC'd id, or an over-cap/TTL-expired durable degrades to Fresh
+  (new id; the client re-keys its handler and resets its dedup cursor).
+- **Wire (additive, backward-compatible)** — the subscribe request gains optional `lastEventId`
+  (long) and `subscriptionId` (the durable id, on resume only); the subscribe response gains
+  `replayedFrom` (the first replayed eventId, absent on fresh). Event frames are unchanged.
+- **Reconnect auth re-check** — a resume re-runs the same authorization a fresh subscribe runs,
+  against the *original* event route recorded server-side at create time (not the client-claimed
+  route). A role revoked during the disconnect gap does not silently resume: a 401/403 (or 404 if
+  the route vanished) tears down the durable subscription and returns the error.
+- **Knobs & limits** (on `SleipnirOptions`): `EventReplayBufferCapacity` (fallback 1000),
+  `EventResumeTtl` (fallback 60s — an idle durable with no attached client is GC'd after this),
+  `EventMaxDurableSubscriptions` (fallback 10 000 — over-cap creates return `503`). The durable
+  store is in-process (no cross-restart persistence).
+- **`SleipnirSubscriptionStore`** (SleipnirCore, DI singleton) holds the durable per-subscription
+  state: the kept-alive source subscription, a stable monotonic `eventId` counter (not reset on
+  reconnect), the bounded replay ring, a live-tap attach/detach, and TTL+cap GC.
+
 ### Added — Events: configurable per-event backpressure (experimental surface)
 - **`SleipnirOptions.EventBufferCapacity`** (int?, fallback 100) and
   **`SleipnirOptions.EventBackpressureStrategy`** (enum, default `DropOldest`) now configure the

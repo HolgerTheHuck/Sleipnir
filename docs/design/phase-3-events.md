@@ -82,13 +82,19 @@ public class ChatController(IChatService service)
    SignalR-native. (Client-seitig; Server muss Re-Subscribe erlauben.)
 3. **Gap-Semantik beim Reconnect**: Events während des Drops — drei Optionen:
    - (a) gap-akzeptierend (einfach weiter) — **v1, dokumentiert** ("at-most-once-while-disconnected")
-   - (b) `Last-Event-Id`-Resume — v1.x+
-   - (c) Server-Buffer — v1.x+
-   - **Entscheidung 2: (a) für v1, (b) v1.x+.**
+   - (b) `Last-Event-Id`-Resume — v1.x+ → **geliefert als Phase R (experimental)** für opt-in
+     `[SleipnirEvent(Resumable = true)]`: Client schickt `lastEventId`, Server replayed die Lücke
+     aus einem pro-durable-Subscription Ring-Buffer (at-least-once innerhalb des Fensters; Client
+     dedup'd per `eventId`).
+   - (c) Server-Buffer — v1.x+ → **geliefert als Phase R** (der Ring-Buffer aus (b)).
+   - **Entscheidung 2: (a) für v1, (b)/(c) geliefert als Phase R (experimental, opt-in `Resumable`).**
 4. **Auth pro Subscription**: Subscribe-Call läuft durch Auth (wie jeder Call). Aber die
    Subscription ist lange lebendig — Rolle/Policy können sich ändern. Mindestens: Auth zur
    Subscribe-Zeit prüfen. Besser (v1.x): Re-Check bei Reconnect.
-   - **Entscheidung 3: Auth zur Subscribe-Zeit für v1; Re-Check bei Reconnect v1.x+.**
+   - **Entscheidung 3: Auth zur Subscribe-Zeit für v1; Re-Check bei Reconnect v1.x+ → geliefert als
+     Phase R3.** Ein Resume re-prüft die Auth gegen die ORIGINAL-Route (serverseitig bei Erzeugung
+     hinterlegt, nicht client-behauptet); 401/403 auf Resume → Durable-Subscription wird
+     abgerissen und der Fehler zurückgegeben (kein stilles Resume nach widerrufener Rolle).
 
 ---
 
@@ -127,11 +133,18 @@ bestehenden `kind: "stream"` kollidieren. Codegen: TS → `Observable<T>` (rxjs-
 eigenes `SleipnirSubscription<T>`; C# → `IObservable<T>`.
 
 ### Entscheidung 2 — Gap-Semantik: at-most-once-while-disconnected (v1)
-v1: gap-akzeptierend, dokumentiert ("at-most-once-while-disconnected"). `Last-Event-Id`-Resume
-ist v1.x+. Jede Event-Frame trägt trotzdem `eventId` (monoton), damit Resume später möglich wird.
+v1: gap-akzeptierend, dokumentiert ("at-most-once-while-disconnected"). Jede Event-Frame trägt
+`eventId` (monoton pro Subscription). **Phase R (experimental, opt-in
+`[SleipnirEvent(Resumable = true)]`):** `Last-Event-Id`-Resume + Server-Buffer geliefert — der
+Client schickt `lastEventId`, der Server replayed die Lücke aus einem pro-durable-Subscription
+Ring-Buffer (at-least-once innerhalb des Replay-Fensters; Client dedup'd per `eventId`).
+Überlauf jenseits des Fensters bleibt verloren und wird in `sleipnir.event.dropped` gezählt.
 
 ### Entscheidung 3 — Auth zur Subscribe-Zeit (v1)
-v1: Auth zur Subscribe-Zeit (wie jeder Call). Re-Check bei Reconnect ist v1.x+. Auth-Interceptor
+v1: Auth zur Subscribe-Zeit (wie jeder Call). **Phase R3 (experimental):** Re-Check bei Reconnect
+geliefert — ein Resume re-prüft die Auth gegen die ORIGINAL-Route (serverseitig bei Erzeugung
+hinterlegt, nicht client-behauptet); 401/403 auf Resume → Durable-Subscription wird abgerissen
+und der Fehler zurückgegeben (kein stilles Resume nach widerrufener Rolle). Auth-Interceptor
 (Phase 1) läuft für Subscribe-Requests wie gehabt.
 
 ### Entscheidung 4 — Discovery-`kind: "event"`
@@ -171,9 +184,12 @@ Subscribe-Response ist eine `SleipnirResponse`, die die `subscriptionId` trägt.
 
 ## Abgrenzung (was Phase 3 *nicht* macht)
 
-- **Kein `Last-Event-Id`-Resume** (v1.x+).
-- **Kein Server-Buffer bei Disconnect** (v1.x+).
-- **Keine Bidirektionales Streaming** (Client→Server-Push) — das ist ein separates Modell.
+- **`Last-Event-Id`-Resume + Server-Buffer:** als **Phase R (experimental, opt-in
+  `[SleipnirEvent(Resumable = true)]`) geliefert** — at-least-once innerhalb des Replay-Fensters,
+  mit Reconnect-Auth-Re-Check (Phase R3) und prozess-lokalem Durable-Store. Außerhalb des
+  Fensters (Überlauf bei langer Disconnect-Lücke) bleiben Events verloren. Genau-once
+  (braucht per-Event-Acks) und Cross-Process-Durable (über Server-Restart) bleiben future.
+- **Kein Bidirektionales Streaming** (Client→Server-Push) — das ist ein separates Modell.
 - **Keine SignalR-Events in v1** (WS-only; SignalR folgt).
 - **Kein REST-Long-Polling.**
 
@@ -200,10 +216,44 @@ Subscribe-Response ist eine `SleipnirResponse`, die die `subscriptionId` trägt.
 - 3 Integration-Tests (Subscribe+Events+complete, Unsubscribe, NonObservable-400)
 - STABILITY.md §2: Events als experimental deklariert
 
+## Phase R — geliefert (Last-Event-Id-Resume, experimental)
+
+Opt-in two-axis: Server `[SleipnirEvent(Resumable = true)]` + Client-Resume-Policy
+(`ResumeDecision { Fresh, Resume, Drop }`). At-least-once innerhalb des Replay-Fensters;
+Client dedup'd per `eventId`; `subscriptionId` durable (stabil über Reconnects).
+
+- **R1 — Server-Durable-Store + Replay:** `SleipnirSubscriptionStore` (SleipnirCore, DI-Singleton)
+  hält pro-durable-Subscription: gehaltene `IObservable`-Source-Subscription, stabiler monotoner
+  `eventId`-Counter (nicht resettet), bounded Replay-Ring-Buffer (evict-oldest →
+  `sleipnir.event.dropped`), Live-Tap attach/detach, TTL+Cap-GC. `SleipnirSubscriptionManager`
+  brancht auf `result.Resumable`: durable create/resume (Detach bei Disconnect — Source+Buffer
+  bleiben) vs. unveränderter ephemeraler v1-Pfad; `DurableEventObserver`. WS-Middleware extrahiert
+  optionale `lastEventId`+`subscriptionId` aus dem Subscribe-Frame, surft `replayedFrom` in der
+  Resume-Response. 3 `SleipnirOptions`-Knobs (`EventReplayBufferCapacity` fb 1000, `EventResumeTtl`
+  fb 60s, `EventMaxDurableSubscriptions` fb 10k). 9 Unit- + 2 Integration-Tests.
+- **R2 — Client-Hook + `eventId`-Dedup (C# + TS):** `ResumeDecision.cs` (enum + context + policy-
+  delegate), wired via `SleipnirWebSocketClient`-Ctor `resumePolicy` + per-`SubscribeAsync`.
+  `TryDispatchEventFrame` capture'd `eventId`; `SleipnirSubscriptionHandler<T>` dedup'd
+  (`eventId <= lastSeen → drop`) + `LastEventId`-Cursor. `ResubscribeAllAsync` Fresh/Resume/Drop
+  (Resume pre-registriert den Handler unter der durable Id — Race-Fix für Replay-Frames vor der
+  asynchronen Post-Response-Registrierung); degrade-to-fresh (neue Id) resettet den Cursor.
+  TS-Spiegel in `websocket.ts` (`ResumeDecision`/`SubscriptionResumeContext`/`ResumePolicy` +
+  `SubscribeOptions`, `onResume`, `ActiveSubscription.lastEventId`, `dispatchEventFrame`-dedup,
+  `resubscribeAll`+`resubscribeResume`). Bugfix: `_subscribeRequests` war nach `requestId`
+  geschlüsselt, wurde aber per `subscriptionId` gesucht → Leak; jetzt per `subscriptionId`. 5 C# +
+  5 TS Resume-Tests.
+- **R3 — Reconnect-Auth-Re-Check + E2E:** `ISleipnirCore.AuthorizeSubscribeAsync(controller, method,
+  context)` re-prüft die Auth gegen die ORIGINAL-Route (bei Erzeugung hinterlegt, nicht
+  client-behauptet — kein Privilege-Eskalation über eine gelogene Route); 401/403/404 auf Resume →
+  `_store.Destroy` + Fehler (kein stilles Resume nach widerrufener Rolle).
+  `SleipnirTests/Integration/ResumeTests.cs` (4 E2E-Tests, je eigener Kestrel-Host): real-Client
+  Gap-Replay+Dedup, Over-Cap-Verlust, TTL→Fresh, Auth-Revoke→Teardown. Suite 518/518.
+
 ## Phase 3 v1 — offen (Client-Seite, post-Phase-3-v1)
 
 - **Codegen typisierte Subscribe-Oberfläche** (Schritt 4) — TS/C#-Emitter-Erweiterung
 - **Client-Test-Doubles** (Schritt 5) — mockbare ISleipnirClient + In-Memory-Transport
-- **Reconnect → Resubscribe im WS-Client** (Schritt 6) — Subscribe/Unsubscribe im SleipnirWebSocketClient + Reconnect-Logik
+- **Reconnect → Resubscribe im WS-Client** (Schritt 6) — Subscribe/Unsubscribe im SleipnirWebSocketClient + Reconnect-Logik ✓ (Phase R2)
 - **SignalR-Events** (v1.x+) — WS-only in v1
-- **Last-Event-Id-Resume** (v1.x+)
+- **Last-Event-Id-Resume** (v1.x+) ✓ (Phase R geliefert, experimental)
+- **Genau-once / Cross-Process-Durable** (future — braucht per-Event-Acks bzw. persistenten Backend)

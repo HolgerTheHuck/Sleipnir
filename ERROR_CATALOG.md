@@ -10,10 +10,10 @@
 >   within 1.x (STABILITY.md §1.4). This is what 1.0.0 clients bind to.
 > - **Semantic `category`** (`SleipnirError.category`, Phase 1, additive) — a machine-readable,
 >   transport-uniform enum that lets clients handle errors without parsing HTTP status +
->   JSON-RPC code + domain code. Anlehnung an gRPC status codes zur Senkung polyglotter
->   Adoption-Reibung.
+>   JSON-RPC code + domain code. Modeled on gRPC status codes to reduce polyglot
+>   adoption friction.
 >
-> The two layers are *additive*, not替代ional: the numeric code stays; the category layers on
+> The two layers are *additive*, not replacing: the numeric code stays; the category layers on
 > top. Existing 1.0.0 clients ignore `category` (it defaults to `None`) and keep working.
 
 ---

@@ -56,6 +56,50 @@ export interface WsCallOptions {
 }
 
 /**
+ * Per-subscribe options (Phase R, resume). Extends {@link WsCallOptions} with an optional
+ * per-subscription resume policy that overrides the client-wide `onResume` for this one
+ * subscription.
+ */
+export interface SubscribeOptions extends WsCallOptions {
+  /** Per-subscription reconnect decision hook (overrides the client-wide `onResume`). */
+  resumePolicy?: ResumePolicy;
+}
+
+/**
+ * Reconnect decision for a single event subscription (Phase R, resume). Consulted on
+ * auto-reconnect, per subscription, before re-subscribing.
+ *
+ * - `"fresh"` (the default) re-subscribes with a fresh subscription — today's behavior, a new
+ *   `subscriptionId`, the `eventId` counter restarts at 1, and events produced during the
+ *   disconnect are lost.
+ * - `"resume"` sends the durable `subscriptionId` + `lastEventId` so the server replays the gap
+ *   from its disconnect buffer (at-least-once within the replay-buffer window; the client dedups
+ *   by `eventId`). A Resume on a non-resumable event / expired buffer degrades to fresh (the
+ *   server returns a new `subscriptionId`).
+ * - `"drop"` ends the subscription without re-subscribing — the consumer's `onComplete` fires.
+ */
+export type ResumeDecision = "fresh" | "resume" | "drop";
+
+/**
+ * Context passed to a {@link ResumePolicy} on reconnect: the controller/method, the (durable)
+ * `subscriptionId` of the dropped subscription, and the last `eventId` the client processed
+ * (`null` when no event was received yet).
+ */
+export interface SubscriptionResumeContext {
+  readonly controller: string;
+  readonly method: string;
+  readonly subscriptionId: string;
+  readonly lastEventId: number | null;
+}
+
+/**
+ * Per-subscription reconnect policy. Returns a {@link ResumeDecision} for the given context, or
+ * `null` to abstain (the next policy in the fallback chain is consulted; a fully-null chain means
+ * `"fresh"`). Wired via the client-wide `onResume` option and overridable per `subscribe` call.
+ */
+export type ResumePolicy = (ctx: SubscriptionResumeContext) => ResumeDecision | null;
+
+/**
  * Event-Handler für eine Server-Push-Subscription (Phase 3). `onNext` wird pro
  * empfangenem Event-Frame mit dem deserialisierten Payload gerufen; `onComplete`/
  * `onError` beim Terminal-Frame. Ein Terminal-Frame beendet die Subscription
@@ -102,6 +146,12 @@ export interface SleipnirWebSocketClientOptions {
   reconnectDelays?: number[];
   /** Observer für Zustandswechsel (UI/Logs). */
   onStateChanged?: (state: SleipnirConnectionState) => void;
+  /**
+   * Client-wide resume policy (Phase R): consulted per subscription on auto-reconnect before
+   * re-subscribing. Default (absent) → `"fresh"` for every subscription (non-breaking, today's
+   * behavior). Overridable per `subscribe` call via `SubscribeOptions.resumePolicy`.
+   */
+  onResume?: ResumePolicy;
 }
 
 interface PendingCall {
@@ -119,6 +169,11 @@ interface PendingSubscribe {
   /** Original request (without `kind`) — retained for re-subscribe on reconnect. */
   request: SleipnirRequest;
   handlers: SubscribeHandlers<unknown>;
+  /** Phase R: when set, this pending subscribe is a resume re-subscribe — reuse the existing
+   * ActiveSubscription (preserve its dedup cursor) instead of creating a new entry. */
+  resumeEntry?: { oldId: string; entry: ActiveSubscription };
+  /** Phase R: per-subscribe resume policy override to store on the new ActiveSubscription. */
+  resumePolicy?: ResumePolicy;
   timer?: ReturnType<typeof setTimeout>;
   onCallerAbort?: () => void;
   callerSignal?: AbortSignal;
@@ -128,6 +183,11 @@ interface ActiveSubscription {
   handlers: SubscribeHandlers<unknown>;
   /** Original request (without `kind`) — re-sent verbatim on reconnect. */
   request: SleipnirRequest;
+  /** Phase R: highest event `eventId` processed for this subscription (0 = none yet). Used to
+   * dedup replayed frames (at-least-once within the replay window) and as the resume cursor. */
+  lastEventId: number;
+  /** Phase R: per-subscribe resume policy override (null → fall back to the client-wide `onResume`). */
+  resumePolicy?: ResumePolicy;
 }
 
 /** Monotonic client-side id counter for unsubscribe requests (avoids id reuse). */
@@ -183,6 +243,8 @@ export class SleipnirWebSocketClient {
   private readonly _reconnect: boolean;
   private readonly _reconnectDelays: number[];
   private readonly _onStateChanged?: (state: SleipnirConnectionState) => void;
+  /** Phase R: client-wide resume policy (null → Fresh for every subscription). */
+  private readonly _onResume?: ResumePolicy;
 
   private _ws?: IWebSocket;
   private _connectPromise?: Promise<void>;
@@ -208,6 +270,7 @@ export class SleipnirWebSocketClient {
     this._reconnectDelays = options.reconnectDelays ?? DEFAULT_RECONNECT_DELAYS;
     this._reconnect = (options.reconnect ?? true) && this._reconnectDelays.length > 0;
     this._onStateChanged = options.onStateChanged;
+    this._onResume = options.onResume;
   }
 
   /** Aktueller Verbindungs-Zustand (Observer-Oberfläche für UI/Logs). */
@@ -320,14 +383,19 @@ export class SleipnirWebSocketClient {
   async subscribe<T>(
     req: SleipnirRequest,
     handlers: SubscribeHandlers<T>,
-    opts?: WsCallOptions,
+    opts?: SubscribeOptions,
   ): Promise<SleipnirSubscription> {
     if (this._disposed) throw new Error("SleipnirWebSocketClient: disposed.");
     if (!req.id) req.id = `${req.controller}.${req.method}`;
     const id = req.id;
     await this.connect();
 
-    const promise = this.registerPendingSubscribe(id, req, handlers as SubscribeHandlers<unknown>, opts);
+    const promise = this.registerPendingSubscribe(
+      id,
+      req,
+      handlers as SubscribeHandlers<unknown>,
+      opts,
+    );
     try {
       const ws = this._ws;
       if (!ws || ws.readyState !== READY_OPEN) {
@@ -549,6 +617,7 @@ export class SleipnirWebSocketClient {
     request: SleipnirRequest,
     handlers: SubscribeHandlers<unknown>,
     opts: WsCallOptions | undefined,
+    resumeEntry?: { oldId: string; entry: ActiveSubscription },
   ): Promise<SleipnirSubscription> {
     let resolve!: (sub: SleipnirSubscription) => void;
     let reject!: (e: Error) => void;
@@ -557,7 +626,14 @@ export class SleipnirWebSocketClient {
       reject = rej;
     });
 
-    const pending: PendingSubscribe = { resolve, reject, request, handlers };
+    const pending: PendingSubscribe = {
+      resolve,
+      reject,
+      request,
+      handlers,
+      resumeEntry,
+      resumePolicy: (opts as SubscribeOptions | undefined)?.resumePolicy,
+    };
     const timeoutMs = opts?.timeout ?? this._callTimeout;
     if (timeoutMs && timeoutMs > 0) {
       pending.timer = setTimeout(
@@ -629,27 +705,88 @@ export class SleipnirWebSocketClient {
   }
 
   /**
-   * Re-abonniert alle aktiven Subscriptions nach einem Reconnect (Entscheidung 6:
-   * client-seitiger Re-subscribe mit neuen subscriptionIds, da die Connection neu
-   * ist). Die ursprünglichen Requests werden unverbatim neu gesendet; die Handler
-   * bleiben erhalten. Ein Fehlschlag pro Subscription -> onError (und Austrag aus
-   * der Map, da `subscribe` sie nur bei Erfolg einträgt).
+   * Re-subscribes all active subscriptions after a reconnect. Phase R: per subscription the resume
+   * policy is consulted (per-subscribe override → client-wide → `"fresh"`): `"fresh"` starts a new
+   * subscription (new id, gap lost — today's behavior); `"resume"` sends the durable
+   * `subscriptionId` + `lastEventId` so the server replays the gap; `"drop"` ends the subscription
+   * without re-subscribing (`onComplete`). A Resume the server cannot satisfy (TTL expired /
+   * non-resumable) degrades to fresh — the server returns a new `subscriptionId` and the dedup
+   * cursor resets.
    */
   private async resubscribeAll(): Promise<void> {
     if (this._subscriptions.size === 0) return;
     const old = [...this._subscriptions.entries()];
-    // `subscribe` trägt unter der neuen subscriptionId ein; die alten Einträge
-    // müssen weg, sonst blieben sie als Dead-Entries (neue Id != alte Id).
+    // `subscribe` registers under the new subscriptionId; the old entries must go or they linger
+    // as dead entries (new id != old id).
     this._subscriptions.clear();
-    for (const [, entry] of old) {
+    for (const [oldId, entry] of old) {
+      // Phase R: resolve the reconnect decision (per-subscribe → client-wide → fresh).
+      const policy = entry.resumePolicy ?? this._onResume;
+      const ctx: SubscriptionResumeContext = {
+        controller: entry.request.controller,
+        method: entry.request.method,
+        subscriptionId: oldId,
+        lastEventId: entry.lastEventId > 0 ? entry.lastEventId : null,
+      };
+      const decision = policy?.(ctx) ?? "fresh";
+
+      if (decision === "drop") {
+        try { entry.handlers.onComplete?.(); } catch { /* handler error not fatal */ }
+        continue;
+      }
+
       try {
-        // Re-subscribe mit demselben Request + denselben Handlern. `subscribe`
-        // setzt `kind:"subscribe"` und trägt unter der neuen server-seitigen Id ein.
-        await this.subscribe<unknown>(entry.request, entry.handlers);
+        if (decision === "resume") {
+          await this.resubscribeResume(oldId, entry);
+        } else {
+          // Fresh: reuse the public path, carrying the per-subscribe policy so a later reconnect
+          // still consults it. The cursor resets implicitly (new entry, lastEventId 0).
+          await this.subscribe<unknown>(entry.request, entry.handlers, {
+            resumePolicy: entry.resumePolicy,
+          });
+        }
       } catch (err) {
         const e = err instanceof Error ? err : new Error(String(err));
-        try { entry.handlers.onError?.(e); } catch { /* Handler-Fehler nicht fatal */ }
+        try { entry.handlers.onError?.(e); } catch { /* handler error not fatal */ }
       }
+    }
+  }
+
+  /**
+   * Phase R resume re-subscribe: sends `kind:"subscribe"` with the durable `subscriptionId` +
+   * `lastEventId` so the server replays the disconnect gap, reusing the existing entry (preserving
+   * its handlers + dedup cursor). Pre-registers under the durable id so any replay frame arriving
+   * before the response is dispatched. On a degraded-to-fresh response (new id), the cursor resets.
+   */
+  private async resubscribeResume(oldId: string, entry: ActiveSubscription): Promise<void> {
+    if (this._disposed) throw new Error("SleipnirWebSocketClient: disposed.");
+    await this.connect();
+    const ws = this._ws;
+    if (!ws || ws.readyState !== READY_OPEN) {
+      throw new SleipnirError(0, "WebSocket is not open.");
+    }
+    const id = `resume.${oldId}.${_unsubscribeIdSeq++}`;
+    const req: SleipnirRequest = { ...entry.request, id };
+    const promise = this.registerPendingSubscribe(id, req, entry.handlers, undefined, {
+      oldId,
+      entry,
+    });
+    // Pre-register under the durable id so replay frames arriving before the response are dispatched.
+    this._subscriptions.set(oldId, entry);
+    try {
+      ws.send(
+        JSON.stringify({ ...req, kind: "subscribe", subscriptionId: oldId, lastEventId: entry.lastEventId }),
+      );
+      await promise;
+    } catch (err) {
+      this._subscriptions.delete(oldId); // clean up the pre-registration on failure
+      this.rejectPendingSubscribe(
+        id,
+        err instanceof SleipnirError
+          ? err
+          : new SleipnirError(0, `WebSocket send error: ${(err as Error)?.message ?? err}`),
+      );
+      throw err instanceof Error ? err : new Error(String(err));
     }
   }
 
@@ -694,11 +831,19 @@ export class SleipnirWebSocketClient {
     this.dropUnmatched(text, key);
   }
 
-  /** Routet einen Event-/Complete-/Error-Frame an die aktive Subscription. */
+  /** Routes an event/complete/error frame to the active subscription. */
   private dispatchEventFrame(type: string, subscriptionId: string, obj: Record<string, unknown>): void {
     const entry = this._subscriptions.get(subscriptionId);
     if (!entry) return; // unsubscribe schon gelaufen / unbekannt -> verwerfen.
     if (type === "event") {
+      // Phase R: at-least-once dedup. The server replays the disconnect gap from its buffer; drop
+      // any frame whose eventId we have already processed (eventId <= last seen). Frames without
+      // an eventId (non-resumable sources) are forwarded verbatim — no dedup.
+      const evId = typeof obj.eventId === "number" ? obj.eventId : null;
+      if (evId !== null) {
+        if (evId <= entry.lastEventId) return; // replay duplicate
+        entry.lastEventId = evId;
+      }
       entry.handlers.onNext(obj.data);
     } else if (type === "complete") {
       this._subscriptions.delete(subscriptionId);
@@ -710,21 +855,43 @@ export class SleipnirWebSocketClient {
     }
   }
 
-  /** Verarbeitet eine Subscribe-Response: extrahiert subscriptionId, registriert die Subscription. */
+  /** Processes a subscribe response: extracts subscriptionId, registers the subscription. */
   private handleSubscribeResponse(key: string, resp: SleipnirResponse): void {
     const pending = this._pendingSubscribes.get(key);
     if (!pending) return;
     this.disposePendingSubscribe(key);
     if (!resp.isSuccess) {
+      // A failed resume re-subscribe must drop the pre-registered durable id so a later reconnect
+      // does not resurrect a dead entry.
+      if (pending.resumeEntry) this._subscriptions.delete(pending.resumeEntry.oldId);
       pending.reject(SleipnirError.fromResponse(resp));
       return;
     }
     const sid = extractSubscriptionId(resp);
     if (!sid) {
+      if (pending.resumeEntry) this._subscriptions.delete(pending.resumeEntry.oldId);
       pending.reject(new SleipnirError(resp.code ?? 0, "Subscribe response missing subscriptionId."));
       return;
     }
-    this._subscriptions.set(sid, { handlers: pending.handlers, request: pending.request });
+    if (pending.resumeEntry) {
+      // Phase R resume: reuse the existing entry (preserve its handlers + dedup cursor).
+      const { oldId, entry } = pending.resumeEntry;
+      if (sid !== oldId) {
+        // Degrade-to-fresh: the server returned a new id (TTL expired / non-resumable). The new
+        // server subscription restarts its eventId counter at 1, so the stale cursor must reset or
+        // the fresh stream would be deduped away. Drop the pre-registered old id; re-key under sid.
+        entry.lastEventId = 0;
+        this._subscriptions.delete(oldId);
+      }
+      this._subscriptions.set(sid, entry);
+    } else {
+      this._subscriptions.set(sid, {
+        handlers: pending.handlers,
+        request: pending.request,
+        lastEventId: 0,
+        resumePolicy: pending.resumePolicy,
+      });
+    }
     pending.resolve({
       subscriptionId: sid,
       unsubscribe: () => this.unsubscribe(sid),

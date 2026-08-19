@@ -100,11 +100,23 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         // A resume carries the durable subscriptionId + the last eventId the client processed.
         // If the durable state still lives in the store, re-attach a live tap and replay the
         // gap. If it has been GC'd (TTL expired) or was never resumable, fall through to a
-        // fresh subscribe (degrade — documented). R1 does not re-check auth here (R3 wires
-        // the reconnect auth re-check; safe because no client resumes until R2 ships the hook).
+        // fresh subscribe (degrade — documented).
         if (!string.IsNullOrEmpty(resumeSubscriptionId)
             && _store.Lookup(resumeSubscriptionId!) is { } existingState)
         {
+            // Phase R3: re-run the SAME authorization a fresh subscribe runs, against the
+            // ORIGINAL controller/method recorded at create time (NOT the client-claimed route —
+            // a caller cannot lie about the route to land a weaker auth check). A role revoked
+            // during the disconnect gap must not silently resume. On 401/403 (or 404 if the
+            // route vanished) tear down the durable subscription and return the error.
+            var authError = await _sleipnirCore.AuthorizeSubscribeAsync(
+                existingState.Controller!, existingState.Method!, context);
+            if (authError != null)
+            {
+                _store.Destroy(resumeSubscriptionId!);
+                return authError;
+            }
+
             var tap = existingState.Attach(lastEventId ?? 0);
             _attachedDurable[tap.SubscriptionId] = 1;
             _store.OnAttached();   // gauge: a client is (re)attached to this durable subscription
@@ -141,6 +153,12 @@ internal sealed class SleipnirSubscriptionManager : IAsyncDisposable
         if (state == null)
             return SleipnirResults.Error(SleipnirErrorCodes.ServiceUnavailable, "Durable subscription cap reached — retry later.",
                 SleipnirCommon.Results.SleipnirErrorCategory.ResourceExhausted);
+
+        // Record the ORIGINAL route so a reconnect resume can re-run authorization against the
+        // real event (not a client-claimed route). Set before the source is subscribed so the
+        // state is consistent even if an event arrives synchronously on Subscribe.
+        state.Controller = request.Controller;
+        state.Method = request.Method;
 
         // Subscribe the observer FIRST so events produced before Attach land in the ring
         // buffer (the attach snapshot then replays them — no lost events on the create path).

@@ -60,3 +60,39 @@ public class ResumableEventController
     [SleipnirEvent("Tick", Resumable = true)]
     public IObservable<string> Tick() => Stream;
 }
+
+/// <summary>
+/// Dedicated resumable hot stream for the Phase R3 end-to-end <c>ResumeTests</c>. Lives apart from
+/// <see cref="ResumableEventController.Stream"/> (used by <c>WebSocketResumeTests</c>) so the two
+/// integration-test classes can run in parallel without cross-broadcasting pushed values into each
+/// other's durable observers — <see cref="HotObservable{T}"/> fans a <c>Push</c> out to every
+/// currently-subscribed observer, and a durable observer stays subscribed to the singleton for the
+/// durable's lifetime. The R3 tests run sequentially within their class, so they share this one
+/// stream safely; host disposal tears down the durable store and unsubscribes between tests.
+/// </summary>
+[SleipnirController("E2EResumeEvent")]
+public class E2EResumeEventController
+{
+    public static readonly HotObservable<string> Stream = new();
+
+    [SleipnirEvent("Tick", Resumable = true)]
+    public IObservable<string> Tick() => Stream;
+}
+
+/// <summary>
+/// Auth-protected resumable event for the Phase R3 reconnect auth re-check test. The method is
+/// gated by <c>[SleipnirAuthorise(Role = "Admin")]</c>; a fresh subscribe succeeds only with an
+/// authenticated Admin principal, and a reconnect resume re-runs that same check (Phase R3a). A
+/// resume arriving without credentials (role revoked / token dropped during the disconnect gap)
+/// must be rejected with 401 and the durable subscription torn down. Uses its own hot stream so
+/// it does not interfere with <see cref="ResumableEventController.Stream"/>.
+/// </summary>
+[SleipnirController("AuthedResumableEvent")]
+public class AuthedResumableEventController
+{
+    public static readonly HotObservable<string> Stream = new();
+
+    [SleipnirEvent("SecureTick", Resumable = true)]
+    [SleipnirAuthorise(Role = "Admin")]
+    public IObservable<string> SecureTick() => Stream;
+}

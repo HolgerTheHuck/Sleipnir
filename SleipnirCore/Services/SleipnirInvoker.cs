@@ -466,6 +466,37 @@ namespace SleipnirCore.Services
             }
         }
 
+        /// <summary>
+        /// Phase R (resume): re-runs the same authorization a fresh <see cref="SubscribeAsync"/>
+        /// runs, without re-invoking the controller method. The subscription manager calls this on
+        /// a reconnect resume (with the ORIGINAL controller/method recorded on the durable state,
+        /// not the client-claimed ones — so a caller cannot lie about the route to land a weaker
+        /// auth check). Returns <c>null</c> when authorized; otherwise the 401/403 (or 404 if the
+        /// route vanished) response the manager returns to the client while tearing down the
+        /// durable subscription. Mirrors the auth prefix of <see cref="SubscribeAsync"/>.
+        /// </summary>
+        public async Task<SleipnirResponse?> AuthorizeSubscribeAsync(
+            string controller, string method, HttpContext? context)
+        {
+            var controllerType = GetControllerType(controller);
+            if (controllerType == null)
+                return BadRequest($"Controller '{controller}' not found.", HttpStatusCode.NotFound);
+
+            string key = $"{controller}_{method}";
+            if (!_invokeCache.TryGetValue(key, out var invokeInfo))
+                return BadRequest($"Method '{method}' not found on controller '{controller}'.");
+
+            if (!invokeInfo.IsEvent)
+                return BadRequest(
+                    $"Method '{method}' on controller '{controller}' is not an event; " +
+                    $"mark it with [SleipnirEvent] to make it subscribable.");
+
+            try { await CheckAuthorisation(invokeInfo, context); }
+            catch (UnauthorizedAccessException) { return Unauthorized(); }
+            catch (ForbiddenAccessException) { return Forbidden(); }
+
+            return null;
+        }
 
         #endregion
 

@@ -44,6 +44,20 @@ namespace SleipnirCore.Services
             HttpContext? context,
             CancellationToken ct = default);
 
+        /// <summary>
+        /// Phase R (resume): re-runs the same authorization a fresh subscribe runs, without
+        /// re-invoking the controller method. The durable-subscription store records the
+        /// controller/method of the ORIGINAL subscribe; on reconnect the subscription manager
+        /// calls this to re-check that the caller is still authorized (a role revoked during the
+        /// disconnect gap must not silently resume). Returns <c>null</c> when authorized, or the
+        /// 401/403 (or 404 if the route vanished) <see cref="SleipnirResponse"/> to return to the
+        /// client — and the caller tears down the durable subscription on a non-null result.
+        /// </summary>
+        Task<SleipnirResponse?> AuthorizeSubscribeAsync(
+            string controller,
+            string method,
+            HttpContext? context);
+
         DiscoveryInfo GetDiscoveryInfo();
 
         /// <summary>

@@ -599,8 +599,10 @@ they carry no `id`/`exposes`/`@alias` semantics (a stream of push values has no 
 expose). See `STABILITY.md` §2 for the experimental-status scope.
 
 > **Status:** experimental in v1. The wire format, subscription lifecycle, and backpressure
-> may settle in a minor version. `Last-Event-Id` resume and a server-side disconnect buffer are
-> deferred to v1.x+. See `docs/design/phase-3-events.md`.
+> may settle in a minor version. **`Last-Event-Id` resume + a server-side disconnect buffer ship as
+> experimental (Phase R)** for opt-in `[SleipnirEvent(Resumable = true)]` events — see
+> [Resume (Last-Event-Id)](#resume-last-event-id--resumable-events) below. See
+> `docs/design/phase-3-events.md`.
 
 ### Routing: the `kind` field
 
@@ -638,6 +640,32 @@ Same shape as a call request, plus `kind:"subscribe"`:
 Parameters are **first-class subscription parameters** — bound once at subscribe time (e.g.
 "all events for chat 42"). `CancellationToken` is injected automatically and not sent.
 
+**Resume fields (optional, Phase R).** A reconnecting client may carry two extra fields to resume
+a durable subscription instead of starting fresh:
+
+```json
+{
+  "kind": "subscribe",
+  "controller": "Chat",
+  "method": "MessageReceived",
+  "subscriptionId": "7a3f9c1e8b4d4e2a9b6f0c1d2e3f4a5b",
+  "lastEventId": 42,
+  "params": [ { "parameterName": "chatId", "data": 42 } ],
+  "id": "sub-resume"
+}
+```
+
+- `subscriptionId` — the **durable** id returned by the original subscribe (stable across
+  reconnects). Present only on a resume; absent on a fresh subscribe.
+- `lastEventId` — the highest `eventId` the client has already processed. The server replays
+  buffered frames with `eventId > lastEventId`, then continues live.
+
+Both fields are extracted out-of-band from the raw frame so the `SleipnirRequest` wire model is
+untouched. A resume for a non-resumable event, an unknown/GC'd id, or an over-cap/TTL-expired
+durable subscription **degrades to a fresh subscribe** (new id, `eventId` restarts at 1, no
+replay) — the server never errors on a resume it cannot honor. A resume that fails the reconnect
+auth re-check returns `401`/`403` and tears down the durable state (see *Delivery semantics*).
+
 ### Subscribe response (server → client)
 
 A standard `SleipnirResponse` echoing `id`, with the new `subscriptionId` in `data`:
@@ -645,6 +673,17 @@ A standard `SleipnirResponse` echoing `id`, with the new `subscriptionId` in `da
 ```json
 { "code": 200, "data": { "subscriptionId": "7a3f9c1e8b4d4e2a9b6f0c1d2e3f4a5b" }, "id": "sub-1" }
 ```
+
+On a **resume**, the response carries `replayedFrom` — the first replayed `eventId` (absent on a
+fresh subscribe or when nothing was buffered):
+
+```json
+{ "code": 200, "data": { "subscriptionId": "7a3f9c1e…", "replayedFrom": 43 }, "id": "sub-resume" }
+```
+
+The `subscriptionId` is the **same durable id** the client sent when the resume is honored; it is a
+**new** id when the server degraded to fresh (the client must re-key its handler and reset its
+dedup cursor).
 
 Errors use the normal response error envelope. `code` follows the same semantics as calls:
 
@@ -657,8 +696,11 @@ Errors use the normal response error envelope. `code` follows the same semantics
 | `500`  | Internal error (generic message; stack only with `EnableDetailedErrors`) |
 
 **Auth runs at subscribe time**, exactly like a call (through the same auth interceptor and
-`[SleipnirAuthorise]` / `[SleipnirAnonymous]` gates). A subscription is long-lived; re-checking
-authorization on reconnect is deferred to v1.x+.
+`[SleipnirAuthorise]` / `[SleipnirAnonymous]` gates). A subscription is long-lived; a **resumable**
+subscription also **re-runs the same authorization on reconnect** (Phase R3) — a resume re-checks
+the caller against the *original* event route (recorded server-side at create time, not the
+client-claimed one), so a role revoked during the disconnect gap cannot silently resume. A 401/403
+on resume tears down the durable subscription and returns the error.
 
 ### Event frames (server → client)
 
@@ -671,8 +713,10 @@ are a **separate frame type** — they have **no `code` and no `id`** and are co
 { "type": "event", "subscriptionId": "7a3f9c1e…", "eventId": 2, "data": { "from": "bob",   "text": "yo" } }
 ```
 
-- `eventId` is a **monotonically increasing integer per subscription** (starts at 1). It is
-  present today so a future `Last-Event-Id` resume can replay from a known point (v1.x+).
+- `eventId` is a **monotonically increasing integer per subscription** (starts at 1). For a
+  resumable subscription the counter is **stable across reconnects** (a durable subscription keeps
+  one counter for its lifetime); the client uses it as a dedup cursor (drop `eventId ≤ lastSeen`)
+  and as the `lastEventId` to resume from.
 - `data` is the serialized `T` (the observable's element type), using the same JSON options as
   call results (camelCase output, case-insensitive read).
 - Frames may interleave with call responses on the same socket; a client distinguishes them by
@@ -716,17 +760,24 @@ subscribed on this connection):
 
 ### Subscription lifecycle & delivery semantics
 
-- **`subscriptionId` is per-connection.** A new WebSocket connection gets fresh ids; ids from a
-  different connection are not valid here.
+- **`subscriptionId` is per-connection by default.** A new WebSocket connection gets fresh ids;
+  ids from a different connection are not valid here. **Resumable** events (Phase R) mint a
+  **durable** id that is stable across reconnects — see
+  [Resume (Last-Event-Id)](#resume-last-event-id--resumable-events) below.
 - **Auto-cleanup on disconnect.** When the socket closes, the server disposes every active
-  subscription on that connection (the observable's subscription is disposed, freeing the
-  server-side source).
+  **ephemeral** subscription on that connection (the observable's subscription is disposed,
+  freeing the server-side source). A **durable** subscription only *detaches* its live tap — the
+  source + replay buffer persist for resume.
 - **Reconnect → re-subscribe (client-side).** A client with auto-reconnect re-issues
   `kind:"subscribe"` for each active subscription with the original parameters after a reconnect,
-  obtaining new `subscriptionId`s. The `SleipnirWebSocketClient` does this automatically.
-- **At-most-once-while-disconnected.** Events produced while the connection is down are **lost**
-  — there is no server-side buffer in v1. This is the documented gap semantic; `Last-Event-Id`
-  resume + server buffer are v1.x+.
+  obtaining new `subscriptionId`s. The `SleipnirWebSocketClient` does this automatically. The
+  resume hook (Phase R2) chooses per subscription **Resume** (send `lastEventId`+durable id),
+  **Fresh** (omit them), or **Drop** (don't re-subscribe) — default Fresh preserves the v1
+  behavior.
+- **Non-resumable: at-most-once-while-disconnected.** For a plain `[SleipnirEvent]` (not
+  `Resumable`), events produced while the connection is down are **lost** — there is no
+  server-side buffer. This is the documented gap semantic for the non-resumable path.
+- **Resumable: at-least-once within the replay window** (Phase R) — see the resume subsection.
 - **Backpressure.** Per subscription the server holds a buffer whose capacity and overflow
   strategy are configurable: global defaults `SleipnirOptions.EventBufferCapacity` (fallback 100)
   and `SleipnirOptions.EventBackpressureStrategy` (default `DropOldest`), overridable per event via
@@ -744,9 +795,56 @@ subscribed on this connection):
   behavior is entirely the producer's. A **cold** source gives each subscriber an independent
   stream from its own start; a **hot** source (e.g. a shared `Subject<T>`) broadcasts to all
   current subscribers and does not replay pre-subscribe events. The at-most-once-while-disconnected
-  rule applies to both: a hot source keeps producing while you are disconnected and those events
-  are lost; a cold source simply restarts on re-subscribe. Build shared-broadcast semantics in
-  the producer (a singleton subject) — the framework will not infer them.
+  rule applies to both on the non-resumable path: a hot source keeps producing while you are
+  disconnected and those events are lost; a cold source simply restarts on re-subscribe.
+  **Resume is meaningful only for a hot/durable source** — see the resume subsection. Build
+  shared-broadcast semantics in the producer (a singleton subject) — the framework will not
+  infer them.
+
+### Resume (Last-Event-Id) — resumable events
+
+**Phase R (experimental).** A `[SleipnirEvent(Resumable = true)]` declares the event source is a
+**long-lived hot/durable observable** whose subscription is meaningful to keep alive across a
+disconnect. The server maintains a per-durable-subscription disconnect buffer; on reconnect the
+client sends `lastEventId` and the server replays the gap. This is **opt-in on two axes**, both
+required for resume:
+
+1. **Server axis:** `[SleipnirEvent(Resumable = true)]` — the server keeps the `IObservable<T>`
+   source subscribed across disconnects and buffers events into a bounded replay ring. Non-
+   resumable events keep the v1 ephemeral behavior unchanged.
+2. **Client axis:** a per-subscription **resume policy** (`SleipnirWebSocketClient` constructor
+   `resumePolicy` / per-`SubscribeAsync` override; `onResume` in the TS client) decides per
+   subscription **Resume** (send `lastEventId` + the durable id), **Fresh** (omit them), or **Drop**
+   (don't re-subscribe). Default is Fresh (preserves v1 behavior). Resume is honored only when the
+   event is `Resumable`; a Resume on a non-resumable event degrades to Fresh.
+
+**Delivery semantics — at-least-once within the replay window.** Exactly-once is impossible
+without per-event acks (none in v1). The client **dedups by `eventId`**: it tracks the highest
+`eventId` seen per subscription and silently drops replayed frames with `eventId ≤ lastSeen`. Net
+effect: no gap within the buffer window, no duplicates after dedup. Events beyond the window
+(overflow during a long disconnect) are still lost and counted in `sleipnir.event.dropped`.
+
+**Durable subscriptionId.** For a resumable subscription the `subscriptionId` is server-generated
+once, returned in the first subscribe response, and **stable across reconnects**. Event frames
+carry the same id across reconnects, so the client's per-subscription handler key is stable (no
+id-swap churn on resume). When the server cannot honor a resume it returns a **new** id (degrade
+to fresh); the client re-keys its handler and resets its dedup cursor.
+
+**Reconnect auth re-check.** A resume re-runs the same authorization a fresh subscribe runs,
+against the **original** controller/method recorded server-side at create time (not the
+client-claimed route — a caller cannot lie about the route to land a weaker auth check). A role
+revoked during the disconnect gap must not silently resume: a 401/403 on resume tears down the
+durable subscription and returns the error; a 404 (route vanished) does the same.
+
+**Retention / GC / DoS backstop.** A durable subscription is evicted after a configurable idle
+`SleipnirOptions.EventResumeTtl` (fallback 60s) with no attached client, or on explicit
+unsubscribe, or when the source completes/errors. A process-wide cap
+`SleipnirOptions.EventMaxDurableSubscriptions` (fallback 10 000) rejects over-cap creates with
+`503`. The replay ring is capped at `SleipnirOptions.EventReplayBufferCapacity` (fallback 1000),
+evicting oldest (each eviction increments `sleipnir.event.dropped`).
+
+**In-process only.** The durable store lives in-process; it does not survive a server restart
+(no persistent backend). Cross-process durability is a later extension.
 
 ### Discovery
 

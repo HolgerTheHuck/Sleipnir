@@ -13,10 +13,14 @@ export {
   SleipnirWebSocketClient,
   type SleipnirWebSocketClientOptions,
   type WsCallOptions,
+  type SubscribeOptions,
   type IWebSocket,
   type WsFactory,
   type SubscribeHandlers,
   type SleipnirSubscription,
+  type ResumeDecision,
+  type SubscriptionResumeContext,
+  type ResumePolicy,
 } from "./websocket.js";
 export { buildParams, buildSingle, buildMulti, toBase64, fromBase64 } from "./request.js";
 

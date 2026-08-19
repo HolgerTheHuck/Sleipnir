@@ -353,8 +353,13 @@ describe("SleipnirWebSocketClient — Phase 3 subscribe", () => {
   function subResp(id: string, subscriptionId: string): string {
     return JSON.stringify({ code: 200, data: { subscriptionId }, id, isSuccess: true });
   }
-  function eventFrame(sid: string, data: unknown, eventId = 1): string {
-    return JSON.stringify({ type: "event", subscriptionId: sid, eventId, data });
+  // Phase R: the real server stamps a monotonic eventId per subscription (from 1). The helper
+  // auto-increments by default so distinct events carry distinct ids (otherwise client-side dedup
+  // would correctly collapse them); pass an explicit eventId to test dedup/replay behavior.
+  let _eventFrameSeq = 0;
+  function eventFrame(sid: string, data: unknown, eventId?: number): string {
+    const id = eventId ?? ++_eventFrameSeq;
+    return JSON.stringify({ type: "event", subscriptionId: sid, eventId: id, data });
   }
   function completeFrame(sid: string): string {
     return JSON.stringify({ type: "complete", subscriptionId: sid });
@@ -493,6 +498,141 @@ describe("SleipnirWebSocketClient — Phase 3 subscribe", () => {
     // Delivery resumes under the new subscriptionId (at-most-once: gap events lost).
     ws2.fireMessage(eventFrame("s5b", 2));
     await vi.waitFor(() => expect(seen).toEqual([1, 2]), { interval: 1, timeout: 1000 });
+    client.dispose();
+  });
+
+  // --- Phase R: resume decision hook (Fresh / Resume / Drop) + eventId dedup ---
+
+  it("Phase R: dedup drops replayed eventId, forwards fresh ids only", async () => {
+    const { client, ref } = makeClient({ reconnect: false });
+    const seen: string[] = [];
+    const p = client.subscribe<string>(
+      { controller: "C", method: "M", params: [], id: "sub-dedup" },
+      { onNext: (v) => seen.push(v) },
+    );
+    const ws = ref.ws!;
+    ws.fireOpen();
+    await vi.waitFor(() => expect(ws.sent.length).toBe(1), { interval: 1, timeout: 1000 });
+    ws.fireMessage(subResp("sub-dedup", "sd"));
+    await p;
+
+    ws.fireMessage(eventFrame("sd", "a", 1));
+    ws.fireMessage(eventFrame("sd", "a-again", 1)); // replayed eventId → deduped
+    ws.fireMessage(eventFrame("sd", "b", 2));
+    await vi.waitFor(() => expect(seen).toEqual(["a", "b"]), { interval: 1, timeout: 1000 });
+    client.dispose();
+  });
+
+  it("Phase R: default policy (fresh) re-subscribes without resume fields", async () => {
+    const { client, ref } = makeClient({ reconnectDelays: [10] });
+    const p = client.subscribe<number>(
+      { controller: "C", method: "M", params: [], id: "sub-fresh" },
+      { onNext: () => {} },
+    );
+    const ws1 = ref.ws!;
+    ws1.fireOpen();
+    await vi.waitFor(() => expect(ws1.sent.length).toBe(1), { interval: 1, timeout: 1000 });
+    ws1.fireMessage(subResp("sub-fresh", "sf"));
+    await p;
+
+    ws1.fireClose(1001);
+    await vi.waitFor(() => expect(ref.created).toBe(2), { interval: 1, timeout: 1000 });
+    const ws2 = ref.ws!;
+    ws2.fireOpen();
+    await vi.waitFor(
+      () => expect(ws2.sent.some((s) => JSON.parse(s).kind === "subscribe")).toBe(true),
+      { interval: 1, timeout: 1000 },
+    );
+    const subFrame = ws2.sent.map((s) => JSON.parse(s)).find((o) => o.kind === "subscribe");
+    expect(subFrame.subscriptionId).toBeUndefined();
+    expect(subFrame.lastEventId).toBeUndefined();
+    client.dispose();
+  });
+
+  it("Phase R: resume policy re-subscribes with the durable subscriptionId + lastEventId", async () => {
+    const { client, ref } = makeClient({ reconnectDelays: [10], onResume: () => "resume" as const });
+    const seen: number[] = [];
+    const p = client.subscribe<number>(
+      { controller: "C", method: "M", params: [], id: "sub-resume" },
+      { onNext: (n) => seen.push(n) },
+    );
+    const ws1 = ref.ws!;
+    ws1.fireOpen();
+    await vi.waitFor(() => expect(ws1.sent.length).toBe(1), { interval: 1, timeout: 1000 });
+    ws1.fireMessage(subResp("sub-resume", "sr"));
+    await p;
+    // Process one event so the client's lastEventId cursor becomes 1.
+    ws1.fireMessage(eventFrame("sr", 100, 1));
+    await vi.waitFor(() => expect(seen).toEqual([100]), { interval: 1, timeout: 1000 });
+
+    ws1.fireClose(1001);
+    await vi.waitFor(() => expect(ref.created).toBe(2), { interval: 1, timeout: 1000 });
+    const ws2 = ref.ws!;
+    ws2.fireOpen();
+    await vi.waitFor(
+      () => expect(ws2.sent.some((s) => JSON.parse(s).kind === "subscribe")).toBe(true),
+      { interval: 1, timeout: 1000 },
+    );
+    const subFrame = ws2.sent.map((s) => JSON.parse(s)).find((o) => o.kind === "subscribe");
+    expect(subFrame.subscriptionId).toBe("sr");
+    expect(subFrame.lastEventId).toBe(1);
+    client.dispose();
+  });
+
+  it("Phase R: drop policy does not re-subscribe and fires onComplete", async () => {
+    const { client, ref } = makeClient({ reconnectDelays: [10], onResume: () => "drop" as const });
+    let completed = false;
+    const p = client.subscribe<number>(
+      { controller: "C", method: "M", params: [], id: "sub-drop" },
+      { onNext: () => {}, onComplete: () => { completed = true; } },
+    );
+    const ws1 = ref.ws!;
+    ws1.fireOpen();
+    await vi.waitFor(() => expect(ws1.sent.length).toBe(1), { interval: 1, timeout: 1000 });
+    ws1.fireMessage(subResp("sub-drop", "sdrop"));
+    await p;
+
+    ws1.fireClose(1001);
+    await vi.waitFor(() => expect(ref.created).toBe(2), { interval: 1, timeout: 1000 });
+    const ws2 = ref.ws!;
+    ws2.fireOpen();
+    await tick();
+    // No re-subscribe frame on the new socket.
+    expect(ws2.sent.some((s) => JSON.parse(s).kind === "subscribe")).toBe(false);
+    await vi.waitFor(() => expect(completed).toBe(true), { interval: 1, timeout: 1000 });
+    client.dispose();
+  });
+
+  it("Phase R: resume not honored by the server degrades to fresh (cursor resets, delivery resumes)", async () => {
+    const { client, ref } = makeClient({ reconnectDelays: [10], onResume: () => "resume" as const });
+    const seen: number[] = [];
+    const p = client.subscribe<number>(
+      { controller: "C", method: "M", params: [], id: "sub-degrade" },
+      { onNext: (n) => seen.push(n) },
+    );
+    const ws1 = ref.ws!;
+    ws1.fireOpen();
+    await vi.waitFor(() => expect(ws1.sent.length).toBe(1), { interval: 1, timeout: 1000 });
+    ws1.fireMessage(subResp("sub-degrade", "sdg"));
+    await p;
+    ws1.fireMessage(eventFrame("sdg", 100, 1));
+    await vi.waitFor(() => expect(seen).toEqual([100]), { interval: 1, timeout: 1000 });
+
+    ws1.fireClose(1001);
+    await vi.waitFor(() => expect(ref.created).toBe(2), { interval: 1, timeout: 1000 });
+    const ws2 = ref.ws!;
+    ws2.fireOpen();
+    await vi.waitFor(
+      () => expect(ws2.sent.some((s) => JSON.parse(s).kind === "subscribe")).toBe(true),
+      { interval: 1, timeout: 1000 },
+    );
+    const subFrame = ws2.sent.map((s) => JSON.parse(s)).find((o) => o.kind === "subscribe");
+    expect(subFrame.subscriptionId).toBe("sdg"); // client requested resume with the durable id
+    // Server degrades: returns a NEW subscriptionId (not "sdg").
+    ws2.fireMessage(subResp(subFrame.id, "sdg-fresh"));
+    // The fresh server stream restarts its eventId at 1; the cursor was reset → delivered.
+    ws2.fireMessage(eventFrame("sdg-fresh", 200, 1));
+    await vi.waitFor(() => expect(seen).toEqual([100, 200]), { interval: 1, timeout: 1000 });
     client.dispose();
   });
 });

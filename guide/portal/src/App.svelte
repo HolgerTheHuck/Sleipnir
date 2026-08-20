@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { client, SEED_SYMBOLS } from "./lib/api.js";
+  import { Batch } from "./api/index.js";
   import type { Quote } from "./api/types.js";
 
   type Card = { symbol: string; quote: Quote | null; loading: boolean; error: string | null };
@@ -8,6 +9,10 @@
   let cards: Card[] = $state([]);
   let newSymbol = $state("");
   let transportLabel = $state("auto (probing…)");
+  // Chapter 5: "batch" sends ONE SleipnirMultiRequest of N GetQuote calls (one roundtrip,
+  // composing existing methods); "bulk" calls the single Market.GetQuotes endpoint. Chapter 4
+  // did Promise.all of N calls = N roundtrips; both options below are one roundtrip.
+  let fetchMode: "batch" | "bulk" = $state("batch");
 
   // Negotiate the `auto` profile once on mount so the badge reflects what the router
   // actually settled on (WebSocket, or the REST+SSE fallback). Negotiation is optional —
@@ -22,29 +27,41 @@
     await refreshAll();
   });
 
-  async function fetchOne(symbol: string): Promise<Card> {
-    const card: Card = { symbol, quote: null, loading: true, error: null };
-    try {
-      const res = await client.call(client.market.getQuote(symbol));
-      // getQuote returns null for an unknown symbol — surface it as a friendly error.
-      if (res.code === 200 && res.data === null) {
-        card.error = `unknown symbol "${symbol}"`;
-      } else if (res.code === 200) {
-        card.quote = res.data;
-      } else {
-        card.error = res.error?.message ?? `HTTP ${res.code}`;
-      }
-    } catch (e) {
-      card.error = e instanceof Error ? e.message : String(e);
-    } finally {
-      card.loading = false;
-    }
-    return card;
-  }
-
   async function refreshAll() {
     cards = SEED_SYMBOLS.map((s) => ({ symbol: s, quote: null, loading: true, error: null }));
-    cards = await Promise.all(cards.map((c) => fetchOne(c.symbol)));
+    const symbols = cards.map((c) => c.symbol);
+    try {
+      if (fetchMode === "bulk") {
+        // One method, one roundtrip: Market.GetQuotes(symbols) → Quote[] (unknown symbols skipped).
+        const res = await client.call(client.market.getQuotes(symbols));
+        if (res.code === 200 && res.data) {
+          // The server skips unknown symbols; align cards by symbol, mark missing as unknown.
+          const bySymbol = new Map(res.data.map((q) => [q.symbol, q]));
+          cards = cards.map((c) => {
+            const q = bySymbol.get(c.symbol) ?? null;
+            return { symbol: c.symbol, quote: q, loading: false, error: q ? null : `unknown symbol "${c.symbol}"` };
+          });
+        } else {
+          cards = cards.map((c) => ({ ...c, loading: false, error: res.error?.message ?? `HTTP ${res.code}` }));
+        }
+      } else {
+        // One roundtrip, N existing GetQuote calls — no server method needed. The generated
+        // Batch builder is Serial (designed for @alias chaining, chapter 6); for independent
+        // fan-out, Serial still means one roundtrip — the server just sequences the calls.
+        const b = new Batch();
+        for (const s of symbols) b.add(client.market.getQuote(s)).named(s);
+        const responses = await client.batch(b);
+        cards = cards.map((c, i) => {
+          const r = responses[i];
+          if (r && r.code === 200 && r.data === null) return { symbol: c.symbol, quote: null, loading: false, error: `unknown symbol "${c.symbol}"` };
+          if (r && r.code === 200) return { symbol: c.symbol, quote: r.data as Quote, loading: false, error: null };
+          return { symbol: c.symbol, quote: null, loading: false, error: r?.error?.message ?? `HTTP ${r?.code}` };
+        });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      cards = cards.map((c) => ({ ...c, loading: false, error: msg }));
+    }
   }
 
   async function addSymbol() {
@@ -55,8 +72,19 @@
       return;
     }
     newSymbol = "";
-    const card = await fetchOne(symbol);
+    // Adding one symbol = one GetQuote call (a batch of one buys nothing here).
+    const card: Card = { symbol, quote: null, loading: true, error: null };
     cards = [...cards, card];
+    try {
+      const res = await client.call(client.market.getQuote(symbol));
+      if (res.code === 200 && res.data === null) card.error = `unknown symbol "${symbol}"`;
+      else if (res.code === 200) card.quote = res.data;
+      else card.error = res.error?.message ?? `HTTP ${res.code}`;
+    } catch (e) {
+      card.error = e instanceof Error ? e.message : String(e);
+    } finally {
+      card.loading = false;
+    }
   }
 
   function trend(q: Quote | null): string {
@@ -76,6 +104,12 @@
   <h1>Story Portal</h1>
   <p class="muted">Sleipnir unified transport — live market quotes</p>
   <p class="transport">transport: <strong>{transportLabel}</strong></p>
+
+  <fieldset class="mode">
+    <legend>Fetch (chapter 5)</legend>
+    <label><input type="radio" name="mode" value="batch" bind:group={fetchMode} onchange={refreshAll} /> Batch — N×GetQuote, one roundtrip</label>
+    <label><input type="radio" name="mode" value="bulk" bind:group={fetchMode} onchange={refreshAll} /> Bulk — single GetQuotes call</label>
+  </fieldset>
 
   <form onsubmit={(e) => { e.preventDefault(); addSymbol(); }}>
     <input type="text" bind:value={newSymbol} placeholder="Symbol, e.g. ADA" />

@@ -3,7 +3,7 @@
 import { SleipnirCall } from "sleipnir-client";
 import { TypedCall } from "./typed-call.js";
 import type { Quote } from "./types.js";
-import type { QuotePaths } from "./typed-call.js";
+import type { QuoteArrayPaths, QuotePaths } from "./typed-call.js";
 
 export class MarketClient {
   /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
@@ -13,5 +13,10 @@ export class MarketClient {
   /** Get a snapshot price quote for a single market symbol. Returns null if the symbol is unknown. */
   getQuote(symbol: string): TypedCall<Quote | null, QuotePaths> {
     return new TypedCall<Quote | null, QuotePaths>(this._build("Market", "GetQuote").with({ symbol: symbol }));
+  }
+
+  /** Bulk-fetch quotes for many symbols in one call. Unknown symbols are skipped. For composing arbitrary methods in one roundtrip, prefer a SleipnirMultiRequest batch (chapter 5). */
+  getQuotes(symbols: string[]): TypedCall<Quote[], QuoteArrayPaths> {
+    return new TypedCall<Quote[], QuoteArrayPaths>(this._build("Market", "GetQuotes").with({ symbols: symbols }));
   }
 }

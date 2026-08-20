@@ -44,4 +44,25 @@ public class MarketController
             Time = DateTime.UtcNow,
         };
     }
+
+    // A bulk fetch: one method, one roundtrip, server-side loop. Chapter 5 contrasts this
+    // with a SleipnirMultiRequest BATCH of N GetQuote calls — same one roundtrip, but
+    // composing existing methods without touching the server. Unknown symbols are skipped
+    // (a bulk endpoint chooses its own not-found semantics; a batch would surface null per call).
+    [SleipnirMethod("GetQuotes")]
+    [SleipnirDocumentation("Bulk-fetch quotes for many symbols in one call. Unknown symbols are skipped. For composing arbitrary methods in one roundtrip, prefer a SleipnirMultiRequest batch (chapter 5).")]
+    public List<Quote> GetQuotes(string[] symbols)
+    {
+        var quotes = new List<Quote>();
+        if (symbols is null || symbols.Length == 0)
+            return quotes;
+
+        foreach (var s in symbols)
+        {
+            var q = GetQuote(s);
+            if (q is not null)
+                quotes.Add(q);
+        }
+        return quotes;
+    }
 }

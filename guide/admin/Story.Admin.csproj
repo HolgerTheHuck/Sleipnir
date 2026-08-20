@@ -9,6 +9,10 @@
     <IsPackable>false</IsPackable>
     <!-- The .NET 10 Blazor Web App template sets this; suppresses the nav-exception noise. -->
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- Write the source-generator output to obj/ so the generated SleipnirGenerated.cs is
+         inspectable (the guide points readers at it). Not required for the client to work —
+         the type is in the compilation either way — but it makes the contract loop tangible. -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <!-- The generated client runtime + the Roslyn source generator (wired as an analyzer so it

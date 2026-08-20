@@ -111,10 +111,12 @@ Sleipnir ist eine protokoll-agnostische RPC-Engine, die zwischen der Geschäftsl
 | SignalR | SleipnirHub | WebSocket + MessagePack | Hub-Methoden `DoWork()` / `DoWorkMany()`, Auto-Reconnect |
 
 ### Client-Bibliothek (`SleipnirClient`)
-- `ISleipnirClient`-Interface: `Call(SleipnirRequest)`, `Call<T>(SleipnirRequest)`, `Call(SleipnirMultiRequest)`
-- `SleipnirRestJsonClient`: HTTP-basiert, Connection-Pooling, `IDisposable`
-- `SleipnirWebSocketClient`: Persistente Verbindung, `SemaphoreSlim` für Thread-Safety, `IAsyncDisposable`
-- `SleipnirSignalrClient`: Auto-Reconnect mit exponentiellem Backoff, MessagePack-Protokoll
+- `ISleipnirClient`-Interface: `Call(SleipnirRequest)`, `Call<T>(SleipnirRequest)`, `Call(SleipnirMultiRequest)`, sowie `SubscribeAsync<T>` / `ResumeAsync<T>` für transportübergreifende Event-Subscriptions
+- `SleipnirRestJsonClient`: HTTP-basiert, Connection-Pooling, `IDisposable` (nur Calls)
+- `SleipnirWebSocketClient`: Persistente Verbindung, `SemaphoreSlim` für Thread-Safety, `IAsyncDisposable` (Calls + Events)
+- `SleipnirSseClient`: nur Events über `text/event-stream` mit `Last-Event-Id`-Resume, `IAsyncDisposable`
+- `SleipnirSignalrClient`: Auto-Reconnect mit exponentiellem Backoff, MessagePack-Protokoll; Calls via `DoWork`/`DoWorkMany`, Events via Hub-Streaming `SubscribeAsync`
+- `SleipnirTransportRouter`: einheitlicher Client, der die Backends einer Capability (`rest|ws|all|signalr`) bündelt und den Transport zur Laufzeit wählt — `auto` (Default) probiert WebSocket und fällt auf REST+SSE zurück; der generierte typisierte Client wraps einen Router
 - `SleipnirCall`: Fluent Builder mit `.Named()`, `.Exposes()`, `.WithAlias()`, `.With()`, `.Add()`, `.ToRequest()`
 
 ## Fehlermodell

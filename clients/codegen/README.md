@@ -24,17 +24,17 @@ npm i -D sleipnir-codegen
 ```
 
 The generator depends on [`sleipnir-client`](https://www.npmjs.com/package/sleipnir-client)
-for the TS/JS transports (`rest` / `ws`) — the generated `SleipnirClient` wires
-up the matching `sleipnir-client` runtime. The `cs` and `py` emitters are
-self-contained (they call the Sleipnir REST endpoint directly; no npm runtime
-needed).
+for the TS/JS runtime — the generated `SleipnirClient` wires up a
+`SleipnirTransportRouter` that bundles the backends selected by `--transport`.
+The `cs` emitter targets the `SleipnirClient` .NET runtime (same router); `py`
+is self-contained (httpx, REST only).
 
 ## CLI
 
 ```bash
 sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdout]
              [--base-url <url>] [--bearer <token>] [--timeout <s>]
-             [--transport rest|sse|ws|both] [--selfcheck]
+             [--transport rest|ws|all|signalr] [--selfcheck]
 ```
 
 - `--lang` (required): `ts` | `js` | `cs` | `py`.
@@ -50,13 +50,16 @@ sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdo
 - `--bearer`: bearer token used **only** to fetch `--discovery` over HTTP
   (never written into the generated code).
 - `--timeout`: HTTP timeout (seconds) for fetching `--discovery` from a URL.
-- `--transport rest|sse|ws|both` (ts|js only, default `rest`): which
-  `sleipnir-client` runtime client the generated `SleipnirClient` wires up.
-  `rest` = REST calls (event methods throw — REST has no push channel here);
-  `sse` = REST calls + SSE server-push events (`text/event-stream`, for clients
-  behind proxies/firewalls that block WebSocket upgrades); `ws` = WebSocket calls +
-  events; `both` = REST + WebSocket (events over WebSocket). `cs` and `py` are
-  REST-only (no WS/SSE runtime to wire).
+- `--transport rest|ws|all|signalr` (ts|js|cs; default `all`): a **bundle-capability**
+  selector — which backends the generated `SleipnirClient` *bundles*. The public
+  client surface (method signatures, options type) is **byte-identical across all
+  values**; transport is chosen **at runtime** via `SleipnirTransportRouter`
+  (`auto` default probes WebSocket → falls back to REST+SSE on failure;
+  `useTransport()` switches explicitly). `rest` = REST calls + SSE events
+  (HTTP-only, proxy-safe); `ws` = WebSocket calls + events; `all` = REST + WS + SSE
+  (enables `auto` fallback); `signalr` = `all` + SignalR (opt-in add-on; events via
+  hub-streaming `IAsyncEnumerable<T>`). `py` ships REST only (default `rest`).
+  Deprecated aliases kept one minor version: `sse`→`rest`, `both`→`all`.
 - `--selfcheck`: regenerate the client tree from `--discovery` in memory and
   compare it against the committed tree at `--out`; exit `4` on drift (a missing
   or changed generated file), `0` if clean. **No files are written.** This is the
@@ -76,15 +79,18 @@ Exit codes: `0` ok · `1` usage/runtime error · `2` discovery shape mismatch ·
 ### Examples
 
 ```bash
-# Live server → typed TS client into src/api/
+# Live server → typed TS client into src/api/ (default --transport all: auto WS→REST+SSE)
 npx sleipnir-gen --lang ts --discovery https://localhost:5001/api/sleipnir/discovery --out src/api
 
-# WS transport for the TS client
+# WebSocket-only bundle (no fallback)
 npx sleipnir-gen --lang ts --transport ws --discovery https://localhost:5001/api/sleipnir/discovery --out src/api
 
-# REST + SSE transport — REST calls + server-push events over text/event-stream
-# (for clients behind proxies/firewalls that block WebSocket upgrades)
-npx sleipnir-gen --lang ts --transport sse --discovery https://localhost:5001/api/sleipnir/discovery --out src/api
+# HTTP-only bundle (REST calls + SSE events — for clients behind proxies/firewalls
+# that block WebSocket upgrades)
+npx sleipnir-gen --lang ts --transport rest --discovery https://localhost:5001/api/sleipnir/discovery --out src/api
+
+# Opt-in SignalR add-on (all backends + hub-streaming events)
+npx sleipnir-gen --lang ts --transport signalr --discovery https://localhost:5001/api/sleipnir/discovery --out src/api
 
 # Saved contract file → self-contained Python client to stdout
 npx sleipnir-gen --lang py --discovery contract.sleipnir.json --stdout > client.py
@@ -104,12 +110,17 @@ npx sleipnir-gen --lang ts --discovery https://api.example.com/api/sleipnir/disc
 
 ## What each emitter produces
 
-| `--lang` | Output | Runtime dependency | Transports |
+| `--lang` | Output | Runtime dependency | Transports (`--transport`) |
 |---|---|---|---|
-| `ts` | `api/client.ts`, `api/controllers.ts`, `api/index.ts`, `api/typed-call.ts`, `api/types.ts` | `sleipnir-client` | `rest` / `sse` / `ws` / `both` |
-| `js` | `api/client.js`, `api/controllers.js`, `api/index.js`, `api/types.js` (JSDoc-typed) | `sleipnir-client` | `rest` / `sse` / `ws` / `both` |
-| `cs` | `SleipnirGenerated.cs` (single file) | `SleipnirClient` (.NET, referenced) | REST only |
+| `ts` | `api/client.ts`, `api/controllers.ts`, `api/index.ts`, `api/typed-call.ts`, `api/types.ts` | `sleipnir-client` | `rest` / `ws` / `all` / `signalr` |
+| `js` | `api/client.js`, `api/controllers.js`, `api/index.js`, `api/types.js` (JSDoc-typed) | `sleipnir-client` | `rest` / `ws` / `all` / `signalr` |
+| `cs` | `SleipnirGenerated.cs` (single file) | `SleipnirClient` (.NET, referenced) | `rest` / `ws` / `all` / `signalr` |
 | `py` | `client.py`, `types.py`, `__init__.py` | `httpx` (self-contained) | REST only |
+
+Every emitter produces the **same public client surface** regardless of
+`--transport`; the value only selects which backends the runtime
+`SleipnirTransportRouter` bundles. Transport is selected at runtime
+(`auto` default), not codegen time — `--transport` is a capability, not a shape.
 
 The TS/JS emitters generate a **typed call surface**: a `TypedCall` /
 `TypedRequest` builder with path records (`XPaths` / `XArrayPaths`) constraining

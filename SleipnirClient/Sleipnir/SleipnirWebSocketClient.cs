@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using SleipnirCommon.Models;
 
@@ -702,6 +703,58 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
         return subscription;
     }
 
+    /// <summary>
+    /// Request-based subscribe (unified <see cref="ISleipnirClient"/> surface). Unpacks the
+    /// <see cref="SleipnirRequest"/>'s controller/method/params and sends the same
+    /// <c>{kind:"subscribe",...}</c> frame, but with the request's already-named params
+    /// (built via <see cref="SleipnirCall"/>) instead of the positional <c>arg{i}</c> names.
+    /// The original request is retained for reconnect re-subscribe.
+    /// </summary>
+    public override async Task<SleipnirSubscription<T>> SubscribeAsync<T>(
+        SleipnirRequest? request, ResumePolicy? resumePolicy = null, CancellationToken ct = default)
+    {
+        if (request == null)
+            throw new ArgumentNullException(nameof(request));
+        await EnsureConnectedAsync(ct);
+
+        var requestId = NextId();
+        var subscribeJson = JsonSerializer.Serialize(new
+        {
+            kind = "subscribe",
+            controller = request.Controller,
+            method = request.Method,
+            @params = request.Params, // already the named-param JsonArray (from SleipnirCall)
+            id = requestId,
+        }, JsonOptions);
+
+        var holder = new TcsHolder<SleipnirResponse>();
+        _pendingRequests[requestId] = holder;
+        var record = new SubscribeRequestRecord(request.Controller, request.Method, args: null, resumePolicy)
+        {
+            Request = request,
+        };
+
+        await SendRawAsync(subscribeJson, ct);
+
+        SleipnirResponse? response;
+        try { response = await holder.Tcs.Task; }
+        finally { _pendingRequests.TryRemove(requestId, out _); }
+
+        if (response == null || !response.IsSuccess)
+            throw new SleipnirException($"Subscribe failed: code={response?.Code}, msg={response?.Error?.Message}");
+
+        var subscriptionId = ExtractSubscriptionId(response);
+        if (string.IsNullOrEmpty(subscriptionId))
+            throw new SleipnirException("Subscribe response missing subscriptionId.");
+
+        var subscription = new SleipnirSubscription<T>(subscriptionId!, UnsubscribeAsync, ct);
+        _subscriptions[subscriptionId!] = new SleipnirSubscriptionHandler<T>(subscription);
+        record.SubscriptionId = subscriptionId;
+        _subscribeRequests[subscriptionId!] = record;
+
+        return subscription;
+    }
+
     private async Task UnsubscribeAsync(string subscriptionId, CancellationToken ct)
     {
         if (!_subscriptions.TryRemove(subscriptionId, out _)) return;
@@ -828,7 +881,7 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
                         kind = "subscribe",
                         controller = record.Controller,
                         method = record.Method,
-                        @params = BuildParams(record.Args),
+                        @params = GetParamsNode(record),
                         id = requestId,
                         subscriptionId = oldId,
                         lastEventId,
@@ -848,7 +901,7 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
                         kind = "subscribe",
                         controller = record.Controller,
                         method = record.Method,
-                        @params = BuildParams(record.Args),
+                        @params = GetParamsNode(record),
                         id = requestId,
                     }, JsonOptions);
                 }
@@ -917,6 +970,16 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
         for (int i = 0; i < args.Length; i++)
             list.Add(new SleipnirParameter { ParameterName = $"arg{i}", Data = JsonSerializer.SerializeToNode(args[i], JsonOptions) });
         return list;
+    }
+
+    /// <summary>
+    /// Reconnect params: prefer the retained request's named params (request-based subscribe),
+    /// else rebuild the positional <c>arg{i}</c> array from the original args.
+    /// </summary>
+    private static JsonNode? GetParamsNode(SubscribeRequestRecord record)
+    {
+        if (record.Request != null) return record.Request.Params;
+        return JsonSerializer.SerializeToNode(BuildParams(record.Args), JsonOptions);
     }
 
     private async Task SendRawAsync(string json, CancellationToken ct)
@@ -1006,6 +1069,11 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
         public string Controller { get; }
         public string Method { get; }
         public object?[]? Args { get; }
+        /// <summary>
+        /// The original request (request-based subscribe path). When set, reconnect
+        /// re-sends <c>request.Params</c> directly instead of rebuilding from <see cref="Args"/>.
+        /// </summary>
+        public SleipnirRequest? Request { get; set; }
         public ResumePolicy? ResumePolicy { get; }
         public string? SubscriptionId { get; set; }
     }

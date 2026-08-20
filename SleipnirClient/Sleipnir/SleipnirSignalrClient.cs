@@ -1,6 +1,10 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
 using MessagePack;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
+using SleipnirCommon.Models;
 // SleipnirException is provided via global using alias from GlobalUsings.cs
 
 namespace SleipnirClient.Sleipnir;
@@ -20,6 +24,19 @@ public class SleipnirSignalrClient : SleipnirClientBase, ISleipnirClient, IAsync
     // erwarten dieselbe Task statt selbst StartAsync aufzurufen oder abzuweisen (B1).
     private Task<bool>? _connectingTask;
 
+    // ─── Phase 4c: hub-streaming event subscriptions ───────────────────────
+    // Active subscriptions keyed by subscriptionId. SignalR's WithAutomaticReconnect restores the
+    // *connection* but NOT server streams — so on Reconnected we re-stream each non-done sub in
+    // resume mode (subscriptionId + lastEventId → server replays the gap from its shared buffer,
+    // cross-transport). A _reconnecting flag distinguishes a stream-end caused by a reconnect
+    // (leave the sub for re-stream) from an unexpected end (fail it).
+    private readonly ConcurrentDictionary<string, ISignalrSub> _activeSubs = new();
+    private volatile bool _reconnecting;
+    private static readonly JsonSerializerOptions FrameJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     /// <summary>
     /// Erstellt einen neuen SignalR-Client. Optionaler <paramref name="bearer"/>
     /// (JWT) an zweiter Stelle, damit <c>new SleipnirSignalrClient(url, "token")</c>
@@ -33,6 +50,9 @@ public class SleipnirSignalrClient : SleipnirClientBase, ISleipnirClient, IAsync
     {
         _jwtToken = bearer ?? string.Empty;
 
+        // AccessTokenProvider reads _jwtToken lazily at call time, so a runtime swap via
+        // SetBearer takes effect on subsequent invocations / reconnects without rebuilding
+        // the HubConnection.
         var baseUrl = server.TrimEnd('/');
         if (!baseUrl.EndsWith('/'))
             baseUrl += "/";
@@ -72,6 +92,11 @@ public class SleipnirSignalrClient : SleipnirClientBase, ISleipnirClient, IAsync
             _connection.ServerTimeout = serverTimeout.Value;
         if (keepAliveInterval.HasValue)
             _connection.KeepAliveInterval = keepAliveInterval.Value;
+
+        // SignalR restores the connection on reconnect but NOT server streams — re-stream active
+        // subscriptions once the hub is reachable again (resume mode → server replays the gap).
+        _connection.Reconnecting += OnReconnectingAsync;
+        _connection.Reconnected += OnReconnectedAsync;
     }
 
     /// <summary>
@@ -216,10 +241,307 @@ public class SleipnirSignalrClient : SleipnirClientBase, ISleipnirClient, IAsync
         }
     }
 
+    // ─── Phase 4c: hub-streaming SubscribeAsync / ResumeAsync ──────────────
+
+    /// <summary>
+    /// Swap the JWT bearer at runtime. The <c>AccessTokenProvider</c> reads the token lazily at
+    /// invocation time, so this takes effect on the next call / reconnect without rebuilding the
+    /// <see cref="HubConnection"/>. Used by <see cref="SleipnirTransportRouter.SetBearer"/> fan-out.
+    /// </summary>
+    public void SetBearer(string? bearer) => _jwtToken = bearer ?? string.Empty;
+
+    /// <summary>
+    /// Subscribes to a server event via the hub stream
+    /// <c>SubscribeAsync(request, null, null)</c> → <c>IAsyncEnumerable&lt;string&gt;</c>. The first
+    /// stream item is the ack (<c>{type:"ack",subscriptionId,replayedFrom?}</c>); subsequent items are
+    /// event/complete/error frames (the SAME serialized frames WS/SSE emit, reusing the shared durable
+    /// store → cross-transport resume). Resolves with the <see cref="SleipnirSubscription{T}"/> once the
+    /// ack arrives. On reconnect, <see cref="WithAutomaticReconnect"/> restores the connection but NOT
+    /// the stream — the <c>Reconnected</c> handler re-streams each non-done sub in resume mode.
+    /// </summary>
+    public async override Task<SleipnirSubscription<T>> SubscribeAsync<T>(
+        SleipnirRequest? request, ResumePolicy? resumePolicy = null, CancellationToken ct = default)
+    {
+        if (request == null)
+            throw new ArgumentNullException(nameof(request));
+        ThrowIfDisposed();
+        if (!await Connect())
+            throw new SleipnirException("Not connected to server.");
+
+        var state = new SignalrSubState<T>(this) { Request = request, ResumePolicy = resumePolicy };
+        state.InitAbort(ct);
+        _ = Task.Run(state.InitialStreamAsync, state.AbortCts.Token);
+        return await state.Completion.Task;
+    }
+
+    /// <summary>
+    /// Resumes a durable subscription by <paramref name="subscriptionId"/> + <paramref name="lastEventId"/>
+    /// via the hub stream <c>SubscribeAsync(null, subscriptionId, lastEventId)</c> — the server replays
+    /// the gap from its shared buffer, then continues live. Cross-transport: a subscription created over
+    /// WebSocket / SSE is resumable here.
+    /// </summary>
+    public async override Task<SleipnirSubscription<T>> ResumeAsync<T>(
+        string subscriptionId, long lastEventId, ResumePolicy? resumePolicy = null, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(subscriptionId))
+            throw new ArgumentException("subscriptionId is required.", nameof(subscriptionId));
+        ThrowIfDisposed();
+        if (!await Connect())
+            throw new SleipnirException("Not connected to server.");
+
+        var state = new SignalrSubState<T>(this)
+        {
+            ResumePolicy = resumePolicy,
+            SubscriptionId = subscriptionId,
+            LastEventId = lastEventId,
+            ResumeOnly = true,
+        };
+        state.InitAbort(ct);
+        // Pre-resolve the handle: a resume has no fresh request, so the ack re-confirms the id; the
+        // caller gets the subscription immediately (the subject is live before the first frame).
+        state.PreResolve();
+        _activeSubs[subscriptionId] = state;
+        _ = Task.Run(state.InitialStreamAsync, state.AbortCts.Token);
+        return await state.Completion.Task;
+    }
+
+    private Task OnReconnectingAsync(Exception? ex)
+    {
+        _reconnecting = true;
+        return Task.CompletedTask;
+    }
+
+    private Task OnReconnectedAsync(string? connectionId)
+    {
+        _reconnecting = false;
+        // Re-stream each non-done sub in resume mode (server replays the gap from its shared buffer).
+        foreach (var kv in _activeSubs)
+        {
+            if (!kv.Value.Done)
+                _ = kv.Value.RestreamAsync();
+        }
+        return Task.CompletedTask;
+    }
+
+    private void ThrowIfDisposed()
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(SleipnirSignalrClient));
+    }
+
+    private static Exception Translate(Exception ex)
+        => ex is SleipnirException ? ex : new SleipnirException("SignalR stream error.", ex);
+
+    /// <summary>Non-generic surface so the reconnect handler can re-stream a sub of any T.</summary>
+    private interface ISignalrSub
+    {
+        bool Done { get; }
+        string SubscriptionId { get; }
+        Task RestreamAsync();
+        void Abort();
+    }
+
+    /// <summary>Per-subscription state: the ack TaskCompletionSource, the live cursor, the read loop.</summary>
+    private sealed class SignalrSubState<T> : ISignalrSub
+    {
+        private readonly SleipnirSignalrClient _owner;
+        public SleipnirRequest? Request;
+        public ResumePolicy? ResumePolicy;
+        public string SubscriptionId = "";
+        public long LastEventId;
+        public bool Done;
+        public bool ResumeOnly;
+        public SleipnirSubscription<T>? Subscription;
+        public CancellationTokenSource? AbortCts;
+        public TaskCompletionSource<SleipnirSubscription<T>> Completion { get; }
+            = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public SignalrSubState(SleipnirSignalrClient owner) => _owner = owner;
+
+        bool ISignalrSub.Done => Done;
+        string ISignalrSub.SubscriptionId => SubscriptionId;
+        void ISignalrSub.Abort()
+        {
+            Done = true;
+            try { AbortCts?.Cancel(); } catch { /* best-effort */ }
+        }
+
+        public void InitAbort(CancellationToken callerCt)
+        {
+            AbortCts = CancellationTokenSource.CreateLinkedTokenSource(callerCt);
+            AbortCts.Token.Register(() => _owner._activeSubs.TryRemove(SubscriptionId, out _));
+        }
+
+        /// <summary>Resume-only: hand back the handle immediately; the ack re-confirms the id.</summary>
+        public void PreResolve()
+        {
+            Subscription = new SleipnirSubscription<T>(SubscriptionId, UnsubscribeAsync, AbortCts!.Token);
+            Completion.TrySetResult(Subscription);
+        }
+
+        public async Task InitialStreamAsync()
+        {
+            try
+            {
+                await StreamOnceAsync(isFresh: !ResumeOnly, AbortCts!.Token);
+                // Clean stream end without a terminal frame and without a reconnect in flight → fail.
+                if (!Done && !_owner._reconnecting && !AbortCts.IsCancellationRequested)
+                    FailOrEnd(new SleipnirException("SignalR stream ended."));
+            }
+            catch (OperationCanceledException) when (AbortCts!.IsCancellationRequested) { /* unsubscribed */ }
+            catch (HubException ex)
+            {
+                var sleipnirEx = new SleipnirException(ex.Message, ex);
+                if (Subscription == null && !Completion.Task.IsCompleted)
+                { Completion.TrySetException(sleipnirEx); Done = true; }
+                else if (!_owner._reconnecting)
+                { Subscription?.Subject.OnError(sleipnirEx); Done = true; }
+                // if reconnecting, leave for Reconnected to re-stream
+            }
+            catch (Exception ex)
+            {
+                if (AbortCts!.IsCancellationRequested) return;
+                if (_owner._reconnecting) return; // Reconnected will re-stream
+                FailOrEnd(Translate(ex));
+            }
+        }
+
+        public async Task RestreamAsync()
+        {
+            if (Done) return;
+            try
+            {
+                if (_owner._connection.State != HubConnectionState.Connected)
+                    if (!await _owner.Connect()) return;
+                await StreamOnceAsync(isFresh: false, AbortCts!.Token);
+                if (!Done && !_owner._reconnecting && !AbortCts.IsCancellationRequested)
+                    FailOrEnd(new SleipnirException("SignalR stream ended."));
+            }
+            catch (OperationCanceledException) { /* aborted */ }
+            catch (Exception ex)
+            {
+                if (AbortCts!.IsCancellationRequested) return;
+                if (_owner._reconnecting) return; // next Reconnected re-streams
+                FailOrEnd(Translate(ex));
+            }
+        }
+
+        private void FailOrEnd(Exception ex)
+        {
+            if (Subscription == null && !Completion.Task.IsCompleted)
+            { Completion.TrySetException(ex); Done = true; return; }
+            Subscription?.Subject.OnError(ex);
+            Done = true;
+        }
+
+        /// <summary>Opens one hub stream and reads frames until it ends or is cancelled.</summary>
+        private async Task StreamOnceAsync(bool isFresh, CancellationToken ct)
+        {
+            object?[] args = isFresh
+                ? new object?[] { Request!, (string?)null, (long?)null }
+                : new object?[] { (SleipnirRequest?)null, SubscriptionId, (long?)LastEventId };
+
+            var stream = _owner._connection.StreamAsync<string>("SubscribeAsync", args, ct);
+            await foreach (var frame in stream)
+            {
+                if (ct.IsCancellationRequested || Done) return;
+                HandleFrame(frame, isFresh);
+                isFresh = false; // after the ack, remaining frames are events regardless
+            }
+        }
+
+        private void HandleFrame(string frame, bool isFreshStream)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(frame);
+                var root = doc.RootElement;
+                var type = root.TryGetProperty("type", out var t) ? t.GetString() : null;
+                switch (type)
+                {
+                    case "ack":
+                        if (root.TryGetProperty("subscriptionId", out var sid)
+                            && sid.ValueKind == JsonValueKind.String)
+                        {
+                            var newId = sid.GetString();
+                            if (!string.IsNullOrEmpty(newId))
+                            {
+                                if (string.IsNullOrEmpty(SubscriptionId))
+                                    SubscriptionId = newId!;
+                                long? replayedFrom = root.TryGetProperty("replayedFrom", out var rf)
+                                    && rf.ValueKind == JsonValueKind.Number ? rf.GetInt64() : (long?)null;
+                                // Resume that returns no replayedFrom = server degraded to fresh → reset cursor.
+                                if (!isFreshStream && replayedFrom == null)
+                                    LastEventId = 0;
+                            }
+                        }
+                        if (Subscription == null)
+                        {
+                            Subscription = new SleipnirSubscription<T>(SubscriptionId, UnsubscribeAsync, AbortCts!.Token);
+                            _owner._activeSubs[SubscriptionId] = this;
+                            Completion.TrySetResult(Subscription);
+                        }
+                        break;
+                    case "event":
+                        long? evId = root.TryGetProperty("eventId", out var eid)
+                            && eid.ValueKind == JsonValueKind.Number ? eid.GetInt64() : (long?)null;
+                        if (evId.HasValue)
+                        {
+                            if (evId.Value <= LastEventId) break; // replay duplicate
+                            LastEventId = evId.Value;
+                        }
+                        if (root.TryGetProperty("data", out var dataEl))
+                        {
+                            try
+                            {
+                                var value = dataEl.Deserialize<T>(FrameJsonOptions);
+                                Subscription?.Subject.OnNext(value!);
+                            }
+                            catch (Exception ex) { Subscription?.Subject.OnError(ex); }
+                        }
+                        break;
+                    case "complete":
+                        Done = true;
+                        Subscription?.Subject.OnCompleted();
+                        break;
+                    case "error":
+                        Done = true;
+                        var msg = root.TryGetProperty("message", out var mp)
+                            && mp.ValueKind == JsonValueKind.String
+                            ? mp.GetString() ?? "Subscription error" : "Subscription error";
+                        Subscription?.Subject.OnError(new SleipnirException(msg));
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Subscription?.Subject.OnError(ex);
+            }
+        }
+
+        private Task UnsubscribeAsync(string subscriptionId, CancellationToken ct)
+        {
+            Done = true;
+            _owner._activeSubs.TryRemove(subscriptionId, out _);
+            try { AbortCts?.Cancel(); } catch { /* best-effort */ }
+            // The server stream ends when the [EnumeratorCancellation] token fires; the hub `finally`
+            // detaches the durable tap / disposes the ephemeral state. There is no separate unsubscribe RPC.
+            return Task.CompletedTask;
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
         _disposed = true;
+
+        // End active subscriptions (cancel their streams → server-side cleanup via the hub finally).
+        foreach (var kv in _activeSubs)
+            kv.Value.Abort();
+        _activeSubs.Clear();
+
+        _connection.Reconnecting -= OnReconnectingAsync;
+        _connection.Reconnected -= OnReconnectedAsync;
 
         if (_connection.State == HubConnectionState.Connected)
         {

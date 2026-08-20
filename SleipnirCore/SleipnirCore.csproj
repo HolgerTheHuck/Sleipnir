@@ -27,11 +27,12 @@
   </ItemGroup>
 
   <!-- The transport-agnostic event core (SleipnirCore.Events) is internal; the in-tree
-       transports (WebSocket, REST/SSE) and the test project consume it directly. External
-       consumers go through the public transport surfaces, not these implementation types. -->
+       transports (WebSocket, REST/SSE, SignalR hub) and the test project consume it directly.
+       External consumers go through the public transport surfaces, not these implementation types. -->
   <ItemGroup>
     <InternalsVisibleTo Include="SleipnirWebSocket" />
     <InternalsVisibleTo Include="SleipnirRest" />
+    <InternalsVisibleTo Include="SleipnirHub" />
     <InternalsVisibleTo Include="SleipnirTests" />
   </ItemGroup>
 

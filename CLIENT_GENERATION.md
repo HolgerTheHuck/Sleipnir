@@ -225,5 +225,5 @@ Generation is **opt-in**. The default Sleipnir model — runtime discovery, no c
 untyped `SleipnirCall` builder — is unchanged and remains the recommendation for flexibility and
 zero-tooling. The generator is the counterpart for teams that want a compile-time contract
 boundary and typed cross-language clients. It does not add a second protocol: the generated stubs
-build on `sleipnir-client`'s `SleipnirCall` / `SleipnirRestClient` (TS) and `SleipnirCall` / `ISleipnirClient`
-(.NET) — they are a typed wrapper over the existing wire, not a parallel one.
+build on `sleipnir-client`'s `SleipnirCall` / `SleipnirTransportRouter` (TS) and `SleipnirCall` /
+`ISleipnirClient` (.NET) — they are a typed wrapper over the existing wire, not a parallel one.

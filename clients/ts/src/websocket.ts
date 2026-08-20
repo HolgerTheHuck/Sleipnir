@@ -124,6 +124,12 @@ export interface SubscribeHandlers<T> {
 export interface SleipnirSubscription {
   /** Server-seitig zugewiesene Correlation-Id der Event-Frames. */
   readonly subscriptionId: string;
+  /**
+   * The highest `eventId` processed so far (0 until the first event carrying an `eventId`).
+   * Live cursor — read at any time to snapshot progress, e.g. to hand to a cross-transport
+   * resume (`SleipnirTransportRouter.resume`) after a transport switch.
+   */
+  readonly lastEventId: number;
   /** Stoppt die Event-Lieferung; sendet `kind:"unsubscribe"`. Idempotent. */
   unsubscribe(): Promise<void>;
 }
@@ -892,8 +898,16 @@ export class SleipnirWebSocketClient {
         resumePolicy: pending.resumePolicy,
       });
     }
+    // Capture the subscription store so the live-cursor getter below can read the dedup
+    // cursor without binding `this` (a getter in an object literal does not see the client).
+    const store = this._subscriptions;
     pending.resolve({
       subscriptionId: sid,
+      // Live cursor: reads the dedup cursor from the active entry so a caller can snapshot
+      // progress for a cross-transport resume after a transport switch.
+      get lastEventId() {
+        return store.get(sid)?.lastEventId ?? 0;
+      },
       unsubscribe: () => this.unsubscribe(sid),
     });
   }

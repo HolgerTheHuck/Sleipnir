@@ -193,6 +193,10 @@ public sealed class EmitCsOptions
     public string? Namespace { get; set; }
     /// <summary>Base URL hint rendered into the file header comment.</summary>
     public string? BaseUrl { get; set; }
+    /// <summary>Which backends the generated client bundles (codegen <c>--transport</c>). The public
+    /// surface is identical across all values; only the <see cref="SleipnirTransportRouter"/>
+    /// capability baked into the <c>(string baseUrl)</c> ctor differs. Default "all".</summary>
+    public string? Capability { get; set; }
 }
 
 /// <summary>JSON options for reading the discovery contract (case-insensitive binding).</summary>

@@ -90,5 +90,25 @@ namespace SleipnirClient.Sleipnir
         /// Die konkrete Umsetzung übernimmt die abgeleitete Client-Klasse.
         /// </summary>
         public abstract Task<IEnumerable<SleipnirResponse?>?> Call(SleipnirMultiRequest? request, CancellationToken ct = default);
+
+        /// <summary>
+        /// Default: this backend is calls-only (REST) and cannot subscribe to events.
+        /// Overridden by event-capable backends (WebSocket / SSE / SignalR) and the
+        /// <see cref="SleipnirTransportRouter"/>. Throws <see cref="NotImplementedException"/>.
+        /// </summary>
+        public virtual Task<SleipnirSubscription<T>> SubscribeAsync<T>(SleipnirRequest? request, ResumePolicy? resumePolicy = null, CancellationToken ct = default)
+            => throw new NotSupportedException(
+                "This client backend does not support event subscriptions. " +
+                "Use SleipnirTransportRouter or an event-capable backend (WebSocket / SSE / SignalR).");
+
+        /// <summary>
+        /// Default: this backend cannot resume a subscription (e.g. WebSocket needs the
+        /// original controller/method and is not resumable by id alone). Overridden by
+        /// resume-capable backends (SSE / SignalR) and the <see cref="SleipnirTransportRouter"/>.
+        /// </summary>
+        public virtual Task<SleipnirSubscription<T>> ResumeAsync<T>(string subscriptionId, long lastEventId, ResumePolicy? resumePolicy = null, CancellationToken ct = default)
+            => throw new NotSupportedException(
+                "This client backend does not support resuming a subscription by id. " +
+                "Use an SSE or SignalR backend, or the SleipnirTransportRouter.");
     }
 }

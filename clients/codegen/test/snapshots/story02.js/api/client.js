@@ -1,32 +1,76 @@
-// Auto-generated root Sleipnir client (JS).
-import { SleipnirCall, SleipnirRestClient } from "sleipnir-client";
+// Auto-generated root Sleipnir client (JS, capability: all).
+// Transport is selected at runtime via SleipnirTransportRouter: "auto" (default) probes
+// WebSocket and falls back to REST+SSE on failure; useTransport() switches explicitly.
+import { SleipnirCall, SleipnirTransportRouter } from "sleipnir-client";
 import { SearchClient } from "./controllers.js";
 import { ArticleClient } from "./controllers.js";
 
 export class SleipnirClient {
   /**
    * @param {string} baseUrl
-   * @param {SleipnirRestClientOptions} [options]
+   * @param {object} [options] per-backend options (rest/ws/sse/signalr) + shared bearer,
+   *   callTimeout, probeTimeout, defaultTransport. Passed to SleipnirTransportRouter.
    */
   constructor(baseUrl, options = {}) {
-    this._rest = new SleipnirRestClient(baseUrl, options);
+    this._router = new SleipnirTransportRouter({ baseUrl, capability: "all", ...options });
     const build = (controller, method) => SleipnirCall.init(controller, method);
   this.search = new SearchClient(build);
   this.article = new ArticleClient(build);
   }
 
+  /** @returns {Promise<void>} resolve the `auto` profile (probe WS → fallback REST+SSE). */
+  negotiate() {
+    return this._router.negotiate();
+  }
+
+  /** @param {string} t @returns {Promise<void>} switch the active transport at runtime. */
+  useTransport(t) {
+    return this._router.useTransport(t);
+  }
+
+  /** @returns {string|null} the resolved transport profile (null until `auto` is negotiated). */
+  get activeTransport() {
+    return this._router.activeTransport;
+  }
+
   /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
   async call(call) {
-    return this._rest.call(call.toRequest());
+    return this._router.call(call.toRequest());
   }
 
   /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
   async batch(b) {
     const m = b.toMulti();
-    return this._rest.callBatch(m.requests, m.mode);
+    return this._router.callBatch(m.requests, m.mode);
   }
 
+  /** @returns {SleipnirRestClient|undefined} underlying REST client (escape hatch). */
   get rest() {
-    return this._rest;
+    return this._router.rest;
+  }
+
+  /** @returns {SleipnirWebSocketClient|undefined} underlying WebSocket client (escape hatch). */
+  get ws() {
+    return this._router.ws;
+  }
+
+  /** @returns {SleipnirSseClient|undefined} underlying SSE client (escape hatch). */
+  get sse() {
+    return this._router.sse;
+  }
+
+  /** @returns {SleipnirSignalrClient|undefined} underlying SignalR client (escape hatch). */
+  get signalr() {
+    return this._router.signalr;
+  }
+
+  /** @param {string|Function} bearer swap the bearer on all bundled backends. */
+  setBearer(bearer) {
+    this._router.setBearer(bearer);
+  }
+
+  /** Dispose all bundled backends (terminal). */
+  dispose() {
+    this._router.dispose();
   }
 }

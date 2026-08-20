@@ -172,3 +172,68 @@ describe("SleipnirSseClient", () => {
     expect(done).toBe(false);
   });
 });
+
+describe("SleipnirSseClient.resume (cross-transport resume by subscriptionId)", () => {
+  it("delivers the replayed gap + live events over the resume URL with Last-Event-Id header", async () => {
+    // Resume "S1" from lastEventId=5: the server replays the gap then goes live.
+    const { client, calls } = makeClient([
+      () => ({ ok: true, status: 200, body: sseBody([ack("S1", 5), event("S1", 6, "x"), event("S1", 7, "y"), complete("S1")]) }),
+    ], { bearer: "tok" });
+
+    const got: string[] = [];
+    let done = false;
+    const sub = await client.resume<string>("S1", 5, { onNext: (v) => got.push(v), onComplete: () => { done = true; } });
+    await vi.waitFor(() => expect(done).toBe(true), { timeout: 1000 });
+
+    expect(got).toEqual(["x", "y"]);
+    expect(sub.subscriptionId).toBe("S1");
+    // The live cursor reflects the highest eventId processed.
+    expect(sub.lastEventId).toBe(7);
+    // The resume URL is self-contained (subscriptionId + lastEventId); no controller/method.
+    expect(calls[0].url).toBe("https://host/api/sleipnir/events/S1?lastEventId=5");
+    expect((calls[0].init.headers as Record<string, string>)["Last-Event-Id"]).toBe("5");
+    expect((calls[0].init.headers as Record<string, string>)["Authorization"]).toBe("Bearer tok");
+  });
+
+  it("rejects the resume promise on a pre-ack non-2xx (durable subscription gone)", async () => {
+    const { client } = makeClient([() => ({ ok: false, status: 410, body: null })]);
+    await expect(client.resume("S1", 5, { onNext: () => {} })).rejects.toBeInstanceOf(SleipnirError);
+  });
+
+  it("reconnects in resume mode on a drop (re-hits the resume URL with the updated cursor)", async () => {
+    // First stream: ack + one live event, then a DROP (close without a terminal frame).
+    // Second stream (resume): replayed ack + a new live event + complete.
+    const { client, calls } = makeClient([
+      () => ({ ok: true, status: 200, body: sseBody([ack("S1", 5), event("S1", 6, "x")]) }),           // drop
+      () => ({ ok: true, status: 200, body: sseBody([ack("S1", 6), event("S1", 7, "y"), complete("S1")]) }), // resume
+    ], { reconnect: true, reconnectDelays: [0] });
+
+    const got: string[] = [];
+    let done = false;
+    await client.resume<string>("S1", 5, { onNext: (v) => got.push(v), onComplete: () => { done = true; } });
+    await vi.waitFor(() => expect(done).toBe(true), { timeout: 2000 });
+
+    expect(got).toEqual(["x", "y"]);
+    expect(calls.length).toBe(2);
+    // The reconnect targets the same subscriptionId with the updated cursor (lastEventId=6).
+    expect(calls[1].url).toBe("https://host/api/sleipnir/events/S1?lastEventId=6");
+    expect((calls[1].init.headers as Record<string, string>)["Last-Event-Id"]).toBe("6");
+  });
+
+  it("adopts a new subscriptionId + resets the cursor when the server degrades resume to fresh", async () => {
+    // Resume "S1" from 5, but the durable subscription expired → server returns a NEW id "S2"
+    // with no replayedFrom (degraded-to-fresh). The eventId counter restarts at 1 → cursor
+    // resets, so event(1) is delivered (not deduped against the stale cursor 5).
+    const { client } = makeClient([
+      () => ({ ok: true, status: 200, body: sseBody([ack("S2"), event("S2", 1, "fresh"), complete("S2")]) }),
+    ]);
+
+    const got: string[] = [];
+    let done = false;
+    const sub = await client.resume<string>("S1", 5, { onNext: (v) => got.push(v), onComplete: () => { done = true; } });
+    await vi.waitFor(() => expect(done).toBe(true), { timeout: 1000 });
+    expect(got).toEqual(["fresh"]);
+    expect(sub.subscriptionId).toBe("S2");   // adopted from the degraded ack
+    expect(sub.lastEventId).toBe(1);          // cursor reset, then advanced to 1
+  });
+});

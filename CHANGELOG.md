@@ -9,6 +9,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(nothing yet)_
 
+## [1.4.0] — 2026-08-20
+
+### Changed — Unified transport: one interface, runtime transport selection
+
+The generated Sleipnir client no longer forces the transport to be chosen at
+**codegen time**. `--transport` is now a **bundle-capability** selector (which
+backends to bundle), not a client-shape selector — the public class, method
+signatures, and options type are **byte-identical across all values**; transport
+is chosen **at runtime**.
+
+- **`--transport rest|ws|all|signalr`** (ts|js|cs; default `all`, was `rest`):
+  - `rest` = REST calls + SSE events (HTTP-only, proxy-safe).
+  - `ws` = WebSocket calls + WebSocket events.
+  - `all` = REST + WS + SSE — enables the `auto` default (probe WebSocket, fall
+    back to REST+SSE on failure).
+  - `signalr` = `all` + SignalR (opt-in add-on; events via hub-streaming
+    `IAsyncEnumerable<T>` mapping the existing `IObservable<T>` pipeline).
+  - Deprecated aliases kept one minor version: `sse`→`rest`, `both`→`all`.
+- **Runtime `SleipnirTransportRouter`** (TS `clients/ts/src/transport-router.ts`;
+  C# `SleipnirClient/Sleipnir/SleipnirTransportRouter.cs`): the generated
+  `SleipnirClient`/`SleipnirGeneratedClient` wraps a router. `auto` probes
+  WebSocket once (lazy, reuses the probe socket as the live WS); `useTransport()`
+  / `UseTransportAsync()` switches the profile explicitly. Escape hatches
+  (`rest`/`ws`/`sse`/`signalr`) reach the raw bundled backends. The WS-vs-SSE
+  subscribe mismatch (SSE carries method args as query params, no body) is
+  bridged once, in the router, so the generated stub stays transport-agnostic.
+- **C#**: the generated `SleipnirGeneratedClient` now wraps
+  `SleipnirTransportRouter` (was `SleipnirRestJsonClient`). Event methods no
+  longer throw `NotImplementedException` — they build a regular `Call` (the
+  request is identical to a call method) and the consumer subscribes via
+  `Subscribe<T>(call)` (routes to the active event backend). New C# runtime:
+  `SleipnirSseClient` (events over `text/event-stream`, `Last-Event-Id` resume);
+  `ISleipnirClient` gained `SubscribeAsync<T>` / `ResumeAsync<T>` (cross-transport
+  resume). `cs` is no longer REST-only at codegen — `rest|ws|all|signalr` all valid
+  (only `py` stays REST-only, httpx).
+- **SignalR opt-in** (`--transport signalr`): server hub-streaming
+  `SubscribeAsync` (`IAsyncEnumerable<string>`; first item is the `ack`, then
+  event/complete/error frames reusing the shared durable store → cross-transport
+  resume); TS `SleipnirSignalrClient` + C# `SleipnirSignalrClient` wired into the
+  router. `@microsoft/signalr` is an **optional peer dependency** (dynamic import;
+  the default bundle does not pull it).
+- **Cross-transport resume** (durable subscriptions, process-wide store):
+  resuming INTO WebSocket is unsupported (the WS resume frame needs the original
+  controller/method) — switch to `rest`/`auto` to resume over SSE, or use
+  SignalR. SSE ↔ SignalR resume by id.
+
+#### Migration
+- If you pinned `--transport rest` (the old default), the new default `all`
+  changes which backends are bundled but **not the client surface** — your code
+  compiles unchanged; `auto` now negotiates WS first. To keep the old HTTP-only
+  behaviour, pass `--transport rest` (or `useTransport("rest")` at runtime).
+- `--transport sse` / `--transport both` still work (canonicalized with a
+  deprecation warning) and will be removed next major.
+- C# event consumers: replace `throw new NotImplementedException(...)` stubs with
+  `await client.Subscribe<T>(client.X.MyEvent(...))`.
+
 ## [1.3.1] - 2026-08-19
 
 ### Added — Events over REST: SSE (`text/event-stream`) transport

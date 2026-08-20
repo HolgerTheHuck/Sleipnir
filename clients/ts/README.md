@@ -132,6 +132,106 @@ ws.close();             // lehnt alle pending Calls mit SleipnirError ab
 Correlation: each response is matched by `id` (single) or `requests[0].id` (batch).
 Responses with no matching pending call are warned + dropped (no last-resort misdelivery).
 
+## Transport router (unified client)
+
+The low-level clients above (`SleipnirRestClient`, `SleipnirWebSocketClient`, `SleipnirSseClient`)
+each cover one transport. `SleipnirTransportRouter` is the unified layer the **generated client**
+delegates to: you pick a transport at **runtime** (constructor + `useTransport()`), and the
+router routes every `call`/`callBatch`/`subscribe`/`resume` to the right backend. The public
+surface is identical regardless of which backends are bundled — `--transport` (codegen) selects
+*which backends to bundle*, not a different shape.
+
+A user-facing "transport" is a **profile** mapping to a `{call, event}` backend pair (no single
+native transport does both calls and events except WebSocket):
+
+| `SleipnirTransport` | Calls | Events | Notes |
+|---|---|---|---|
+| `"auto"` (default) | WS, fallback REST | WS, fallback SSE | probes WS, falls back to REST+SSE on failure |
+| `"rest"` | REST | SSE | HTTP-only, proxy-safe |
+| `"ws"` | WS | WS | WS-only (no fallback) |
+| `"signalr"` | SignalR | SignalR hub-stream | opt-in; Phase 3 |
+
+`--transport` (codegen) = **bundle capability** = which backends to instantiate:
+
+| `SleipnirBundleCapability` | Bundled backends |
+|---|---|
+| `"rest"` | REST + SSE |
+| `"ws"` | WS |
+| `"all"` (default) | REST + WS + SSE (enables `auto`: WS → REST+SSE) |
+| `"signalr"` | REST + WS + SSE + SignalR (opt-in; Phase 3) |
+
+`"sse"` and `"both"` are accepted as deprecated aliases for `"rest"` and `"all"` (removed next
+major).
+
+```ts
+import { SleipnirTransportRouter, type SleipnirTransport } from "sleipnir-client";
+
+const router = new SleipnirTransportRouter({
+  baseUrl: "https://localhost:5001",
+  capability: "all",            // from --transport all (the default)
+  defaultTransport: "auto",     // default; probe WS, fall back to REST+SSE
+  bearer: "eyJ...",
+  probeTimeout: 1500,          // ms; WS handshake probe budget for `auto`
+  callTimeout: 10_000,
+  rest: { headers: { "X-Trace": "abc" } },
+  ws: { connectTimeout: 15_000 },
+  sse: {},
+});
+
+// `auto` is resolved lazily on first use (no constructor side-effect / connect race):
+//   WS handshake succeeds  → calls+events over WS
+//   WS fails/times out     → calls over REST, events over SSE
+await router.negotiate();       // optional: force the probe up-front
+router.activeTransport;        // "ws" | "rest" | null (null until resolved)
+
+// Switch transport at runtime — throws SleipnirTransportNotBundledError if the profile's
+// backend isn't bundled (e.g. useTransport("ws") on a --transport rest client).
+await router.useTransport("rest");
+
+// Calls + batches route to the active call backend (REST or WS).
+const r = await router.call(req);
+const arr = await router.callBatch([req1, req2], ExecutionMode.Parallel);
+
+// Events route to the active event backend (WS or SSE); the router bridges the
+// WS-vs-SSE subscribe mismatch (SSE carries method args as query params).
+const sub = await router.subscribe<number>(eventReq, { onNext: (n) => {}, onComplete: () => {} });
+await sub.unsubscribe();
+
+// Escape hatches — the raw backend, or `undefined` if not bundled by the capability.
+router.rest;  // SleipnirRestClient | undefined
+router.ws;    // SleipnirWebSocketClient | undefined
+router.sse;   // SleipnirSseClient | undefined
+
+router.setBearer(newToken);    // fans out to every bundled backend
+router.dispose();              // terminal; idempotent
+```
+
+### Cross-transport resume
+
+The server-side subscription store is **process-wide**, so a `subscriptionId` created over one
+transport resumes live over another. When `auto` falls back (WS → REST+SSE) — or you call
+`useTransport("rest")` — hand the subscription handle's `subscriptionId` + `lastEventId` to
+`resume` to continue the same event stream over SSE (the server replays the gap, then goes live):
+
+```ts
+// Started over WS, read sub.lastEventId as events arrive:
+const sub = await router.subscribe<T>(eventReq, handlers);
+// …WS drops, or you switch transport…
+await router.useTransport("rest");
+const resumed = await router.resume<T>(sub.subscriptionId, sub.lastEventId, handlers);
+// resumed.subscriptionId === sub.subscriptionId (durable); resumed.lastEventId advances live.
+```
+
+`SleipnirSubscription.lastEventId` is a **live cursor** (the highest `eventId` processed so far,
+`0` until the first event carrying an `eventId`) — read it at any time to snapshot progress.
+
+`resume` routes to the active event backend. Over SSE it opens the self-contained resume URL
+(`GET /events/{subscriptionId}?lastEventId=…` + `Last-Event-Id` header) and reconnects in resume
+mode on a drop; a `410 Gone` (durable subscription expired) terminates with `onError` (there is
+no fresh fallback — no fresh subscribe params). Cross-transport resume **into** WebSocket is not
+supported (the WS resume frame needs the original controller/method); switch to the `rest` /
+`auto` profile to resume over SSE.
+
 ## Errors
 
 ```ts

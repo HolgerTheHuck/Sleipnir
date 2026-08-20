@@ -23,6 +23,12 @@
     <ProjectReference Include="..\..\SleipnirClient\SleipnirClient.csproj" />
     <ProjectReference Include="..\..\Sleipnir.SourceGenerator\Sleipnir.SourceGenerator.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <!-- Chapter 7: the LINQ provider client (Dep<T>, Arg<T>, SleipnirLinqClient, SleipnirBatch).
+         The typed-ergonomic layer over the @alias wiring from chapter 6. The contract INTERFACES
+         it builds calls against live in Linq/SleipnirContracts.g.cs, generated from the server's
+         contract.sleipnir.json by the sleipnir-linq codegen tool (see chapters/07-linq.md).
+         In a published setup this is a <PackageReference Include="Sleipnir.Client.Linq" />. -->
+    <ProjectReference Include="..\..\Sleipnir.Client.Linq\Sleipnir.Client.Linq.csproj" />
   </ItemGroup>
 
   <!-- The contract is the single source of truth, owned by the server. Linked here as an

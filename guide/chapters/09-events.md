@@ -1,4 +1,4 @@
-# Chapter 07 — auth
+# Chapter 09 — events
 
 > _This chapter is written in a later phase. The project state it describes is built into `guide/`._
 

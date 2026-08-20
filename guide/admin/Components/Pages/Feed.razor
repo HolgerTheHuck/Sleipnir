@@ -1,0 +1,134 @@
+@page "/feed"
+@inject SleipnirGeneratedClient Sleipnir
+@inject AdminAuth Auth
+@using Sleipnir.Guide.Admin.Services
+@using SleipnirClient.Sleipnir
+@using SleipnirCommon.Exceptions
+
+<PageTitle>Feed control — Story.Admin</PageTitle>
+
+<h1>Feed control + authed chain</h1>
+
+<p class="text-muted" style="max-width:48rem">
+    Chapter 8. Two admin-only surfaces on <code>Portfolio</code>: <code>StartFeed</code> /
+    <code>StopFeed</code> carry a method-level <code>[SleipnirAuthorise(Role = "Admin")]</code> —
+    a <em>customer</em> token is authenticated but lacks the Admin role → <strong>403</strong>
+    (not 401). And the chapter 6 chain, now authed: <code>PlaceOrder</code> exposes
+    <code>$.id</code> as <code>orderId</code>, <code>GetOrder(@@orderId)</code> consumes it — one
+    Serial roundtrip.
+</p>
+
+@if (!Auth.IsLoggedIn)
+{
+    <div class="alert alert-warning" style="max-width:48rem">
+        Not logged in — <a href="/login">log in</a> as <code>admin</code> to use the feed controls
+        (or as <code>customer</code> to see the 403).
+    </div>
+}
+
+<div class="btn-group mb-3" role="group">
+    <button class="btn btn-outline-success" @onclick="StartFeedAsync" disabled="@busy">
+        Start feed
+    </button>
+    <button class="btn btn-outline-danger" @onclick="StopFeedAsync" disabled="@busy">
+        Stop feed
+    </button>
+</div>
+
+@if (feedError != null)
+{
+    <div class="alert alert-danger" style="max-width:48rem">@feedError</div>
+}
+@if (feedStatus != null)
+{
+    <div class="alert alert-info" style="max-width:48rem">@feedStatus</div>
+}
+
+<hr style="max-width:48rem" />
+
+<h2 class="h5">Authed chain — PlaceOrder → GetOrder</h2>
+<div class="row g-2 mb-3" style="max-width:48rem">
+    <div class="col-3">
+        <input @bind="orderSymbol" class="form-control" placeholder="BTC" />
+    </div>
+    <div class="col-3">
+        <input @bind="orderQty" class="form-control" placeholder="0.1" />
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary" @onclick="PlaceOrderChainAsync" disabled="@busy">
+            @(busy ? "Chaining…" : "Place + fetch (chain)")
+        </button>
+    </div>
+</div>
+
+@if (chainError != null)
+{
+    <div class="alert alert-danger" style="max-width:48rem">@chainError</div>
+}
+@if (placed != null)
+{
+    <p class="text-muted small" style="max-width:48rem">
+        placed id <strong>@placed.Id</strong> (@placed.Symbol &times; @placed.Quantity @@ @placed.Price) —
+        fetched back via <code>GetOrder(@@orderId)</code> in the same roundtrip:
+        id <strong>@fetched?.Id</strong>, symbol <strong>@fetched?.Symbol</strong>.
+    </p>
+}
+
+@code {
+    private string? feedError;
+    private string? feedStatus;
+    private string orderSymbol = "BTC";
+    private string orderQty = "0.1";
+    private Order? placed;
+    private Order? fetched;
+    private string? chainError;
+    private bool busy;
+
+    private async Task RunFeedAsync(Func<Task<bool>> action, string label)
+    {
+        if (!Auth.IsLoggedIn) { feedError = "Log in first."; return; }
+        busy = true; feedError = null; feedStatus = null;
+        try
+        {
+            var running = await action();
+            feedStatus = $"{label}: feed is {(running ? "running" : "stopped")}.";
+        }
+        catch (SleipnirException ex)
+        {
+            // A customer token reaches here as 403 (authenticated but role denied). The invoker
+            // threw ForbiddenAccessException → SleipnirResults.Forbidden → client SleipnirException.
+            feedError = $"HTTP {ex.Error?.Code} — {ex.Error?.Message ?? ex.Message} " +
+                        $"(401 = not logged in; 403 = logged in but not Admin).";
+        }
+        catch (Exception ex) { feedError = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private Task StartFeedAsync() =>
+        RunFeedAsync(() => Sleipnir.Call<bool>(Sleipnir.Portfolio.StartFeed()) ?? Task.FromResult(false), "StartFeed");
+    private Task StopFeedAsync() =>
+        RunFeedAsync(() => Sleipnir.Call<bool>(Sleipnir.Portfolio.StopFeed()) ?? Task.FromResult(false), "StopFeed");
+
+    private async Task PlaceOrderChainAsync()
+    {
+        if (!Auth.IsLoggedIn) { chainError = "Log in first."; return; }
+        if (!decimal.TryParse(orderQty, out var qty)) { chainError = "Enter a quantity."; return; }
+        busy = true; chainError = null; placed = null; fetched = null;
+        try
+        {
+            // The authed chain: PlaceOrder exposes $.id (camelCase — the wire document is
+            // camelCase and JsonPath is case-sensitive) as "orderId"; GetOrder consumes it.
+            // One Serial batch, one roundtrip — same pattern as chapter 6, now behind [SleipnirAuthorise].
+            var batch = new Sleipnir.Generated.Batch();
+            var place = batch.Add(Sleipnir.Portfolio.PlaceOrder(orderSymbol, qty).Named("place"))
+                              .Exposes("$.id", "orderId");
+            batch.Add(Sleipnir.Portfolio.GetOrder(place.Alias("orderId")).Named("order"));
+            var resp = await Sleipnir.Batch(batch);
+            placed = resp.Get<Order>("place");
+            fetched = resp.Get<Order>("order");
+        }
+        catch (SleipnirException ex) { chainError = $"HTTP {ex.Error?.Code} — {ex.Error?.Message ?? ex.Message}"; }
+        catch (Exception ex) { chainError = ex.Message; }
+        finally { busy = false; }
+    }
+}

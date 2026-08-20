@@ -198,8 +198,9 @@ reproduces these rules as inline warnings.
 
 ---
 
-**Next:** [Chapter 7 — Auth, JWT Bearer, three tiers](07-auth.md). The Market demo goes
-protected: `Account.Login` issues a JWT, `[SleipnirAuthorise]` guards a `Portfolio`, and the
-three tiers each carry their own bearer — the admin's server-side token, the portal's customer
-token. Authed browser calls use REST+SSE — the WS handshake can't set `Authorization` — so
-"REST best friends" returns.
+**Next:** [Chapter 7 — The LINQ provider](07-linq.md). Chaining by hand (`.Exposes` /
+`.Alias`, `exposes` / `alias`) is explicit and exact. The `Sleipnir.Client.Linq` package adds a
+typed ergonomic layer on top — `Dep<T>` and `SleipnirQuery<T>` — so a chain reads like a query
+and the `@alias` wiring is inferred. _(This chapter is planned; the `@alias` mechanics it builds
+on are fully covered above. Skip ahead to [Chapter 8 — Auth](08-auth.md) to continue the
+running story.)_

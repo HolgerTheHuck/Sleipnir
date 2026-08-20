@@ -10,7 +10,7 @@ namespace Sleipnir.Guide.Api.Controllers;
 [SleipnirController("Market")]
 public class MarketController
 {
-    // Seed prices for a handful of symbols. The live BTC feed in chapter 8 takes over
+    // Seed prices for a handful of symbols. The live BTC feed in chapter 9 takes over
     // BTC; until then GetQuote returns this static snapshot.
     private static readonly Dictionary<string, decimal> SeedPrices = new(StringComparer.OrdinalIgnoreCase)
     {

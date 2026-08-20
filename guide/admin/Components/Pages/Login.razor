@@ -1,0 +1,74 @@
+@page "/login"
+@inject AdminAuth Auth
+@using Sleipnir.Guide.Admin.Services
+
+<PageTitle>Login — Story.Admin</PageTitle>
+
+<h1>Admin login</h1>
+
+<p class="text-muted" style="max-width:48rem">
+    Chapter 8. The Pflege-Backend holds the admin bearer <em>server-side</em>. Login calls
+    <code>Account.Login</code> on the API; the returned JWT is set on the shared client&rsquo;s
+    router (<code>SetBearer</code>) for every subsequent authed call. The server-side C# WS
+    client <strong>can</strong> send <code>Authorization</code>, so the admin keeps the
+    <code>auto</code> profile (WS probed first) even when authed — the contrast the chapter
+    draws with the browser portal, which must pin REST+SSE.
+</p>
+
+@if (Auth.IsLoggedIn)
+{
+    <div class="alert alert-success" style="max-width:32rem">
+        Logged in as <strong>@Auth.Profile?.Username</strong> (role: @Auth.Profile?.Role).
+        The bearer is armed on the server-side router — try <a href="holdings">Holdings</a>
+        or <a href="feed">Feed control</a>.
+    </div>
+    <button class="btn btn-outline-secondary" @onclick="Logout">Log out</button>
+}
+else
+{
+    <div class="row g-2 mb-3" style="max-width:32rem">
+        <div class="col">
+            <input @bind="username" class="form-control" placeholder="admin" />
+        </div>
+        <div class="col">
+            <input @bind="password" type="password" class="form-control" placeholder="admin" />
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-primary" @onclick="LoginAsync" disabled="@busy">
+                @(busy ? "Logging in…" : "Log in")
+            </button>
+        </div>
+    </div>
+    @if (error != null)
+    {
+        <div class="alert alert-danger" style="max-width:32rem">@error</div>
+    }
+    <p class="text-muted small">
+        Try <code>admin / admin</code> (admin role — can stop the feed) or
+        <code>customer / customer</code> (customer role — gets 403 on the feed controls).
+    </p>
+}
+
+@code {
+    private string username = "admin";
+    private string password = "admin";
+    private string? error;
+    private bool busy;
+
+    private async Task LoginAsync()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var (ok, err) = await Auth.LoginAsync(username, password);
+            if (!ok) error = err ?? "login failed";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void Logout() => Auth.Logout();
+}

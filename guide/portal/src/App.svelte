@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { client, SEED_SYMBOLS } from "./lib/api.js";
   import { Batch } from "./api/index.js";
-  import type { Quote } from "./api/types.js";
+  import type { Quote, Profile, Holding } from "./api/types.js";
 
   type Card = { symbol: string; quote: Quote | null; loading: boolean; error: string | null };
 
@@ -23,6 +23,24 @@
   let chainQuotes: Quote[] = $state([]);
   let chainError: string | null = $state(null);
   let chainLoading = $state(false);
+
+  // Chapter 8: auth. A browser WebSocket CANNOT set the Authorization header, so authed calls
+  // must go over REST+SSE. After a successful Login the portal calls setBearer(token) AND
+  // useTransport("rest") — the server-side admin (Blazor) keeps `auto` because its C# WS client
+  // can set the header; the browser portal cannot, so "REST best friends" for authed calls.
+  let loginUser = $state("customer");
+  let loginPass = $state("customer");
+  let profile: Profile | null = $state(null);
+  let loginError: string | null = $state(null);
+  let loggingIn = $state(false);
+  let holdings: Holding[] = $state([]);
+  let holdingsError: string | null = $state(null);
+  let loadingHoldings = $state(false);
+
+  function authedTransportLabel(): string {
+    // After login we pin REST+SSE; reflect that in the badge so the "authed → REST" story is visible.
+    return profile ? "rest+sse (authed)" : transportLabel;
+  }
 
   // Negotiate the `auto` profile once on mount so the badge reflects what the router
   // actually settled on (WebSocket, or the REST+SSE fallback). Negotiation is optional —
@@ -126,6 +144,64 @@
     }
   }
 
+  async function login() {
+    loggingIn = true;
+    loginError = null;
+    try {
+      // Account.Login returns the SleipnirResponse envelope; its data is { token, profile }. The
+      // generator emits `unknown` for a SleipnirResponse return type, so read the data by shape.
+      const res = await client.call(client.account.login(loginUser, loginPass));
+      if (res.code !== 200 || !res.data) {
+        loginError = res.error?.message ?? `HTTP ${res.code}`;
+        return;
+      }
+      const payload = res.data as { token: string; profile: Profile };
+      profile = payload.profile;
+      // Arm every bundled backend with the bearer, then pin REST+SSE — the browser WS handshake
+      // can't carry Authorization, so authed calls over `auto` (WS) would 401. REST+SSE can.
+      client.setBearer(payload.token);
+      await client.useTransport("rest");
+      transportLabel = "rest+sse (authed)";
+      await loadHoldings();
+    } catch (e) {
+      loginError = e instanceof Error ? e.message : String(e);
+    } finally {
+      loggingIn = false;
+    }
+  }
+
+  async function logout() {
+    client.setBearer("");
+    profile = null;
+    holdings = [];
+    holdingsError = null;
+    // Back to `auto` for the anonymous Market board — probe WS again.
+    try {
+      await client.useTransport("auto");
+      await client.negotiate();
+      transportLabel = client.activeTransport ?? "auto";
+    } catch {
+      transportLabel = "auto (WS probe failed → REST+SSE)";
+    }
+  }
+
+  async function loadHoldings() {
+    loadingHoldings = true;
+    holdingsError = null;
+    holdings = [];
+    try {
+      // Portfolio.GetHoldings is [SleipnirAuthorise]-gated → needs the bearer we just set.
+      // Without it (or before login) the server returns 401 and the client throws.
+      const res = await client.call(client.portfolio.getHoldings());
+      if (res.code === 200 && res.data) holdings = res.data as Holding[];
+      else holdingsError = res.error?.message ?? `HTTP ${res.code}`;
+    } catch (e) {
+      holdingsError = e instanceof Error ? e.message : String(e);
+    } finally {
+      loadingHoldings = false;
+    }
+  }
+
   function trend(q: Quote | null): string {
     if (!q || q.change === undefined || q.change === null) return "flat";
     if (q.change > 0) return "up";
@@ -200,6 +276,50 @@
           <li><strong>{q.symbol}</strong> ${formatPrice(q)} <span class="muted {trend(q)}">({q.change != null && q.change > 0 ? "+" : ""}{q.change})</span></li>
         {/each}
       </ul>
+    {/if}
+  </section>
+
+  <section class="auth">
+    <h2>Auth — customer login (chapter 8)</h2>
+    <p class="muted">
+      A browser WebSocket can&rsquo;t set <code>Authorization</code>, so after login the portal
+      pins <strong>REST+SSE</strong> for authed calls (<code>setBearer</code> +
+      <code>useTransport("rest")</code>) — the server-side admin keeps <code>auto</code>.
+    </p>
+
+    {#if profile}
+      <p class="ok">
+        Logged in as <strong>{profile.username}</strong> (role: {profile.role}).
+        transport: <code>{authedTransportLabel()}</code>
+      </p>
+      <button type="button" onclick={logout}>Log out</button>
+
+      <h3 class="h6">Portfolio.GetHoldings (authed)</h3>
+      <button type="button" onclick={loadHoldings} disabled={loadingHoldings}>
+        {loadingHoldings ? "Loading…" : "Load holdings"}
+      </button>
+      {#if holdingsError}
+        <p class="err">{holdingsError}</p>
+      {:else if holdings.length}
+        <table class="holdings">
+          <thead><tr><th>Symbol</th><th>Qty</th><th>Avg price</th></tr></thead>
+          <tbody>
+            {#each holdings as h (h.symbol)}
+              <tr><td>{h.symbol}</td><td>{h.quantity}</td><td>{h.averagePrice}</td></tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    {:else}
+      <form onsubmit={(e) => { e.preventDefault(); login(); }}>
+        <input type="text" bind:value={loginUser} placeholder="customer" />
+        <input type="password" bind:value={loginPass} placeholder="customer" />
+        <button type="submit" disabled={loggingIn}>{loggingIn ? "Logging in…" : "Log in"}</button>
+      </form>
+      {#if loginError}
+        <p class="err">{loginError}</p>
+      {/if}
+      <p class="muted small">Try customer / customer. (admin / admin works too, but the feed controls live in the Blazor admin.)</p>
     {/if}
   </section>
 </main>

@@ -37,11 +37,11 @@ Sleipnir is a multi-transport RPC framework, but this guide has a deliberate lea
   one-line HTTP POST, no SDK.
 - The **HTML/JS client** (chapter 3) is REST + SSE only, and that's a *choice*: it dodges
   the browser WebSocket auth limitation and works behind any corporate proxy.
-- **Authed browser calls** (chapter 7) use REST + SSE for the same reason.
+- **Authed browser calls** (chapter 8) use REST + SSE for the same reason.
 - The unified transport's `auto` mode probes WebSocket and **falls back to REST + SSE**
-  transparently (chapters 4 and 8) — REST is the safety net, not a lesser path.
+  transparently (chapters 4 and 9) — REST is the safety net, not a lesser path.
 
-WebSocket and SignalR are first-class and shown too (chapter 8 turns the hub on for
+WebSocket and SignalR are first-class and shown too (chapter 9 turns the hub on for
 binary-efficient streaming), but REST + SSE is the friend you can always reach for.
 
 ## Prerequisites
@@ -62,8 +62,10 @@ binary-efficient streaming), but REST + SSE is the friend you can always reach f
 | 4 | [Svelte portal (TS codegen)](chapters/04-svelte-portal.md) | Endkunden-Portal, unified transport `auto`. |
 | 5 | [Batching](chapters/05-batching.md) | `GetQuotes`, Parallel vs Serial, one roundtrip. |
 | 6 | [Chaining](chapters/06-chaining.md) | `Search → GetQuotes` via `@alias`, list fan-out. |
-| 7 | [Auth — JWT Bearer](chapters/07-auth.md) | `Account.Login`, `[SleipnirAuthorise]`, admin vs customer. |
-| 8 | [Eventing — live BTC feed](chapters/08-events.md) | `[SleipnirEvent]`, Svelte live chart, Blazor monitor, resume. |
+| 7 | [LINQ provider](chapters/07-linq.md) | `Dep<T>` + `SleipnirQuery<T>` — typed ergonomic layer over `@alias`. _(planned)_ |
+| 8 | [Auth — JWT Bearer](chapters/08-auth.md) | `Account.Login`, `[SleipnirAuthorise]`, admin vs customer, 401 vs 403. |
+| 9 | [Eventing — live BTC feed](chapters/09-events.md) | `[SleipnirEvent]`, Svelte live chart, Blazor monitor, resume. _(planned)_ |
+| 10 | [Production](chapters/10-production.md) | Interceptors, `/metrics` + `/observability`, tracing, binary. _(planned)_ |
 
 Each chapter assumes the previous one's project state. The final repo state is the
 complete runnable 3-tier app.
@@ -80,7 +82,7 @@ guide/
   admin/   Story.Admin ← Blazor Pflege-Backend (from chapter 2)
   web/               ← plain HTML/JS client (chapter 3, npm, zero build)
   portal/ Story.Portal← Svelte Endkunden-Portal (chapter 4, npm)
-  chapters/01..08-*.md ← the narrative, one per step
+  chapters/01..10-*.md ← the narrative, one per step
 ```
 
 Start the API once and leave it running:

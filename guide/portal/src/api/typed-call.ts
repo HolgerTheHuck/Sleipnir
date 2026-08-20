@@ -6,7 +6,64 @@
 // validity are compile-checked without a (structurally ambiguous) lookup over T.
 import { SleipnirCall, ExecutionMode } from "sleipnir-client";
 import type { SleipnirRequest, SleipnirMultiRequest, SleipnirResponse } from "sleipnir-client";
-import type { Quote } from "./types.js";
+import type { Holding, Order, Profile, Quote } from "./types.js";
+
+export interface HoldingPaths {
+  "$": Holding;
+  "$.symbol": string;
+  "$.quantity": number;
+  "$.averagePrice": number;
+}
+
+export interface HoldingArrayPaths {
+  "$": Holding[];
+  "$[0]": Holding;
+  "$[0].symbol": string;
+  "$[0].quantity": number;
+  "$[0].averagePrice": number;
+  "$[*].symbol": string[];
+  "$[*].quantity": number[];
+  "$[*].averagePrice": number[];
+}
+
+export interface OrderPaths {
+  "$": Order;
+  "$.id": number;
+  "$.symbol": string;
+  "$.quantity": number;
+  "$.price": number;
+  "$.time": string;
+}
+
+export interface OrderArrayPaths {
+  "$": Order[];
+  "$[0]": Order;
+  "$[0].id": number;
+  "$[0].symbol": string;
+  "$[0].quantity": number;
+  "$[0].price": number;
+  "$[0].time": string;
+  "$[*].id": number[];
+  "$[*].symbol": string[];
+  "$[*].quantity": number[];
+  "$[*].price": number[];
+  "$[*].time": string[];
+}
+
+export interface ProfilePaths {
+  "$": Profile;
+  "$.username": string;
+  "$.role": string;
+}
+
+export interface ProfileArrayPaths {
+  "$": Profile[];
+  "$[0]": Profile;
+  "$[0].username": string;
+  "$[0].role": string;
+  "$[*].username": string[];
+  "$[*].role": string[];
+}
 
 export interface QuotePaths {
   "$": Quote;

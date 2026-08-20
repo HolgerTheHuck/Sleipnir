@@ -25,6 +25,16 @@
     <ProjectReference Include="..\..\Sleipnir.Server.Codegen\Sleipnir.Server.Codegen.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <!-- Chapter 7: JWT bearer auth. Sleipnir itself reads only HttpContext.User (populated by
+       ASP.NET auth); [SleipnirAuthorise] enforces per-method rules on top. This package brings
+       the validation pipeline (AddJwtBearer) and transitively System.IdentityModel.Tokens.Jwt,
+       which AccountService uses to ISSUE tokens. A single symmetric dev key is shared between
+       issuance (AccountService) and validation (AddJwtBearer) — fine for a tutorial; production
+       would use asymmetric keys + a real IdP. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
+  </ItemGroup>
+
   <!-- Sleipnir server-side contract export + drift-check. Regenerates discovery from the built
        server and fails the build if it drifts from the committed contract.sleipnir.json. This is
        the single source of truth — the Blazor admin (chapter 2) and the codegen clients consume

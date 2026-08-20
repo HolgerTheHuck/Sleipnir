@@ -5,7 +5,9 @@
 import { SleipnirCall, SleipnirTransportRouter } from "sleipnir-client";
 import type { SleipnirResponse, SleipnirRequest, SubscribeHandlers, SleipnirSubscription, SleipnirTransport, SleipnirRestClient, SleipnirWebSocketClient, SleipnirSseClient, SleipnirSignalrClient, SleipnirRestClientOptions, SleipnirWebSocketClientOptions, SleipnirSseClientOptions, SleipnirSignalrClientOptions } from "sleipnir-client";
 import { Batch, TypedCall } from "./typed-call.js";
+import { AccountClient } from "./controllers.js";
 import { MarketClient } from "./controllers.js";
+import { PortfolioClient } from "./controllers.js";
 
 /** A SleipnirResponse whose `data` is narrowed to T (the wire shape is unchanged). */
 export type TypedResponse<T> = SleipnirResponse & { data: T | null };
@@ -34,12 +36,16 @@ export interface SleipnirClientOptions {
 
 export class SleipnirClient {
   private readonly _router: SleipnirTransportRouter;
+  readonly account: AccountClient;
   readonly market: MarketClient;
+  readonly portfolio: PortfolioClient;
 
   constructor(baseUrl: string, options: SleipnirClientOptions = {}) {
     this._router = new SleipnirTransportRouter({ baseUrl, capability: "all", ...options });
     const build = (controller: string, method: string) => SleipnirCall.init(controller, method);
+    this.account = new AccountClient(build);
     this.market = new MarketClient(build);
+    this.portfolio = new PortfolioClient(build);
   }
 
   /** Resolve the `auto` profile (probe WS → fallback REST+SSE). No-op for a fixed profile. */

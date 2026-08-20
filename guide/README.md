@@ -1,10 +1,10 @@
-# The Sleipnir Guide — a progressive, runnable 8-step tutorial
+# The Sleipnir Guide — a progressive, runnable 10-chapter tutorial
 
 > Clone the repo, open `guide/`, follow the chapters. Each step leaves the project in a
 > runnable state — you build on the **same growing solution**, not throwaway folders.
 
 This guide builds a realistic **3-tier app** around one cohesive domain — a crypto
-**Market / Exchange** — in eight short chapters. By the end you have a Sleipnir API
+**Market / Exchange** — in ten short chapters. By the end you have a Sleipnir API
 serving a Blazor admin backend and a Svelte customer portal, with batching, dependency
 chaining, JWT auth, and a **live BTC price feed** streaming over Sleipnir events.
 
@@ -62,9 +62,9 @@ binary-efficient streaming), but REST + SSE is the friend you can always reach f
 | 4 | [Svelte portal (TS codegen)](chapters/04-svelte-portal.md) | Endkunden-Portal, unified transport `auto`. |
 | 5 | [Batching](chapters/05-batching.md) | `GetQuotes`, Parallel vs Serial, one roundtrip. |
 | 6 | [Chaining](chapters/06-chaining.md) | `Search → GetQuotes` via `@alias`, list fan-out. |
-| 7 | [LINQ provider](chapters/07-linq.md) | `Dep<T>` + `SleipnirQuery<T>` — typed ergonomic layer over `@alias`. _(planned)_ |
+| 7 | [LINQ provider](chapters/07-linq.md) | `Dep<T>` + `SleipnirQuery<T>` — typed ergonomic layer over `@alias`. |
 | 8 | [Auth — JWT Bearer](chapters/08-auth.md) | `Account.Login`, `[SleipnirAuthorise]`, admin vs customer, 401 vs 403. |
-| 9 | [Eventing — live BTC feed](chapters/09-events.md) | `[SleipnirEvent]`, Svelte live chart, Blazor monitor, resume. _(planned)_ |
+| 9 | [Eventing — live BTC feed](chapters/09-events.md) | `[SleipnirEvent]`, Svelte live chart, Blazor monitor, resume. |
 | 10 | [Production](chapters/10-production.md) | Interceptors, `/metrics` + `/observability`, tracing, binary. _(planned)_ |
 
 Each chapter assumes the previous one's project state. The final repo state is the

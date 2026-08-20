@@ -197,6 +197,13 @@ curl -s -X POST http://localhost:5000/api/sleipnir/json \
 
 ## Where to go next
 
+- **The progressive tutorial** (recommended next): [`guide/`](guide/README.md) — a runnable
+  10-chapter walkthrough that builds one 3-tier app (Sleipnir API + Blazor Pflege-Backend +
+  Svelte Endkunden-Portal) end to end: your first controller → C#/TS/JS codegen → batching →
+  `@alias` chaining → LINQ provider → JWT auth → a live `[SleipnirEvent]` price feed with
+  cross-transport resume → production. Each chapter has a 3-command "Try it"; clone the repo
+  and follow [`guide/README.md`](guide/README.md). This guide is the fastest path from
+  "empty directory" to a real multi-tier Sleipnir app.
 - **Build-time contract & typed clients** (Node-free): [CODEGEN_ONBOARDING.md](CODEGEN_ONBOARDING.md)
   — the server exports `contract.sleipnir.json` (drift fails the build), the client is generated from
   it by a Roslyn source generator. The compile-time boundary gRPC gives you, without `.proto`.

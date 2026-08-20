@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Sleipnir.Guide.Admin</RootNamespace>
+    <AssemblyName>Story.Admin</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- The .NET 10 Blazor Web App template sets this; suppresses the nav-exception noise. -->
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <!-- The generated client runtime + the Roslyn source generator (wired as an analyzer so it
+       emits SleipnirGenerated.cs during this build). In a published setup the generator is a NuGet
+       <PackageReference Include="Sleipnir.Generator" PrivateAssets="all" />; the guide uses in-repo
+       ProjectReferences so clone-and-build works with no restore. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\SleipnirClient\SleipnirClient.csproj" />
+    <ProjectReference Include="..\..\Sleipnir.SourceGenerator\Sleipnir.SourceGenerator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- The contract is the single source of truth, owned by the server. Linked here as an
+       AdditionalFile so the source generator reads the SAME file the server regenerates on its
+       build (change a controller → rebuild server → rebuild admin → SleipnirGenerated.cs updates).
+       The packaged NuGet generator auto-imports the contract via build/Sleipnir.Generator.props;
+       in-repo we declare it explicitly. -->
+  <ItemGroup>
+    <AdditionalFiles Include="..\server\contract.sleipnir.json" Link="contract.sleipnir.json" />
+  </ItemGroup>
+
+</Project>

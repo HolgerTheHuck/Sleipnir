@@ -24,4 +24,17 @@ internal static class EventFrame
 
     public static string Error(string subscriptionId, string message)
         => JsonSerializer.Serialize(new { type = "error", subscriptionId, message }, EventJsonOptions.Default);
+
+    /// <summary>
+    /// The subscribe-ack frame — the FIRST item of a SignalR hub stream. WebSocket and SSE
+    /// deliver the ack out-of-band (the WS subscribe <c>SleipnirResponse</c>; the SSE
+    /// <c>event: ack</c> block) because they have a separate response channel; a SignalR
+    /// <c>IAsyncEnumerable</c> stream has only the stream itself, so the ack travels as the
+    /// first yielded frame. <c>replayedFrom</c> is omitted on a fresh subscribe (null →
+    /// <c>EventJsonOptions.Default</c> WhenWritingNull); set on a resume so the client learns
+    /// the first replayed eventId. The TS SignalR client resolves <c>subscriptionId</c> +
+    /// <c>replayedFrom</c> from this item (it needs the id for cross-transport resume).
+    /// </summary>
+    public static string Ack(string subscriptionId, long? replayedFrom)
+        => JsonSerializer.Serialize(new { type = "ack", subscriptionId, replayedFrom }, EventJsonOptions.Default);
 }

@@ -75,6 +75,25 @@ export interface SseSubscribeOptions {
 }
 
 /**
+ * Optionen für {@link SleipnirSseClient.resume} (Cross-Transport-Resume einer durable
+ * Subscription anhand ihrer `subscriptionId`). Im Gegensatz zu {@link SseSubscribeOptions}
+ * gibt es keinen Fresh-Modus — ein Drop verbindet immer im Resume-Modus neu (selbe
+ * Resume-URL mit aktualisiertem Cursor), bis `complete`/`error`/`410`/Abbruch.
+ */
+export interface SseResumeOptions {
+  /** Abbruch-Signal; beendet die Resume-Subscription ohne Reconnect. */
+  signal?: AbortSignal;
+  /** Zusätzliche Header für jeden Resume-Request. */
+  headers?: Record<string, string>;
+  /** Auto-Reconnect bei Drop (Default: clientweiter `reconnect`). */
+  reconnect?: boolean;
+  /** Backoff-Intervalle in ms (Default: clientweite `reconnectDelays`). */
+  reconnectDelays?: number[];
+  /** Per-subscription resume policy — `"drop"` beendet, sonst wird fortgesetzt (Default: resume). */
+  resumePolicy?: ResumePolicy;
+}
+
+/**
  * SSE-Client für Sleipnir-Events (`[SleipnirEvent]` + `IObservable<T>`) über REST
  * (`text/event-stream`). Isomorph via globalem `fetch`. Eine `subscribe`-Aktivierung öffnet
  * genau einen SSE-Stream (ein GET = eine Subscription); auf Disconnect greift der Resume-
@@ -208,7 +227,7 @@ export class SleipnirSseClient {
               // Eine Resume, die eine neue id liefert, bedeutet Server-Degraded-to-Fresh
               // (TTL expired / non-resumable) → der eventId-Zähler startet neu bei 1 → Cursor reset.
               if (mode === "resume" && ack.replayedFrom == null) lastEventId = 0;
-              resolve({ subscriptionId, unsubscribe });
+              resolve({ subscriptionId, get lastEventId() { return lastEventId; }, unsubscribe });
               continue;
             }
             dispatchFrame(block);
@@ -301,6 +320,171 @@ export class SleipnirSseClient {
       };
 
       // Start: erste Fresh-Verbindung.
+      void connectOnce();
+    });
+  }
+
+  /**
+   * Setzt eine durable Subscription anhand ihrer server-seitigen `subscriptionId` fort: der
+   * Server replayt die Gap ab `lastEventId` und liefert dann live weiter — über einen neuen
+   * SSE-Stream. Cross-Transport: der serverseitige `SleipnirSubscriptionStore` ist prozessweit,
+   * daher ist eine über WebSocket (oder einen anderen SSE-Stream) erzeugte `subscriptionId`
+   * hier resumable. Das ist der Einstiegspunkt, den der Transport-Router beim Auto-Fallback
+   * (WS → REST+SSE) nutzt, um eine Event-Subscription an SSE zu übergeben.
+   *
+   * Im Gegensatz zu {@link subscribe} werden keine Controller/Method/Params benötigt — die
+   * Resume-URL ist selbstbeziehend (`GET /events/{subscriptionId}?lastEventId=…`). Bei einem
+   * Drop verbindet der Client im Resume-Modus neu (selbe URL, aktualisierter Cursor);
+   * `410 Gone` (durable Subscription abgelaufen/geräumt) terminiert mit `onError` — es gibt
+   * keinen Fresh-Fallback, da keine Fresh-Params vorliegen.
+   */
+  async resume<T>(
+    subscriptionId: string,
+    lastEventId: number,
+    handlers: SubscribeHandlers<T>,
+    opts: SseResumeOptions = {},
+  ): Promise<SleipnirSubscription> {
+    if (!subscriptionId) throw new Error("SleipnirSseClient.resume: subscriptionId is required.");
+    const policy = opts.resumePolicy ?? this._onResume;
+    const reconnect = opts.reconnect ?? this._reconnect;
+    const reconnectDelays = opts.reconnectDelays ?? this._reconnectDelays;
+
+    const ctrl = new AbortController();
+    const onCallerAbort = () => ctrl.abort(opts.signal?.reason);
+    if (opts.signal) {
+      if (opts.signal.aborted) ctrl.abort(opts.signal.reason);
+      else opts.signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+
+    let unsubscribed = false;
+    let activeId = subscriptionId;       // server may hand back a new id on degraded-to-fresh
+    let cursor = lastEventId;
+    let attempt = 0;
+
+    const unsubscribe = async (): Promise<void> => {
+      unsubscribed = true;
+      ctrl.abort(new Error("SSE resume unsubscribed."));
+    };
+
+    return new Promise<SleipnirSubscription>((resolve, reject) => {
+      let ackSeen = false;
+
+      const connectOnce = async (): Promise<void> => {
+        const url = this.buildResumeUrl(activeId, cursor);
+        const headers: Record<string, string> = { ...this._headers, Accept: "text/event-stream" };
+        if (cursor > 0) headers["Last-Event-Id"] = String(cursor);
+        const token = this.resolveBearer();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        if (opts.headers) Object.assign(headers, opts.headers);
+
+        let resp: Response;
+        try {
+          resp = await this._fetch(url, { method: "GET", headers, signal: ctrl.signal });
+        } catch (e) {
+          return handleDrop(e);
+        }
+        if (!resp.ok || !resp.body) {
+          // Pre-ack: die durable Subscription ist weg/verweigert → Subscribe scheitert.
+          if (!ackSeen) {
+            reject(new SleipnirError(resp.status, `SSE resume failed (HTTP ${resp.status}).`));
+            return;
+          }
+          if (resp.status === 410) {
+            // Durable Subscription abgelaufen/geräumt → terminal (kein Fresh-Fallback: keine Params).
+            unsubscribed = true;
+            try { handlers.onError?.(new Error("SSE resume target gone (410): subscription expired.")); } catch { /* non-fatal */ }
+            return;
+          }
+          return handleDrop(new Error(`SSE resume stream HTTP ${resp.status}`));
+        }
+        try {
+          await readStream(resp.body);
+          if (!unsubscribed && !ctrl.signal.aborted) handleDrop(new Error("SSE resume stream ended"));
+        } catch (e) {
+          if (unsubscribed || ctrl.signal.aborted) return;
+          handleDrop(e);
+        }
+      };
+
+      const readStream = async (body: ReadableStream<Uint8Array>): Promise<void> => {
+        const reader = body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let sep: number;
+          while ((sep = buffer.indexOf("\n\n")) !== -1) {
+            const blockText = buffer.slice(0, sep);
+            buffer = buffer.slice(sep + 2);
+            const block = parseSseBlock(blockText);
+            if (!block) continue;
+            if (!ackSeen && block.event === "ack") {
+              ackSeen = true;
+              const ack = JSON.parse(block.data) as { subscriptionId?: string; replayedFrom?: number };
+              if (ack.subscriptionId) activeId = ack.subscriptionId;
+              // Degraded-to-fresh (TTL expired / non-resumable): eventId-Zähler startet neu → Cursor reset.
+              if (ack.replayedFrom == null) cursor = 0;
+              resolve({ subscriptionId: activeId, get lastEventId() { return cursor; }, unsubscribe });
+              continue;
+            }
+            if (block.event === "event") {
+              const frame = JSON.parse(block.data) as { eventId?: number; data: T };
+              const evId = typeof frame.eventId === "number" ? frame.eventId : null;
+              if (evId !== null) {
+                if (evId <= cursor) continue;       // Replay-Duplikat verwerfen
+                cursor = evId;
+              }
+              try { handlers.onNext(frame.data); } catch { /* Handler-Fehler nicht fatal */ }
+            } else if (block.event === "complete") {
+              unsubscribed = true;
+              try { handlers.onComplete?.(); } catch { /* non-fatal */ }
+            } else if (block.event === "error") {
+              unsubscribed = true;
+              const msg = (JSON.parse(block.data) as { message?: string }).message ?? "Subscription error";
+              try { handlers.onError?.(new Error(msg)); } catch { /* non-fatal */ }
+            }
+          }
+        }
+      };
+
+      const handleDrop = (e: unknown): void => {
+        if (unsubscribed || !reconnect || reconnectDelays.length === 0) {
+          if (!ackSeen) reject(e instanceof Error ? e : new Error("SSE resume ended before ack"));
+          else { try { handlers.onError?.(e instanceof Error ? e : new Error("SSE resume stream ended")); } catch { /* non-fatal */ } }
+          return;
+        }
+        scheduleReconnect();
+      };
+
+      const scheduleReconnect = (): void => {
+        if (unsubscribed) return;
+        // Resume-only: die Policy darf ein Reconnect zu "drop" herabstufen; "fresh" ist hier
+        // bedeutungslos (keine Fresh-Params) und wird als "resume" behandelt.
+        let decision: ResumeDecision = "resume";
+        if (policy && cursor > 0) {
+          const ctx: SubscriptionResumeContext = {
+            controller: "",
+            method: "",
+            subscriptionId: activeId,
+            lastEventId: cursor,
+          };
+          const d = policy(ctx);
+          if (d) decision = d;
+        }
+        if (decision === "drop") {
+          unsubscribed = true;
+          try { handlers.onComplete?.(); } catch { /* non-fatal */ }
+          return;
+        }
+        const delay = reconnectDelays[Math.min(attempt, reconnectDelays.length - 1)];
+        attempt++;
+        if (delay > 0) setTimeout(() => { if (!unsubscribed) void connectOnce(); }, delay);
+        else void connectOnce();
+      };
+
+      // Start: erste Resume-Verbindung.
       void connectOnce();
     });
   }

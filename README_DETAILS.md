@@ -798,10 +798,14 @@ await sub.unsubscribe();
 For a **cookie-auth** host, native `EventSource` against the resume URL also works (it
 auto-reconnects with `Last-Event-Id` for free) — but cannot send a Bearer token.
 
-**Generated typed client.** `sleipnir-gen --transport sse` wires `SleipnirRestClient` (calls) +
-`SleipnirSseClient` (events) into one `SleipnirClient` with `.rest`/`.sse` accessors; the generated
-`chat.messageReceived(chatId, handlers)` delegates to SSE. Without event methods, `sse` is
-byte-identical to `rest` (no SSE client wired).
+**Generated typed client.** `--transport` is now a **bundle-capability** selector, not a client
+shape: the generated `SleipnirClient` wraps a `SleipnirTransportRouter` and the public surface is
+identical for every value. `rest` (alias of the old `sse`) bundles REST + SSE; the default `all`
+bundles REST + WS + SSE and selects transport **at runtime** — `auto` probes WebSocket and falls
+back to REST+SSE on failure, `useTransport("rest")` pins HTTP-only. The generated
+`chat.messageReceived(chatId, handlers)` delegates to the router, which routes the subscribe to SSE
+when the active profile is `rest` (or to WebSocket / SignalR otherwise). Escape hatches
+`client.rest` / `client.ws` / `client.sse` / `client.signalr` reach the raw bundled backends.
 
 ## Known Limitations (v1)
 

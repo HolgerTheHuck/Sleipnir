@@ -3,9 +3,10 @@
 // consumer resolves the typed alias). Spawns `tsc --noEmit` against a temp
 // project under the package root so `sleipnir-client` resolves via node_modules.
 //
-// Runs once per transport (rest | ws | both); the ws harness exercises the
-// `.ws` escape hatch, the both harness exercises `callWs`/`batchWs` + both
-// escape hatches — so the transport-specific surface in client.ts is covered.
+// Runs once per capability (rest | ws | all); the harness exercises the unified
+// transport-router surface (useTransport/negotiate/activeTransport + the
+// `| undefined` escape hatches) — identical across all capabilities, so one
+// representative harness type-checks the whole surface.
 import { describe, it, expect } from "vitest";
 import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -24,10 +25,10 @@ const compileDir = join(pkgRoot, ".tsc-compile");
 const require = createRequire(import.meta.url);
 const tscPath = require.resolve("typescript/bin/tsc");
 
-type Transport = "rest" | "sse" | "ws" | "both";
+type Capability = "rest" | "ws" | "all" | "signalr";
 
-/** Shared Story-01 diamond body — identical across transports; only the client
- * construction + transport-specific surface (in `harnessFor`) differ. */
+/** Shared Story-01 diamond body — identical across capabilities; only the client
+ * construction + the unified router-surface exercise (in `harnessFor`) differ. */
 const diamondBody = `  const batch = new Batch();
 
   // Producer exposes camelCase paths (compile-checked against JsonPathOf<Order>).
@@ -51,27 +52,25 @@ const diamondBody = `  const batch = new Batch();
   await client.batch(batch);
 `;
 
-function harnessFor(t: Transport): string {
-  const ctor =
-    t === "ws" ? `  const client = new SleipnirClient("ws://localhost:5001/sleipnirws");`
-    : t === "both" ? `  const client = new SleipnirClient("http://localhost:5001", { rest: {}, ws: {} });`
-    : `  const client = new SleipnirClient("http://localhost:5001");`;
+function harnessFor(t: Capability): string {
+  // One uniform ctor for all capabilities — `SleipnirClientOptions` is the strict
+  // superset; the router ignores sub-options for backends not bundled by the capability.
+  const ctor = `  const client = new SleipnirClient("http://localhost:5001", { rest: {}, ws: {}, sse: {} });`;
 
-  const surface =
-    t === "ws"
-      ? `  // ws-only client exposes the WebSocket escape hatch.
-  void client.ws;
-`
-      : t === "both"
-      ? `  // both: REST is the default call/batch; Ws variants + both escape hatches exist.
-  await client.callWs(client.order.getById(1));
-  await client.batchWs(batch);
+  const surface = `  // Unified transport-router surface (identical across capabilities).
+  await client.negotiate();
+  await client.useTransport("ws");
+  const active: string | null = client.activeTransport;
+  void active;
+  // Escape hatches are | undefined (capability-agnostic surface).
   void client.rest;
   void client.ws;
-`
-      : ``;
+  void client.sse;
+  client.setBearer("token");
+  client.dispose();
+`;
 
-  return `// Story-01 diamond: compile-time-typed dependency chain (transport: ${t}).
+  return `// Story-01 diamond: compile-time-typed dependency chain (capability: ${t}).
 import { SleipnirClient } from "./api/client.js";
 import { Batch } from "./api/typed-call.js";
 
@@ -110,14 +109,14 @@ function runTsc(projectDir: string): { status: number; stdout: string; stderr: s
   return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
-/** Emit the tree for `t`, write it + the transport harness + tsconfig into a
- * fresh per-transport dir, and run tsc --noEmit. */
-function compileTransport(t: Transport): { status: number; stdout: string; stderr: string } {
+/** Emit the tree for `t`, write it + the harness + tsconfig into a fresh per-capability
+ *  dir, and run tsc --noEmit. */
+function compileCapability(t: Capability): { status: number; stdout: string; stderr: string } {
   const dir = join(compileDir, t);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(join(dir, "api"), { recursive: true });
 
-  const tree = emitTsClient(buildEmitterInput(readFixture(), new NamingResolver()), { transport: t });
+  const tree = emitTsClient(buildEmitterInput(readFixture(), new NamingResolver()), { capability: t });
   for (const [path, content] of Object.entries(tree)) {
     const abs = join(dir, path);
     mkdirSync(dirname(abs), { recursive: true });
@@ -129,9 +128,9 @@ function compileTransport(t: Transport): { status: number; stdout: string; stder
   return runTsc(dir);
 }
 
-describe.each<Transport>(["rest", "ws", "both"])("generated TS compiles + typed diamond type-checks (transport: %s)", (t) => {
+describe.each<Capability>(["rest", "ws", "all", "signalr"])("generated TS compiles + typed diamond type-checks (capability: %s)", (t) => {
   it("tsc exits 0 against the diamond harness", () => {
-    const result = compileTransport(t);
+    const result = compileCapability(t);
     if (result.status !== 0) {
       console.error(`tsc stdout (${t}):\n` + result.stdout);
       console.error(`tsc stderr (${t}):\n` + result.stderr);
@@ -179,10 +178,10 @@ export async function semanticChain(): Promise<void> {
 `;
 
   it("tsc exits 0 against the story02 nested-array harness", () => {
-    const dir = join(compileDir, "story02-rest");
+    const dir = join(compileDir, "story02-all");
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(join(dir, "api"), { recursive: true });
-    const tree = emitTsClient(buildEmitterInput(readFixture("story02"), new NamingResolver()), { transport: "rest" });
+    const tree = emitTsClient(buildEmitterInput(readFixture("story02"), new NamingResolver()));
     for (const [path, content] of Object.entries(tree)) {
       const abs = join(dir, path);
       mkdirSync(dirname(abs), { recursive: true });
@@ -204,8 +203,8 @@ export async function semanticChain(): Promise<void> {
 // onNext typed to the event payload (Message for the object event, number for the
 // scalar event), the mixed controller's call method stays a TypedCall, and the
 // `@ts-expect-error` guards inside subscribeBody prove the handler payload is
-// enforced. Runs for all transports: ws/both delegate to the WS runtime; rest has
-// the throwing _subscribe but the SAME typed signature, so it must still compile.
+// enforced. Runs for all capabilities — the surface is identical; the router
+// bridges WS/SSE regardless of the bundled backends.
 const subscribeBody = `  // Object-payload event: onNext typed to Message; resolves to a subscription.
   const sub: SleipnirSubscription = await client.chat.messageReceived(1, {
     onNext: (m: Message) => { void m; },
@@ -230,13 +229,9 @@ const subscribeBody = `  // Object-payload event: onNext typed to Message; resol
   client.ticker.ticks({});
 `;
 
-function subscribeHarnessFor(t: Transport): string {
-  const ctor =
-    t === "ws" ? `  const client = new SleipnirClient("ws://localhost:5001/sleipnirws");`
-    : t === "both" ? `  const client = new SleipnirClient("http://localhost:5001", { rest: {}, ws: {} });`
-    : t === "sse" ? `  const client = new SleipnirClient("http://localhost:5001", { rest: {}, sse: {} });`
-    : `  const client = new SleipnirClient("http://localhost:5001");`;
-  return `// Story-03: typed subscribe surface (transport: ${t}).
+function subscribeHarnessFor(t: Capability): string {
+  const ctor = `  const client = new SleipnirClient("http://localhost:5001", { rest: {}, ws: {}, sse: {} });`;
+  return `// Story-03: typed subscribe surface (capability: ${t}).
 import { SleipnirClient } from "./api/client.js";
 import type { SleipnirSubscription } from "sleipnir-client";
 import type { Message } from "./api/types.js";
@@ -247,12 +242,12 @@ ${subscribeBody}}
 `;
 }
 
-describe.each<Transport>(["rest", "sse", "ws", "both"])("generated TS story03 compiles + typed subscribe type-checks (transport: %s)", (t) => {
+describe.each<Capability>(["rest", "ws", "all", "signalr"])("generated TS story03 compiles + typed subscribe type-checks (capability: %s)", (t) => {
   it("tsc exits 0 against the story03 subscribe harness", () => {
     const dir = join(compileDir, `story03-${t}`);
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(join(dir, "api"), { recursive: true });
-    const tree = emitTsClient(buildEmitterInput(readFixture("story03"), new NamingResolver()), { transport: t });
+    const tree = emitTsClient(buildEmitterInput(readFixture("story03"), new NamingResolver()), { capability: t });
     for (const [path, content] of Object.entries(tree)) {
       const abs = join(dir, path);
       mkdirSync(dirname(abs), { recursive: true });

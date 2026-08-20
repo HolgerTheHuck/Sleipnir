@@ -79,11 +79,13 @@ All transports deserialize the incoming `SleipnirRequest`/`SleipnirMultiRequest`
 
 ### Client Library (`SleipnirClient`)
 
-- `ISleipnirClient` interface with `Call(SleipnirRequest)`, `Call<T>(SleipnirRequest)`, `Call(SleipnirMultiRequest)`.
+- `ISleipnirClient` interface with `Call(SleipnirRequest)`, `Call<T>(SleipnirRequest)`, `Call(SleipnirMultiRequest)`, and (since the unified-transport release) `SubscribeAsync<T>(SleipnirRequest?, ResumePolicy?, CancellationToken)` / `ResumeAsync<T>(string, long, ...)` for cross-transport event subscriptions.
 - `SleipnirClientBase`: shared `Call<T>()` with JSON deserialization and `SleipnirException` on errors.
-- `SleipnirRestJsonClient`: `HttpClient`-based, `IDisposable`.
-- `SleipnirWebSocketClient`: persistent `ClientWebSocket` connection, `SemaphoreSlim` for thread safety, `IAsyncDisposable`.
-- `SleipnirSignalrClient`: SignalR hub connection with auto-reconnect and exponential backoff.
+- `SleipnirRestJsonClient`: `HttpClient`-based, `IDisposable` (calls only).
+- `SleipnirWebSocketClient`: persistent `ClientWebSocket` connection, `SemaphoreSlim` for thread safety, `IAsyncDisposable` (calls + events).
+- `SleipnirSseClient`: events-only over `text/event-stream` with `Last-Event-Id` resume, `IAsyncDisposable`.
+- `SleipnirSignalrClient`: SignalR hub connection with auto-reconnect and exponential backoff; calls via `DoWork`/`DoWorkMany`, events via hub-streaming `SubscribeAsync` (`IAsyncEnumerable<string>` ack+frames).
+- `SleipnirTransportRouter`: unified client (`: SleipnirClientBase, IAsyncDisposable`) that bundles the backends selected by a capability (`rest|ws|all|signalr`) and picks the transport at runtime — `auto` (default) probes WebSocket and falls back to REST+SSE; `UseTransportAsync()` switches; `rest`/`ws`/`sse`/`signalr` escape hatches reach the raw bundled backends. The generated `SleipnirClient`/`SleipnirGeneratedClient` wraps a `SleipnirTransportRouter`.
 - `SleipnirCall`: fluent builder — `.Init("Controller", "Method").With(args).Named("id").Exposes("$", "alias").WithAlias("@alias", "default").ToRequest()`. The `Exposes` JSON path is **result-relative** (`$` = whole result, `$.Property`, `$[0].Id`); there is no `$.data` envelope level.
 
 ### Key Attributes (defined in `SleipnirCommon`)

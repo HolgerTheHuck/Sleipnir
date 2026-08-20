@@ -102,4 +102,10 @@ public sealed class SleipnirInMemoryClient : ISleipnirClient
 
     public Task<byte[]?> CallBinary(SleipnirRequest? request, CancellationToken ct = default)
         => throw new NotSupportedException("SleipnirInMemoryClient does not support CallBinary — use a real transport for binary tests.");
+
+    public Task<SleipnirSubscription<T>> SubscribeAsync<T>(SleipnirRequest? request, ResumePolicy? resumePolicy = null, CancellationToken ct = default)
+        => throw new NotSupportedException("SleipnirInMemoryClient does not support event subscriptions — use a real transport (WebSocket / SSE / SignalR) for event tests.");
+
+    public Task<SleipnirSubscription<T>> ResumeAsync<T>(string subscriptionId, long lastEventId, ResumePolicy? resumePolicy = null, CancellationToken ct = default)
+        => throw new NotSupportedException("SleipnirInMemoryClient does not support event subscriptions — use a real transport (WebSocket / SSE / SignalR) for event tests.");
 }

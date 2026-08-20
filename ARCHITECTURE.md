@@ -150,10 +150,12 @@ Sleipnir is a protocol-agnostic RPC engine that sits between your business logic
 | SignalR | SleipnirHub | WebSocket + MessagePack | Hub methods `DoWork()` / `DoWorkMany()`, auto-reconnect |
 
 ### Client Library (`SleipnirClient`)
-- `ISleipnirClient` interface: `Call(SleipnirRequest)`, `Call<T>(SleipnirRequest)`, `Call(SleipnirMultiRequest)`
-- `SleipnirRestJsonClient`: HTTP-based, connection pooling, `IDisposable`
-- `SleipnirWebSocketClient`: Persistent connection, `SemaphoreSlim` for thread safety, `IAsyncDisposable`
-- `SleipnirSignalrClient`: Auto-reconnect with exponential backoff, MessagePack protocol
+- `ISleipnirClient` interface: `Call(SleipnirRequest)`, `Call<T>(SleipnirRequest)`, `Call(SleipnirMultiRequest)`, plus `SubscribeAsync<T>` / `ResumeAsync<T>` for cross-transport event subscriptions
+- `SleipnirRestJsonClient`: HTTP-based, connection pooling, `IDisposable` (calls only)
+- `SleipnirWebSocketClient`: Persistent connection, `SemaphoreSlim` for thread safety, `IAsyncDisposable` (calls + events)
+- `SleipnirSseClient`: events-only over `text/event-stream` with `Last-Event-Id` resume, `IAsyncDisposable`
+- `SleipnirSignalrClient`: Auto-reconnect with exponential backoff, MessagePack protocol; calls via `DoWork`/`DoWorkMany`, events via hub-streaming `SubscribeAsync`
+- `SleipnirTransportRouter`: unified client that bundles the backends for a capability (`rest|ws|all|signalr`) and selects the transport at runtime — `auto` (default) probes WebSocket and falls back to REST+SSE; the generated typed client wraps a router
 - `SleipnirCall`: Fluent builder with `.Named()`, `.Exposes()`, `.WithAlias()`, `.With()`, `.Add()`, `.ToRequest()`
 - `SleipnirClientBase`: Shared `Call<T>()` with auto-deserialization and `SleipnirException` on errors
 

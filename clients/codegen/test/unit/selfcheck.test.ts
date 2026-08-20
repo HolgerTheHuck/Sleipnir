@@ -92,7 +92,7 @@ describe("selfcheck (the --selfcheck drift gate)", () => {
 
   it("round-trips the real TS emitter: a freshly generated tree is clean against itself", () => {
     const input = buildEmitterInput(readFixture(), new NamingResolver());
-    const tree = emitTsClient(input, { baseUrl: undefined, transport: "rest" });
+    const tree = emitTsClient(input, { baseUrl: undefined, capability: "rest" });
     expect(Object.keys(tree).length).toBeGreaterThan(0);
     const dir = freshTempDir();
     try {

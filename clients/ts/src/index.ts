@@ -28,7 +28,26 @@ export {
   type SseSubscribeOptions,
   type SseFetchLike,
 } from "./sse.js";
+export {
+  SleipnirSignalrClient,
+  type SleipnirSignalrClientOptions,
+  type SignalrCallOptions,
+  type SignalrSubscribeOptions,
+  type SignalrHubFactory,
+  type SignalrBuildOptions,
+  type IHubConnection,
+  type IStreamResult,
+  type IStreamSubscriber,
+} from "./signalr.js";
 export { buildParams, buildSingle, buildMulti, toBase64, fromBase64 } from "./request.js";
+export {
+  SleipnirTransportRouter,
+  SleipnirTransportNotBundledError,
+  type SleipnirTransport,
+  type SleipnirBundleCapability,
+  type SleipnirRouterOptions,
+  type SleipnirSubscribeOptions,
+} from "./transport-router.js";
 
 import { SleipnirRestClient, type SleipnirRestClientOptions } from "./rest.js";
 import {

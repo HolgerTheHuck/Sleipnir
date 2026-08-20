@@ -8,9 +8,18 @@ import { toCamelCase } from "../core/casing.js";
 import { tsTypeOfRef, isEventMethod, eventPayloadRef, hasEvents } from "../core/model.js";
 import { NamingResolver } from "../core/naming.js";
 
+/** Which backends the generated `SleipnirClient` bundles (mirrors the TS emitter). */
+export type SleipnirBundleCapability = "rest" | "ws" | "all" | "signalr";
+
 export interface EmitJsOptions {
   baseUrl?: string;
-  /** Same transport contract as the TS emitter (see EmitTsOptions.transport). */
+  /**
+   * Codegen capability — which backends the generated `SleipnirClient` bundles. Default `all`.
+   * See `EmitTsOptions.capability` for the full contract; the public JS surface is identical
+   * across all capabilities (transport selected at runtime via `SleipnirTransportRouter`).
+   */
+  capability?: SleipnirBundleCapability;
+  /** DEPRECATED alias for `capability` (sse→rest, both→all). Use `capability` instead. */
   transport?: "rest" | "sse" | "ws" | "both";
 }
 
@@ -138,8 +147,20 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
 // client.js — root client.
 // ---------------------------------------------------------------------------
 
+/** Canonicalize the capability option (mirrors the TS emitter). */
+function resolveCapability(opts: EmitJsOptions): SleipnirBundleCapability {
+  if (opts.capability) return opts.capability;
+  switch (opts.transport) {
+    case "rest": return "rest";
+    case "sse": return "rest";
+    case "ws": return "ws";
+    case "both": return "all";
+    default: return "all";
+  }
+}
+
 function emitClient(input: EmitterInput, opts: EmitJsOptions): string {
-  const transport = opts.transport ?? "rest";
+  const capability = resolveCapability(opts);
   const events = hasEvents(input);
   const imports = input.controllers.map((c) => `import { ${c.className} } from "./controllers.js";`).join("\n");
   // Event-Controller bekommen `this._subscribe` als zweites ctor-Arg; reine
@@ -149,170 +170,84 @@ function emitClient(input: EmitterInput, opts: EmitJsOptions): string {
     const args = c.methods.some(isEventMethod) ? "build, this._subscribe" : "build";
     return `  this.${c.accessor} = new ${c.className}(${args});`;
   });
-  const subscribeAssignWs = events
-    ? `  this._subscribe = (req, handlers) => this._ws.subscribe(req, handlers);\n`
-    : "";
-  const subscribeAssignRest = events
-    ? `  this._subscribe = async (_req, _handlers) => {\n    throw new Error("Sleipnir events require WebSocket transport. Regenerate with --transport ws|both to subscribe.");\n  };\n`
-    : "";
-  // SSE: Adapter baut aus dem `SleipnirRequest` das `(controller, method, handlers,
-  // params)`-Interface des SSE-Clients (derselbe Grund wie im TS-Emitter).
-  const subscribeAssignSse = events
-    ? `  this._subscribe = (req, handlers) => {\n    const params = {};\n    for (const p of (req.params ?? [])) params[p.parameterName] = p.data;\n    return this._sse.subscribe(req.controller, req.method, handlers, params);\n  };\n`
+  // `_subscribe` delegiert an den Transport-Router, der den WS-vs-SSE-Unterschied
+  // kapselt (WS reicht das Request durch; SSE entpackt es zu (controller, method, params)).
+  const subscribeAssign = events
+    ? `  this._subscribe = (req, handlers) => this._router.subscribe(req, handlers);\n`
     : "";
 
-  if (transport === "sse" && events) {
-    return `// Auto-generated root Sleipnir client (JS, REST + SSE transport).
-import { SleipnirCall, SleipnirRestClient, SleipnirSseClient } from "sleipnir-client";
+  return `// Auto-generated root Sleipnir client (JS, capability: ${capability}).
+// Transport is selected at runtime via SleipnirTransportRouter: "auto" (default) probes
+// WebSocket and falls back to REST+SSE on failure; useTransport() switches explicitly.
+import { SleipnirCall, SleipnirTransportRouter } from "sleipnir-client";
 ${imports}
 
 export class SleipnirClient {
   /**
    * @param {string} baseUrl
-   * @param {{ rest?: SleipnirRestClientOptions, sse?: SleipnirSseClientOptions }} [options]
+   * @param {object} [options] per-backend options (rest/ws/sse/signalr) + shared bearer,
+   *   callTimeout, probeTimeout, defaultTransport. Passed to SleipnirTransportRouter.
    */
   constructor(baseUrl, options = {}) {
-    this._rest = new SleipnirRestClient(baseUrl, options.rest ?? {});
-    this._sse = new SleipnirSseClient(baseUrl, options.sse ?? {});
+    this._router = new SleipnirTransportRouter({ baseUrl, capability: "${capability}", ...options });
     const build = (controller, method) => SleipnirCall.init(controller, method);
-${subscribeAssignSse}${inits.join("\n")}
+${subscribeAssign}${inits.join("\n")}
+  }
+
+  /** @returns {Promise<void>} resolve the \`auto\` profile (probe WS → fallback REST+SSE). */
+  negotiate() {
+    return this._router.negotiate();
+  }
+
+  /** @param {string} t @returns {Promise<void>} switch the active transport at runtime. */
+  useTransport(t) {
+    return this._router.useTransport(t);
+  }
+
+  /** @returns {string|null} the resolved transport profile (null until \`auto\` is negotiated). */
+  get activeTransport() {
+    return this._router.activeTransport;
   }
 
   /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
   async call(call) {
-    return this._rest.call(call.toRequest());
+    return this._router.call(call.toRequest());
   }
 
   /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
   async batch(b) {
     const m = b.toMulti();
-    return this._rest.callBatch(m.requests, m.mode);
+    return this._router.callBatch(m.requests, m.mode);
   }
 
+  /** @returns {SleipnirRestClient|undefined} underlying REST client (escape hatch). */
   get rest() {
-    return this._rest;
+    return this._router.rest;
   }
 
+  /** @returns {SleipnirWebSocketClient|undefined} underlying WebSocket client (escape hatch). */
+  get ws() {
+    return this._router.ws;
+  }
+
+  /** @returns {SleipnirSseClient|undefined} underlying SSE client (escape hatch). */
   get sse() {
-    return this._sse;
-  }
-}
-`;
+    return this._router.sse;
   }
 
-  if (transport === "ws") {
-    return `// Auto-generated root Sleipnir client (JS, WebSocket transport).
-import { SleipnirCall, SleipnirWebSocketClient } from "sleipnir-client";
-${imports}
-
-export class SleipnirClient {
-  /**
-   * @param {string} baseUrl
-   * @param {SleipnirWebSocketClientOptions} [options]
-   */
-  constructor(baseUrl, options = {}) {
-    this._ws = new SleipnirWebSocketClient(baseUrl, options);
-    const build = (controller, method) => SleipnirCall.init(controller, method);
-${subscribeAssignWs}${inits.join("\n")}
+  /** @returns {SleipnirSignalrClient|undefined} underlying SignalR client (escape hatch). */
+  get signalr() {
+    return this._router.signalr;
   }
 
-  /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
-  async call(call) {
-    return this._ws.call(call.toRequest());
+  /** @param {string|Function} bearer swap the bearer on all bundled backends. */
+  setBearer(bearer) {
+    this._router.setBearer(bearer);
   }
 
-  /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
-  async batch(b) {
-    const m = b.toMulti();
-    return this._ws.callBatch(m.requests, m.mode);
-  }
-
-  get ws() {
-    return this._ws;
-  }
-}
-`;
-  }
-
-  if (transport === "both") {
-    return `// Auto-generated root Sleipnir client (JS, REST + WebSocket).
-import { SleipnirCall, SleipnirRestClient, SleipnirWebSocketClient } from "sleipnir-client";
-${imports}
-
-export class SleipnirClient {
-  /**
-   * @param {string} baseUrl
-   * @param {{ rest?: SleipnirRestClientOptions, ws?: SleipnirWebSocketClientOptions }} [options]
-   */
-  constructor(baseUrl, options = {}) {
-    this._rest = new SleipnirRestClient(baseUrl, options.rest ?? {});
-    this._ws = new SleipnirWebSocketClient(baseUrl, options.ws ?? {});
-    const build = (controller, method) => SleipnirCall.init(controller, method);
-${subscribeAssignWs}${inits.join("\n")}
-  }
-
-  /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
-  async call(call) {
-    return this._rest.call(call.toRequest());
-  }
-
-  /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
-  async batch(b) {
-    const m = b.toMulti();
-    return this._rest.callBatch(m.requests, m.mode);
-  }
-
-  /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
-  async callWs(call) {
-    return this._ws.call(call.toRequest());
-  }
-
-  /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
-  async batchWs(b) {
-    const m = b.toMulti();
-    return this._ws.callBatch(m.requests, m.mode);
-  }
-
-  get rest() {
-    return this._rest;
-  }
-
-  get ws() {
-    return this._ws;
-  }
-}
-`;
-  }
-
-  // rest (default).
-  return `// Auto-generated root Sleipnir client (JS).
-import { SleipnirCall, SleipnirRestClient } from "sleipnir-client";
-${imports}
-
-export class SleipnirClient {
-  /**
-   * @param {string} baseUrl
-   * @param {SleipnirRestClientOptions} [options]
-   */
-  constructor(baseUrl, options = {}) {
-    this._rest = new SleipnirRestClient(baseUrl, options);
-    const build = (controller, method) => SleipnirCall.init(controller, method);
-${subscribeAssignRest}${inits.join("\n")}
-  }
-
-  /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
-  async call(call) {
-    return this._rest.call(call.toRequest());
-  }
-
-  /** @param {Batch} b @returns {Promise<SleipnirResponse[]>} */
-  async batch(b) {
-    const m = b.toMulti();
-    return this._rest.callBatch(m.requests, m.mode);
-  }
-
-  get rest() {
-    return this._rest;
+  /** Dispose all bundled backends (terminal). */
+  dispose() {
+    this._router.dispose();
   }
 }
 `;

@@ -341,12 +341,17 @@ is not demoted in capability — the C# it produces is byte-for-byte identical t
 generator's output, enforced by the parity gate below. It is simply not required on the .NET build
 edge.
 
-For the **ts/js** languages, `sleipnir-gen --transport rest|ws|both` (default `rest`) selects which
-`sleipnir-client` runtime client the generated `SleipnirClient` wires up: `rest` → `SleipnirRestClient`,
-`ws` → `SleipnirWebSocketClient`, `both` → both clients with `call`/`batch` over REST (default) plus
-`callWs`/`batchWs` over WebSocket and `.rest`/`.ws` escape hatches. The C# and Python runtimes ship
-REST only, so `--transport` is rejected for `--lang cs|py`. (SignalR is not yet wired — the TS runtime
-has no SignalR client.)
+For **ts/js/cs**, `sleipnir-gen --transport rest|ws|all|signalr` (default `all`; `sse`→`rest` and
+`both`→`all` are kept as deprecated aliases for one minor version) is a **bundle-capability**
+selector, not a client-shape selector: the generated `SleipnirClient` always wraps one
+`SleipnirTransportRouter` with an identical public surface — only which backends get bundled differ.
+`rest` bundles REST (calls) + SSE (events); `ws` bundles WebSocket (calls + events); `all` bundles
+REST + WebSocket + SSE so `auto` (the runtime default) can probe WebSocket and fall back to REST+SSE;
+`signalr` additionally bundles the SignalR client (events via hub-streaming). Escape hatches
+`client.rest` / `client.ws` / `client.sse` / `client.signalr` reach the raw bundled backend (or
+`null`/`undefined` when not bundled), and `useTransport()`/`UseTransportAsync()` switches the active
+transport at runtime. Python ships REST only (no Python WS/SSE runtime yet), so `--transport` is
+rejected for `--lang py`.
 
 ---
 

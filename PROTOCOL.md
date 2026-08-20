@@ -12,7 +12,11 @@ a controller name, method name, and parameters (a native JSON array). The server
 matching method and returns a `SleipnirResponse` with a status code and JSON-encoded result.
 
 Sleipnir supports three transports (REST, WebSocket, SignalR) but the request/response
-format is identical across all of them.
+format is identical across all of them. Events (`[SleipnirEvent]` + `IObservable<T>`) are
+transport-agnostic too — WebSocket and SignalR carry them natively, and REST carries them
+over SSE (`text/event-stream`). The generated client selects the transport **at runtime** via a
+`SleipnirTransportRouter` (see [Transport selection](#transport-selection-client) below); `--transport`
+at codegen is a bundle-capability selector (which backends to bundle), not a client shape.
 
 ---
 
@@ -1189,3 +1193,42 @@ POST /api/sleipnir/jsonrpc        # single object or a batch array
 
 Full spec, the Sleipnir-vs-JSON-RPC protocol-differences table, and the implementation
 map: see [`JSONRPC_COMPAT.md`](JSONRPC_COMPAT.md).
+---
+
+## Transport selection (client)
+
+The generated client does **not** bake the transport into its shape. `--transport
+rest|ws|all|signalr` (ts|js|cs; default `all`) is a **bundle-capability** selector: it
+decides which backends the runtime `SleipnirTransportRouter` instantiates. The public
+client surface — class, method signatures, options type — is byte-identical across all
+values. Transport is chosen **at runtime**:
+
+| Capability | Call backends | Event backends | `auto` fallback |
+|---|---|---|---|
+| `rest` | REST | SSE | REST+SSE (no WS to probe) |
+| `ws` | WS | WS | WS only (nothing to fall back to) |
+| `all` (default) | REST + WS | SSE + WS | WS → REST+SSE |
+| `signalr` | + SignalR | + SignalR hub-stream | WS → REST+SSE; SignalR also negotiates its own WS→SSE→LongPolling |
+
+- **`auto`** (default profile): on first use the router probes a WebSocket handshake
+  (default 1500 ms). Success → calls+events over WebSocket (the probe socket is reused as
+  the live connection). Failure/timeout → REST calls + SSE events. No connect race; the
+  probe is lazy.
+- **`useTransport(t)` / `UseTransportAsync(t)`**: switch the active profile at runtime
+  (`auto|rest|ws|signalr`); throws `SleipnirTransportNotBundled` if the capability did not
+  bundle the required backend.
+- **Escape hatches** `client.rest|ws|sse|signalr` reach the raw bundled backends (null when
+  not bundled).
+- **The WS-vs-SSE subscribe mismatch is bridged in the router**: WS/SignalR take the
+  pre-built request; SSE unpacks it (controller/method/params → query params, since a GET
+  has no body). Only named params are expressible over SSE; positional/binary params are a
+  WS/SignalR-only capability.
+- **SignalR events** (opt-in `--transport signalr`): the hub method `SubscribeAsync` returns
+  `IAsyncEnumerable<string>` — the first item is the `ack`
+  (`{type:"ack",subscriptionId[,replayedFrom]}`), then `event`/`complete`/`error` frames
+  reusing the SAME serialized frames WS/SSE emit. Calls keep using `DoWork`/`DoWorkMany`.
+  `@microsoft/signalr` is an optional peer dependency.
+- **Cross-transport resume**: durable subscriptions live in the process-wide store, so a
+  subscription created over one transport resumes over another by `subscriptionId` +
+  `lastEventId`. **Resuming INTO WebSocket is unsupported** (the WS resume frame needs the
+  original controller/method) — switch to `rest`/`auto` to resume over SSE, or use SignalR.

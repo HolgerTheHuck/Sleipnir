@@ -22,10 +22,32 @@ internal static class CsEmitter
     {
         "// Generated from Sleipnir runtime discovery. The C# classes ARE the contract.",
         "// Properties are camelCase on the wire; [JsonPropertyName] maps them to PascalCase POCOs.",
-        "// Requires the SleipnirClient NuGet package (SleipnirCall, SleipnirRestJsonClient, ISleipnirClient).",
+        "// Requires the SleipnirClient NuGet package (SleipnirCall, SleipnirTransportRouter, ISleipnirClient).",
         "// The root client is named SleipnirGeneratedClient (not SleipnirClient) to avoid a collision",
         "// with the global SleipnirClient namespace (the runtime's SleipnirClient.Sleipnir).",
     };
+
+    /// <summary>The capability literal baked into the header + root ctor (lowercase for comments).</summary>
+    private static string CapabilityLiteral(EmitCsOptions opts)
+        => string.IsNullOrEmpty(opts.Capability) ? "all" : opts.Capability!;
+
+    /// <summary>The enum member for the root ctor (PascalCase: "all" → "All").</summary>
+    private static string CapabilityEnum(EmitCsOptions opts)
+    {
+        var cap = CapabilityLiteral(opts);
+        return "SleipnirBundleCapability." + char.ToUpperInvariant(cap[0]) + cap.Substring(1);
+    }
+
+    private static string[] CapabilityHeaderLines(EmitCsOptions opts)
+    {
+        var cap = CapabilityLiteral(opts);
+        return new[]
+        {
+            "// Transport capability: --transport " + cap + ". The (string baseUrl) ctor wraps a",
+            "// SleipnirTransportRouter with this capability; pass a custom ISleipnirClient to override.",
+            "// defaultTransport=auto: WebSocket probed first, falls back to REST+SSE on failure.",
+        };
+    }
 
     // Alias + Arg<T> — the typed-alias bridge for batch dependency chains.
     private static readonly string[] AliasLines =
@@ -136,25 +158,50 @@ internal static class CsEmitter
     };
 
     // Root SleipnirGeneratedClient — preamble (before accessors) and footer (after accessors).
-    private static readonly string[] RootPreambleLines =
+    private static string[] RootPreambleLines(EmitCsOptions opts)
     {
-        "    /// <summary>Root generated Sleipnir client. Wraps an <see cref=\"ISleipnirClient\"/> (a",
-        "    /// <see cref=\"SleipnirRestJsonClient\"/> by default) and exposes one accessor per controller.",
-        "    /// Use <see cref=\"Call{T}\"/> for a single typed call, <see cref=\"Batch\"/> for a dependency chain.",
-        "    /// Named SleipnirGeneratedClient to avoid colliding with the global SleipnirClient namespace.</summary>",
+        var cap = CapabilityLiteral(opts);
+        return new[]
+        {
+        "    /// <summary>Root generated Sleipnir client. Wraps an <see cref=\"ISleipnirClient\"/> — a",
+        "    /// <see cref=\"SleipnirTransportRouter\"/> by default, which bundles the backends selected by the",
+        "    /// codegen <c>--transport " + cap + "</c> capability and routes calls to the active call backend",
+        "    /// and subscriptions to the active event backend. Exposes one accessor per controller. Use",
+        "    /// <see cref=\"Call{T}\"/> for a single typed call, <see cref=\"Subscribe{T}\"/> for a server-push",
+        "    /// event, <see cref=\"Batch\"/> for a dependency chain. Named SleipnirGeneratedClient to avoid",
+        "    /// colliding with the global SleipnirClient namespace.</summary>",
         "    public sealed class SleipnirGeneratedClient",
         "    {",
         "        private readonly ISleipnirClient _client;",
         "",
-        "        public SleipnirGeneratedClient(string baseUrl) : this(new SleipnirRestJsonClient(baseUrl)) { }",
+        "        /// <summary>Construct with a <see cref=\"SleipnirTransportRouter\"/> bundling the codegen",
+        "        /// capability (<c>" + cap + "</c>); defaultTransport=auto (WebSocket → REST+SSE fallback).</summary>",
+        "        public SleipnirGeneratedClient(string baseUrl) : this(new SleipnirTransportRouter(",
+        "            new SleipnirRouterOptions { BaseUrl = baseUrl, Capability = " + CapabilityEnum(opts) + " })) { }",
         "",
+        "        /// <summary>Construct with a custom <see cref=\"ISleipnirClient\"/> (e.g. a pre-configured",
+        "        /// <see cref=\"SleipnirTransportRouter\"/>, a specific backend, or <c>SleipnirInMemoryClient</c>",
+        "        /// for tests).</summary>",
         "        public SleipnirGeneratedClient(ISleipnirClient client) => _client = client;",
-    };
+        };
+    }
 
     private static readonly string[] RootFooterLines =
     {
+        "        /// <summary>The underlying client — cast to <see cref=\"SleipnirTransportRouter\"/> to access",
+        "        /// <c>NegotiateAsync</c>/<c>UseTransportAsync</c> and the raw backend escape hatches.</summary>",
+        "        public ISleipnirClient Client => _client;",
+        "",
         "        /// <summary>Execute a single typed call; the result is deserialized into T.</summary>",
         "        public Task<T?> Call<T>(Call call) => _client.Call<T>(call.ToRequest());",
+        "",
+        "        /// <summary>Subscribe to a server-push event (a <see cref=\"Call\"/> built from an",
+        "        /// <c>[SleipnirEvent]</c> method). Routes to the active event backend (WebSocket / SSE /",
+        "        /// SignalR, per the transport profile). Returns a hot <see cref=\"SleipnirSubscription{T}\"/>",
+        "        /// (IObservable + IDisposable); dispose to unsubscribe. <paramref name=\"resumePolicy\"/>",
+        "        /// governs cross-transport resume on disconnect.</summary>",
+        "        public Task<SleipnirSubscription<T>> Subscribe<T>(Call call, ResumePolicy? resumePolicy = null, CancellationToken ct = default)",
+        "            => _client.SubscribeAsync<T>(call.ToRequest(), resumePolicy, ct);",
         "",
         "        /// <summary>Execute a typed batch (Serial — required for @alias resolution). Results are",
         "        /// fetched by request id via <see cref=\"SleipnirMultiCallResponse.Get{T}\"/>.</summary>",
@@ -175,6 +222,7 @@ internal static class CsEmitter
         var sb = new StringBuilder();
         sb.Append(AutoGeneratedHeader).Append('\n');
         sb.Append(string.Join("\n", HeaderLines));
+        sb.Append('\n').Append(string.Join("\n", CapabilityHeaderLines(opts)));
         if (!string.IsNullOrEmpty(opts.BaseUrl))
             sb.Append('\n').Append("// Discovery base URL: ").Append(opts.BaseUrl);
         sb.Append('\n');
@@ -183,6 +231,7 @@ internal static class CsEmitter
         sb.Append("using System.Collections.Generic;\n");
         sb.Append("using System.Linq;\n");
         sb.Append("using System.Text.Json.Serialization;\n");
+        sb.Append("using System.Threading;\n");
         sb.Append("using System.Threading.Tasks;\n");
         sb.Append("using SleipnirClient.Sleipnir;\n");
         sb.Append("using SleipnirCommon.Models;\n\n");
@@ -200,7 +249,7 @@ internal static class CsEmitter
         sb.Append(EmitControllers(input.Controllers, resolver));
         sb.Append("\n\n"); // template "\n\n" between controllers and root
 
-        sb.Append(EmitRootClient(input.Controllers));
+        sb.Append(EmitRootClient(input.Controllers, opts));
 
         sb.Append("\n}\n"); // namespace close + trailing newline
         return sb.ToString();
@@ -249,44 +298,44 @@ internal static class CsEmitter
 
     private static string EmitMethod(ResolvedController ctrl, ResolvedMethod m, NamingResolver resolver)
     {
-        var parms = new List<string>(m.Parameters.Count);
-        foreach (var p in m.Parameters)
-            parms.Add(EmitterBuilder.CsTypeOfRef(p.TypeRef, resolver) + " " + p.Name);
-        var paramChain = new StringBuilder();
-        foreach (var p in m.Parameters)
-            paramChain.Append(".Param(\"" + p.Name + "\", " + p.Name + ")");
         var doc = !string.IsNullOrEmpty(m.Documentation) ? "        /// <summary>" + m.Documentation + "</summary>\n" : "";
         var todo = (m.ReturnType.Kind == "opaque" && !m.IsVoid)
             ? "        // TODO: return type \"" + (m.ReturnType.NativeName ?? "?") + "\" is an opaque framework/BCL type not modelled in discovery; deserialize as object.\n"
             : "";
 
-        // Phase 3: Event-Methoden (kind:"event") → SubscribeAsync<T> statt Call.
+        // Phase 4 unified transport: event methods ([SleipnirEvent] → IObservable<T>) build the
+        // SAME Call as a regular method — the request (controller/method/params) is identical; only
+        // the execution entry point differs (Subscribe<T> on the root vs Call<T>). The active event
+        // backend (WS / SSE / SignalR, per the transport profile) is chosen by the router, so the
+        // generated stub stays transport-agnostic.
         if (m.ReturnType.Kind == "event" && m.ReturnType.Element != null)
         {
             var elementType = EmitterBuilder.CsTypeOfRef(m.ReturnType.Element, resolver);
-            return doc + todo + "        public System.Threading.Tasks.Task<SleipnirClient.Sleipnir.SleipnirSubscription<" + elementType + ">> " + m.MethodName + "(" + string.Join(", ", parms) + ") => _client.SubscribeAsync<" + elementType + ">(\"" + ctrl.Name + "\", \"" + m.MethodName + "\", " + BuildArgsArray(m) + ");";
+            var argParms = new List<string>(m.Parameters.Count);
+            foreach (var p in m.Parameters)
+                argParms.Add("Arg<" + EmitterBuilder.CsTypeOfRef(p.TypeRef, resolver) + "> " + p.Name);
+            var argParamChain = new StringBuilder();
+            foreach (var p in m.Parameters)
+                argParamChain.Append(".Param(\"" + p.Name + "\", " + p.Name + ".ToWireValue())");
+            var remarks = "        /// <remarks>" + m.MethodName + " is a [SleipnirEvent] (server-push, IObservable&lt;" + elementType + "&gt;).\n" +
+                          "        /// Build the call, then subscribe via <see cref=\"SleipnirGeneratedClient.Subscribe{T}\"/> (routes to the\n" +
+                          "        /// active event backend — WebSocket / SSE / SignalR depending on the transport profile).</remarks>\n";
+            return doc + remarks + "        public Call " + m.MethodName + "(" + string.Join(", ", argParms) + ") => new Call(SleipnirCall.Init(\"" + ctrl.Name + "\", \"" + m.MethodName + "\")" + argParamChain + ");";
         }
 
         // Call-Methoden (bestehend): Arg<T>-Wrapper für Dependency-Chaining.
-        var argParms = new List<string>(m.Parameters.Count);
+        var argParms2 = new List<string>(m.Parameters.Count);
         foreach (var p in m.Parameters)
-            argParms.Add("Arg<" + EmitterBuilder.CsTypeOfRef(p.TypeRef, resolver) + "> " + p.Name);
-        var argParamChain = new StringBuilder();
+            argParms2.Add("Arg<" + EmitterBuilder.CsTypeOfRef(p.TypeRef, resolver) + "> " + p.Name);
+        var argParamChain2 = new StringBuilder();
         foreach (var p in m.Parameters)
-            argParamChain.Append(".Param(\"" + p.Name + "\", " + p.Name + ".ToWireValue())");
-        return doc + todo + "        public Call " + m.MethodName + "(" + string.Join(", ", argParms) + ") => new Call(SleipnirCall.Init(\"" + ctrl.Name + "\", \"" + m.MethodName + "\")" + argParamChain + ");";
+            argParamChain2.Append(".Param(\"" + p.Name + "\", " + p.Name + ".ToWireValue())");
+        return doc + todo + "        public Call " + m.MethodName + "(" + string.Join(", ", argParms2) + ") => new Call(SleipnirCall.Init(\"" + ctrl.Name + "\", \"" + m.MethodName + "\")" + argParamChain2 + ");";
     }
 
-    /// <summary>Buildet ein args-Array für SubscribeAsync (object?[]-Parameter).</summary>
-    private static string BuildArgsArray(ResolvedMethod m)
-    {
-        if (m.Parameters.Count == 0) return "null";
-        return "new object?[] { " + string.Join(", ", m.Parameters.Select(p => p.Name)) + " }";
-    }
-
-    private static string EmitRootClient(List<ResolvedController> controllers)
+    private static string EmitRootClient(List<ResolvedController> controllers, EmitCsOptions opts)
     {
         var accessors = controllers.Select(c => "        public " + c.ClassName + " " + c.Name + " { get; } = new();");
-        return string.Join("\n", RootPreambleLines) + "\n\n" + string.Join("\n", accessors) + "\n\n" + string.Join("\n", RootFooterLines);
+        return string.Join("\n", RootPreambleLines(opts)) + "\n\n" + string.Join("\n", accessors) + "\n\n" + string.Join("\n", RootFooterLines);
     }
 }

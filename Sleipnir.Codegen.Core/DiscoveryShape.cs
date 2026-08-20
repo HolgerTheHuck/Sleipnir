@@ -24,7 +24,7 @@ internal static class DiscoveryShape
 
     private static readonly HashSet<string> ValidKinds = new()
     {
-        "scalar", "array", "set", "map", "ref", "stream", "opaque", "void",
+        "scalar", "array", "set", "map", "ref", "stream", "event", "opaque", "void",
     };
 
     private static readonly HashSet<string> ScalarNames = new()
@@ -140,6 +140,7 @@ internal static class DiscoveryShape
             case "array":
             case "set":
             case "stream":
+            case "event":
                 if (refObj["element"] is null)
                     throw new DiscoveryShapeException($"{where} (kind \"{kind}\") is missing \"element\".");
                 AssertTypeRef(refObj["element"], $"{where} element", types);

@@ -54,12 +54,18 @@ describe("emitCsClient (golden against story01 snapshot)", () => {
     expect(cs).toContain("public Alias Alias(string name) => new(name.StartsWith('@') ? name : \"@\" + name);");
   });
 
-  it("emits the root SleipnirGeneratedClient with Call<T> + Batch + per-controller accessors", () => {
+  it("emits the root SleipnirGeneratedClient with Call<T> + Subscribe<T> + Batch + per-controller accessors", () => {
     const cs = tree["SleipnirGenerated.cs"];
     expect(cs).toContain("public Task<T?> Call<T>(Call call) => _client.Call<T>(call.ToRequest());");
     expect(cs).toContain("public Task<SleipnirMultiCallResponse> Batch(Batch batch) =>");
     expect(cs).toContain("public OrderClient Order { get; } = new();");
-    expect(cs).toContain("public SleipnirGeneratedClient(string baseUrl) : this(new SleipnirRestJsonClient(baseUrl)) { }");
+    // (string baseUrl) wraps a SleipnirTransportRouter with the codegen capability (default all).
+    expect(cs).toContain("new SleipnirTransportRouter(");
+    expect(cs).toContain("SleipnirRouterOptions { BaseUrl = baseUrl, Capability = SleipnirBundleCapability.All }");
+    // Event entry point routes through the router to the active event backend.
+    expect(cs).toContain("public Task<SleipnirSubscription<T>> Subscribe<T>(Call call, ResumePolicy? resumePolicy = null, CancellationToken ct = default)");
+    // A custom ISleipnirClient overload remains (tests / pre-configured backends).
+    expect(cs).toContain("public SleipnirGeneratedClient(ISleipnirClient client) => _client = client;");
     // Named SleipnirGeneratedClient to avoid the global SleipnirClient namespace collision.
     expect(cs).not.toContain("public sealed class SleipnirClient\n");
   });

@@ -1,0 +1,26 @@
+:root {
+  color-scheme: light;
+  --bg: #fafafa;
+  --card: #fff;
+  --border: #e3e3e3;
+  --muted: #777;
+  --up: #178a3a;
+  --down: #c0392b;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 14px/1.5 system-ui, sans-serif;
+  background: var(--bg);
+  color: #1a1a1a;
+}
+main { max-width: 44rem; margin: 0 auto; padding: 2rem 1rem; }
+h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+.muted { color: var(--muted); }
+.transport { font-size: .85rem; margin: .5rem 0 1.5rem; }
+.board { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 1rem; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: .6rem; padding: 1rem; }
+.card h2 { margin: 0 0 .5rem; font-size: 1.05rem; }
+.price { font-size: 1.4rem; font-weight: 600; }
+.up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
+.err { color: var(--down); }

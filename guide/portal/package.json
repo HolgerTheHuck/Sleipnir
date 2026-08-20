@@ -1,0 +1,26 @@
+{
+  "name": "story-portal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Story guide chapter 4 — Svelte 5 Endkunden-Portal. Generated TS client over the unified transport (auto: WS → REST+SSE fallback).",
+  "scripts": {
+    "gen": "sleipnir-gen --lang ts --discovery ../server/contract.sleipnir.json --out src --base-url https://localhost:5010 --transport all",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "dependencies": {
+    "sleipnir-client": "file:../../clients/ts",
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@tsconfig/svelte": "^5.0.4",
+    "sleipnir-codegen": "file:../../clients/codegen",
+    "svelte-check": "^4.0.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0"
+  }
+}

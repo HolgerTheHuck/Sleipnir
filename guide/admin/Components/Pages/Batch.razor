@@ -1,0 +1,129 @@
+@page "/batch"
+@inject SleipnirGeneratedClient Sleipnir
+@using SleipnirCommon.Models
+@using SleipnirClient.Sleipnir
+@* ExecutionMode lives in SleipnirCommon.Models (global-using alias in SleipnirClient);
+   SleipnirCall + SleipnirMultiCallResponse live in SleipnirClient.Sleipnir. *@
+
+<PageTitle>Batch — Story.Admin</PageTitle>
+
+<h1>Batching — one roundtrip, many calls</h1>
+
+<p class="text-muted" style="max-width:48rem">
+    Chapter 5. Three ways to fetch N quotes in one round, contrasted:
+    a single <code>Market.GetQuotes</code> bulk call (server-side loop),
+    a <code>SleipnirMultiRequest</code> batch of N <code>GetQuote</code> calls in
+    <strong>Parallel</strong>, and the same batch in <strong>Serial</strong>. The batch
+    composes <em>existing</em> methods — no new server endpoint — and can mix any methods.
+</p>
+
+<div class="row g-2 mb-3" style="max-width:48rem">
+    <div class="col">
+        <input @bind="symbolsText" class="form-control" placeholder="BTC, ETH, SOL, DOGE" />
+    </div>
+</div>
+
+<div class="btn-group mb-3" role="group">
+    <button class="btn btn-outline-primary @((mode == "bulk") ? "active" : "")" @onclick='() => mode = "bulk"'>
+        Single GetQuotes (bulk)
+    </button>
+    <button class="btn btn-outline-primary @((mode == "parallel") ? "active" : "")" @onclick='() => mode = "parallel"'>
+        Batch — Parallel
+    </button>
+    <button class="btn btn-outline-primary @((mode == "serial") ? "active" : "")" @onclick='() => mode = "serial"'>
+        Batch — Serial
+    </button>
+    <button class="btn btn-primary" @onclick="RunAsync" disabled="@busy">
+        @(busy ? "Running…" : $"Run ({mode})")
+    </button>
+</div>
+
+@if (error != null)
+{
+    <div class="alert alert-danger" style="max-width:48rem">@error</div>
+}
+
+@if (quotes.Any())
+{
+    <p class="text-muted small">Completed in <strong>@elapsedMs ms</strong> · @quotes.Count quotes · mode: <code>@mode</code></p>
+    <table class="table table-sm" style="max-width:48rem">
+        <thead><tr><th>Symbol</th><th>Price</th><th>Change</th><th>Time</th></tr></thead>
+        <tbody>
+            @foreach (var q in quotes)
+            {
+                <tr>
+                    <td>@q?.Symbol</td>
+                    <td>@q?.Price</td>
+                    <td class="@(q is null ? "" : q.Change > 0 ? "text-success" : q.Change < 0 ? "text-danger" : "text-muted")">
+                        @q?.Change
+                    </td>
+                    <td>@(q?.Time?.ToLocalTime())</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private string symbolsText = "BTC, ETH, SOL, DOGE";
+    private string mode = "bulk";
+    private List<Quote?> quotes = new();
+    private string? error;
+    private bool busy;
+    private long elapsedMs;
+
+    private static readonly System.Diagnostics.Stopwatch Sw = new();
+
+    private List<string> ParseSymbols() =>
+        symbolsText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                   .Select(s => s.ToUpperInvariant()).ToList();
+
+    private async Task RunAsync()
+    {
+        busy = true;
+        error = null;
+        quotes = new();
+        var symbols = ParseSymbols();
+        if (symbols.Count == 0) { error = "Enter at least one symbol."; busy = false; return; }
+        Sw.Restart();
+        try
+        {
+            if (mode == "bulk")
+            {
+                // One method, one roundtrip. The server loops and skips unknown symbols.
+                var call = Sleipnir.Market.GetQuotes(symbols);
+                var bulk = await Sleipnir.Call<List<Quote>>(call) ?? new List<Quote>();
+                quotes = bulk.Cast<Quote?>().ToList();
+            }
+            else
+            {
+                // One roundtrip, N existing GetQuote calls — no server method needed.
+                // Build the raw SleipnirMultiRequest so we can pick ExecutionMode; dispatch via the
+                // underlying ISleipnirClient exposed on the generated client, and read results by id.
+                var executionMode = mode == "parallel" ? ExecutionMode.Parallel : ExecutionMode.Serial;
+                var multi = new SleipnirMultiRequest
+                {
+                    Requests = symbols
+                        .Select(s => SleipnirCall.Init("Market", "GetQuote").Param("symbol", s).Named(s).ToRequest())
+                        .ToList(),
+                    Mode = executionMode,
+                };
+                var resp = await SleipnirMultiCallResponse.Call(Sleipnir.Client, multi);
+                quotes = symbols.Select(s => resp.Get<Quote>(s)).ToList();
+                // Surface any per-request 404 (unknown symbol) as a friendly row-level note.
+                var errs = symbols.Where(s => resp.GetError(s) is not null).Select(s => $"{s}: {resp.GetError(s)?.Message}");
+                if (errs.Any()) error = "Some symbols unknown: " + string.Join("; ", errs);
+            }
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            Sw.Stop();
+            elapsedMs = Sw.ElapsedMilliseconds;
+            busy = false;
+        }
+    }
+}

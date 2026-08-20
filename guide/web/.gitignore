@@ -1,0 +1,5 @@
+# The vendored sleipnir-client runtime lives under a `dist/` folder, which the root
+# .gitignore excludes globally. Re-include it so the zero-build HTML client in chapter 3
+# is reproducible from a fresh clone (no npm install needed to serve the page).
+!vendor/sleipnir-client/dist/
+!vendor/sleipnir-client/dist/**

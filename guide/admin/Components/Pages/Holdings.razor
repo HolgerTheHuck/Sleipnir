@@ -1,0 +1,86 @@
+@page "/holdings"
+@inject SleipnirGeneratedClient Sleipnir
+@inject AdminAuth Auth
+@using Sleipnir.Guide.Admin.Services
+@using SleipnirCommon.Exceptions
+
+<PageTitle>Holdings — Story.Admin</PageTitle>
+
+<h1>Portfolio holdings (authed)</h1>
+
+<p class="text-muted" style="max-width:48rem">
+    Chapter 8. <code>Portfolio.GetHoldings</code> is guarded by a class-level
+    <code>[SleipnirAuthorise]</code> — no bearer → <strong>401</strong>. Log in on
+    <a href="/login">/login</a> first; the admin&rsquo;s server-side bearer is then armed on the
+    router and this call succeeds. Run it without a login to see the 401 surface as a
+    <code>SleipnirException</code> on the client.
+</p>
+
+<button class="btn btn-primary mb-3" @onclick="LoadAsync" disabled="@busy">
+    @(busy ? "Loading…" : "Load holdings")
+</button>
+
+@if (error != null)
+{
+    <div class="alert alert-danger" style="max-width:48rem">@error</div>
+}
+
+@if (!Auth.IsLoggedIn && error == null)
+{
+    <div class="alert alert-warning" style="max-width:48rem">
+        Not logged in — <a href="/login">log in</a> first, or click <em>Load holdings</em> to see
+        the 401.
+    </div>
+}
+
+@if (holdings.Any())
+{
+    <table class="table table-sm" style="max-width:48rem">
+        <thead><tr><th>Symbol</th><th>Quantity</th><th>Avg price</th></tr></thead>
+        <tbody>
+            @foreach (var h in holdings)
+            {
+                <tr>
+                    <td>@h.Symbol</td>
+                    <td>@h.Quantity</td>
+                    <td>@h.AveragePrice</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Holding> holdings = new();
+    private string? error;
+    private bool busy;
+
+    private async Task LoadAsync()
+    {
+        busy = true;
+        error = null;
+        holdings = new();
+        try
+        {
+            // Class-level [SleipnirAuthorise] → needs a bearer. Without one the server returns
+            // 401 (the invoker's CheckAuthorisation throws UnauthorizedAccessException) and the
+            // client throws SleipnirException carrying Error.Code = 401.
+            holdings = await Sleipnir.Call<List<Holding>>(Sleipnir.Portfolio.GetHoldings()) ?? new();
+        }
+        catch (SleipnirException ex)
+        {
+            // The 401/403 distinction: 401 = unauthenticated (no/invalid bearer), 403 = the
+            // bearer is valid but the role was denied. GetHoldings only needs auth, so a logged-in
+            // customer or admin both succeed; only "no bearer" yields 401 here.
+            error = $"HTTP {ex.Error?.Code} — {ex.Error?.Message ?? ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

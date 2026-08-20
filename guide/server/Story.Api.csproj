@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Tutorial project, not a shipped package. -->
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <!-- Unique namespace/assembly so this guide's controllers never collide with the
+         root demo app's or other samples' controllers during the auto-discovery scan. -->
+    <RootNamespace>Sleipnir.Guide.Api</RootNamespace>
+    <AssemblyName>Story.Api</AssemblyName>
+  </PropertyGroup>
+
+  <!-- In-repo ProjectReference (NOT a NuGet PackageReference). The unified-transport work
+       (SleipnirTransportRouter, C# SSE client, hub-streaming) is unreleased, so the guide
+       rides on the in-tree Sleipnir.Server meta-package, which transitively brings
+       REST + WebSocket + SignalR + Developer UI + Core/Common. A single reference is enough. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\SleipnirServer\SleipnirServer.csproj" />
+    <!-- Force the export tool to build before this server (build order only — the tool is not a
+         runtime dependency). ReferenceOutputAssembly=false keeps it out of the server's compile
+         refs while still ensuring the tool dll exists when the drift-check target runs. -->
+    <ProjectReference Include="..\..\Sleipnir.Server.Codegen\Sleipnir.Server.Codegen.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- Chapter 7: JWT bearer auth. Sleipnir itself reads only HttpContext.User (populated by
+       ASP.NET auth); [SleipnirAuthorise] enforces per-method rules on top. This package brings
+       the validation pipeline (AddJwtBearer) and transitively System.IdentityModel.Tokens.Jwt,
+       which AccountService uses to ISSUE tokens. A single symmetric dev key is shared between
+       issuance (AccountService) and validation (AddJwtBearer) — fine for a tutorial; production
+       would use asymmetric keys + a real IdP. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
+  </ItemGroup>
+
+  <!-- Sleipnir server-side contract export + drift-check. Regenerates discovery from the built
+       server and fails the build if it drifts from the committed contract.sleipnir.json. This is
+       the single source of truth — the Blazor admin (chapter 2) and the codegen clients consume
+       it. SLEIPNIR_REGEN_GOLDEN=1 regenerates the committed contract instead of failing. -->
+  <PropertyGroup>
+    <SleipnirContractFile>contract.sleipnir.json</SleipnirContractFile>
+    <SleipnirExportToolDll>..\..\Sleipnir.Server.Codegen\bin\$(Configuration)\net8.0\Sleipnir.Server.Codegen.dll</SleipnirExportToolDll>
+  </PropertyGroup>
+  <Import Project="..\..\Sleipnir.Server.Codegen\build\Sleipnir.Server.Codegen.targets" />
+
+</Project>

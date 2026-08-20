@@ -1,0 +1,184 @@
+@page "/linq"
+@inject SleipnirGeneratedClient Sleipnir
+@inject AdminAuth Auth
+@using Contract = Sleipnir.Guide.Admin.Linq   // generated LINQ contract interfaces + DTOs (alias avoids clash with Sleipnir.Generated)
+@using Sleipnir.Client.Linq                   // SleipnirLinqClient, SleipnirBatch, Dep, Arg
+@using Sleipnir.Guide.Admin.Services
+@using SleipnirCommon.Exceptions
+
+<PageTitle>LINQ provider — Story.Admin</PageTitle>
+
+<h1>LINQ provider — a typed chain over <code>@@alias</code></h1>
+
+<p class="text-muted" style="max-width:48rem">
+    Chapter 7. Chapter 6 wired the <code>Search → GetQuotes</code> chain by hand — a JsonPath string
+    (<code>$[*]</code>) and an untyped <code>Alias</code> placeholder that fits <em>any</em> parameter.
+    <code>Sleipnir.Client.Linq</code> closes that gap at compile time: <code>Dep&lt;T&gt;</code> is a typed
+    alias marker, <code>Expose()</code> builds the JsonPath from a selector expression, and a
+    <code>Dep&lt;string[]&gt;</code> where an <code>Arg&lt;int&gt;</code> is expected is a <em>compile
+    error</em>, not a runtime mismatch. Same <code>@@alias</code> wire, no server changes.
+</p>
+
+<h2 class="h5">Typed chain 1 — <code>Search → GetQuotes</code> (anonymous)</h2>
+<p class="text-muted small" style="max-width:48rem">
+    <code>Build((Contract.IMarketService c) =&gt; c.Search(q))</code> → a typed call spec; <code>.Expose()</code>
+    yields <code>Dep&lt;List&lt;string&gt;&gt;</code> (the whole result <code>$</code>); the consumer
+    <code>GetQuotes(Arg&lt;List&lt;string&gt;&gt;)</code> accepts it — one <code>SleipnirBatch</code>,
+    one roundtrip, both ends typed.
+</p>
+<div class="row g-2 mb-3" style="max-width:48rem">
+    <div class="col-8">
+        <input @bind="searchQuery" class="form-control" placeholder="bit / eth / o" />
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary" @onclick="RunSearchChainAsync" disabled="@busy">
+            @(busy ? "Chaining…" : "Typed chain")
+        </button>
+    </div>
+</div>
+@if (searchError != null)
+{
+    <div class="alert alert-danger" style="max-width:48rem">@searchError</div>
+}
+@if (matched.Any())
+{
+    <p class="text-muted small" style="max-width:48rem">
+        matched (typed <code>List&lt;string&gt;</code>): <code>[@string.Join(", ", matched)]</code>
+        → <strong>@linqQuotes.Count</strong> quote(s) (typed <code>List&lt;Quote&gt;</code>).
+    </p>
+    <ul style="max-width:48rem">
+        @foreach (var q in linqQuotes)
+        {
+            <li><strong>@q.Symbol</strong> $@q.Price <span class="text-muted">(@q.Change)</span></li>
+        }
+    </ul>
+}
+
+<hr style="max-width:48rem" />
+
+<h2 class="h5">Typed chain 2 — <code>PlaceOrder → GetOrder</code> (authed, path <code>$.id</code>)</h2>
+<p class="text-muted small" style="max-width:48rem">
+    <code>place.Expose(o =&gt; (int)o!.Id)</code> builds the result-relative JsonPath <code>$.id</code>
+    from the selector and yields <code>Dep&lt;int&gt;</code>, which fits <code>GetOrder(Arg&lt;int&gt;)</code>.
+    The cast is load-bearing: the contract generator emits <code>Order.Id</code> as <code>int?</code>
+    (all DTO props are nullable), and the null-forgiving <code>!</code> is only a flow-analysis hint — it
+    does <strong>not</strong> turn <code>int?</code> into <code>int</code>, so <code>o =&gt; o!.Id!</code>
+    would yield <code>Dep&lt;int?&gt;</code>, which does <em>not</em> convert to <code>Arg&lt;int&gt;</code>
+    (only the same-<code>T</code> implicit conversion exists). The explicit <code>(int)</code> lowers to a
+    <code>Convert</code> node that <code>JsonPathBuilder</code> recurses through, so the path stays
+    <code>$.id</code> while <code>TProp</code> is inferred as <code>int</code>. This nullable-value-type
+    caveat is the one ergonomic rough edge of the generated contracts. Needs admin login.
+</p>
+@if (!Auth.IsLoggedIn)
+{
+    <div class="alert alert-warning" style="max-width:48rem">
+        Log in as <code>admin</code> on <a href="/login">/login</a> first — <code>Portfolio</code> is
+        <code>[SleipnirAuthorise]</code>-gated.
+    </div>
+}
+<div class="row g-2 mb-3" style="max-width:48rem">
+    <div class="col-3"><input @bind="orderSymbol" class="form-control" placeholder="BTC" /></div>
+    <div class="col-3"><input @bind="orderQty" class="form-control" placeholder="0.1" /></div>
+    <div class="col-auto">
+        <button class="btn btn-primary" @onclick="RunOrderChainAsync" disabled="@busy || !Auth.IsLoggedIn">
+            @(busy ? "Chaining…" : "Typed chain")
+        </button>
+    </div>
+</div>
+@if (orderError != null)
+{
+    <div class="alert alert-danger" style="max-width:48rem">@orderError</div>
+}
+@if (placedOrder != null)
+{
+    <p class="text-muted small" style="max-width:48rem">
+        placed (typed <code>Order</code>): id <strong>@placedOrder.Id</strong>,
+        @placedOrder.Symbol &times; @placedOrder.Quantity @@ $@placedOrder.Price —
+        the <code>Dep&lt;int&gt;</code> for <code>$.id</code> fed <code>GetOrder(@@orderId)</code> in the
+        same roundtrip.
+    </p>
+}
+
+@code {
+    private SleipnirLinqClient _linq = null!;
+    private bool busy;
+
+    // Chain 1 state
+    private string searchQuery = "o";
+    private List<string> matched = new();
+    private List<Contract.Quote> linqQuotes = new();
+    private string? searchError;
+
+    // Chain 2 state
+    private string orderSymbol = "BTC";
+    private string orderQty = "0.1";
+    private Contract.Order? placedOrder;
+    private string? orderError;
+
+    protected override void OnInitialized()
+    {
+        // The generated client wraps a SleipnirTransportRouter (an ISleipnirClient) in .Client.
+        // AdminAuth.SetBearer arms that same router, so LINQ calls carry the admin bearer too.
+        _linq = new SleipnirLinqClient(Sleipnir.Client);
+    }
+
+    private async Task RunSearchChainAsync()
+    {
+        var q = searchQuery.Trim();
+        if (string.IsNullOrEmpty(q)) { searchError = "Enter a query."; return; }
+        busy = true; searchError = null; matched = new(); linqQuotes = new();
+        try
+        {
+            // Provider: Market.Search(q) → List<string>. Expose() yields Dep<List<string>> ("$" — the
+            // whole result; Search returns the array directly, so $ is the list, no $[*] needed).
+            var search = _linq.Build((Contract.IMarketService c) => c.Search(q));
+            Dep<List<string>> symbols = search.Expose();
+
+            // Consumer: Market.GetQuotes(Arg<List<string>>). Dep<List<string>> → Arg<List<string>>
+            // (implicit, same T) — compile-checked. One Serial batch, one roundtrip.
+            var fetch = _linq.Build((Contract.IMarketService c) => c.GetQuotes(symbols));
+            var batch = new SleipnirBatch(search, fetch);
+            var responses = await _linq.SendAsync(batch);
+
+            matched = _linq.ResultOf(search, responses) ?? new();        // List<string>?
+            linqQuotes = _linq.ResultOf(fetch, responses) ?? new();      // List<Quote>?
+            if (!matched.Any()) searchError = $"No symbols matched \"{q}\".";
+        }
+        catch (SleipnirException ex) { searchError = $"HTTP {ex.Error?.Code} — {ex.Error?.Message ?? ex.Message}"; }
+        catch (Exception ex) { searchError = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task RunOrderChainAsync()
+    {
+        if (!Auth.IsLoggedIn) { orderError = "Log in first."; return; }
+        if (!decimal.TryParse(orderQty, out var qty)) { orderError = "Enter a quantity."; return; }
+        busy = true; orderError = null; placedOrder = null;
+        try
+        {
+            // Provider: Portfolio.PlaceOrder(symbol, qty) → Order. Expose(o => (int)o!.Id) builds the
+            // result-relative JsonPath "$.id" from the selector and yields Dep<int>, which fits
+            // GetOrder's Arg<int>. The cast is load-bearing: the codegen emits Order.Id as int? (all
+            // DTO props are nullable), and the null-forgiving `!` is only a flow-analysis hint — it
+            // does NOT change int? to int, so `o => o!.Id!` would yield Dep<int?> (which does NOT
+            // convert to Arg<int>; only the same-T implicit conversion exists). The explicit (int)
+            // lowers to a Convert node that JsonPathBuilder recurses through, so the path stays
+            // "$.id" while TProp is inferred as int. This nullable-value-type caveat is the one
+            // ergonomic rough edge of the generated contracts — documented below.
+            var place = _linq.Build((Contract.IPortfolioService c) => c.PlaceOrder(orderSymbol, qty));
+            Dep<int> orderId = place.Expose(o => (int)o!.Id);
+
+            // Consumer: Portfolio.GetOrder(@orderId). GetOrder's real return is SleipnirResponse, which
+            // the contract generator emits as opaque `object` — the wiring is typed; the consumer result
+            // is not (same limitation as the TS `unknown` in chapters 6/8).
+            var fetchOrder = _linq.Build((Contract.IPortfolioService c) => c.GetOrder(orderId));
+            var batch = new SleipnirBatch(place, fetchOrder);
+            var responses = await _linq.SendAsync(batch);
+
+            placedOrder = _linq.ResultOf(place, responses);   // Order? — the provider's typed result
+        }
+        catch (SleipnirException ex) { orderError = $"HTTP {ex.Error?.Code} — {ex.Error?.Message ?? ex.Message}"; }
+        catch (Exception ex) { orderError = ex.Message; }
+        finally { busy = false; }
+    }
+}

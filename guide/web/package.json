@@ -1,0 +1,14 @@
+{
+  "name": "story-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Story guide chapter 3 — plain HTML/JS client, zero build step. Generated stubs ride on the vendored sleipnir-client runtime via an import map.",
+  "scripts": {
+    "gen": "sleipnir-gen --lang js --discovery ../server/contract.sleipnir.json --out . --base-url https://localhost:5010 --transport rest"
+  },
+  "dependencies": {
+    "sleipnir-client": "file:../../clients/ts",
+    "sleipnir-codegen": "file:../../clients/codegen"
+  }
+}

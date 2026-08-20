@@ -57,6 +57,14 @@ curl -k -X POST https://localhost:5001/api/sleipnir/json \
 > Want a full server + Svelte SPA? Use `dotnet new sleipnir-server-spa` instead.  
 > Want a drop-in sample that uses Sleipnir from NuGet (no repo clone needed)? See [`samples/HelloSleipnir`](samples/HelloSleipnir) — a minimal server with `<PackageReference Include="Sleipnir.Server" Version="1.1.0" />`.
 
+> **New to the framework?** The [`guide/`](guide/) folder is a progressive, runnable
+> **10-chapter tutorial** — one growing 3-tier app (Sleipnir API + Blazor Pflege-Backend +
+> Svelte Endkunden-Portal) from your first controller through batching, `@alias` chaining,
+> JWT auth, and a live `[SleipnirEvent]` price feed with cross-transport resume. Clone the
+> repo and follow [`guide/README.md`](guide/README.md) → "Start at chapter 1"; every
+> chapter has a 3-command "Try it" that runs the step you just read. Theme:
+> *"Sleipnir & REST — best friends"*.
+
 ---
 
 ## Why Sleipnir?
@@ -344,6 +352,7 @@ npm i sleipnir-client
 | Document | What you will find |
 |----------|--------------------|
 | [`GETTING_STARTED.md`](GETTING_STARTED.md) | Empty directory → running DevUI |
+| [`guide/`](guide/README.md) | **Progressive runnable tutorial** — 10 chapters, one growing 3-tier app (API + Blazor admin + Svelte portal): onboarding → codegen → batching → chaining → auth → live events. Start at [`guide/README.md`](guide/README.md). |
 | [`README_DETAILS.md`](README_DETAILS.md) | Full feature reference |
 | [`BEST_PRACTICES.md`](BEST_PRACTICES.md) | When to use Sleipnir, batch vs. REST loop, design patterns |
 | [`PROTOCOL.md`](PROTOCOL.md) | Wire format and casing contract |

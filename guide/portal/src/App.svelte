@@ -14,6 +14,16 @@
   // did Promise.all of N calls = N roundtrips; both options below are one roundtrip.
   let fetchMode: "batch" | "bulk" = $state("batch");
 
+  // Chapter 6: a dependency CHAIN in one roundtrip. Search(query) is the provider — it
+  // exposes $[*] (every element of its string[] result) as the alias "symbols". GetQuotes
+  // is the consumer — it takes @symbols as its parameter. The server resolves @symbols in
+  // Serial mode, so the two calls fold into one SleipnirMultiRequest and one response array.
+  let chainQuery = $state("bit");
+  let chainSymbols: string[] = $state([]);
+  let chainQuotes: Quote[] = $state([]);
+  let chainError: string | null = $state(null);
+  let chainLoading = $state(false);
+
   // Negotiate the `auto` profile once on mount so the badge reflects what the router
   // actually settled on (WebSocket, or the REST+SSE fallback). Negotiation is optional —
   // the first call would trigger it lazily — but doing it up front gives us the badge.
@@ -87,6 +97,35 @@
     }
   }
 
+  async function runChain() {
+    const q = chainQuery.trim();
+    if (!q) { chainError = "Enter a search query."; return; }
+    chainLoading = true;
+    chainError = null;
+    chainSymbols = [];
+    chainQuotes = [];
+    try {
+      // One Batch (Serial — the only mode that resolves @alias). Add the provider first,
+      // Exposes its $[*] as "symbols"; then the consumer GetQuotes, whose `symbols` param
+      // is the provider's alias value (compile-time-typed as string[] via the path record).
+      // One client.batch(b) = one SleipnirMultiRequest = one roundtrip over `auto`.
+      const b = new Batch();
+      const search = b.add(client.market.search(q)).exposes("$[*]", "symbols").named("search");
+      b.add(client.market.getQuotes(search.alias("symbols"))).named("quotes");
+      const responses = await client.batch(b);
+      const searchRes = responses[0];
+      const quotesRes = responses[1];
+      if (searchRes.code === 200 && searchRes.data) chainSymbols = searchRes.data as string[];
+      if (quotesRes.code === 200 && quotesRes.data) chainQuotes = quotesRes.data as Quote[];
+      if (chainSymbols.length === 0)
+        chainError = `No symbols matched "${q}". Try: bit, eth, sol, doge, coin, o.`;
+    } catch (e) {
+      chainError = e instanceof Error ? e.message : String(e);
+    } finally {
+      chainLoading = false;
+    }
+  }
+
   function trend(q: Quote | null): string {
     if (!q || q.change === undefined || q.change === null) return "flat";
     if (q.change > 0) return "up";
@@ -139,4 +178,28 @@
       </div>
     {/each}
   </div>
+
+  <section class="chain">
+    <h2>Chain — Search → GetQuotes, one roundtrip (chapter 6)</h2>
+    <p class="muted">
+      <code>Search(q)</code> exposes <code>$[*]</code> (all matched tickers) as <code>@symbols</code>;
+      <code>GetQuotes(@symbols)</code> consumes it. Two calls, one roundtrip, no client glue.
+    </p>
+    <form onsubmit={(e) => { e.preventDefault(); runChain(); }}>
+      <input type="text" bind:value={chainQuery} placeholder="Search, e.g. bit / eth / o" />
+      <button type="submit" disabled={chainLoading}>{chainLoading ? "Chaining…" : "Chain"}</button>
+    </form>
+    {#if chainError}
+      <p class="err">{chainError}</p>
+    {:else if chainSymbols.length || chainQuotes.length}
+      <p class="muted small">
+        matched: <code>[{chainSymbols.join(", ")}]</code> → {chainQuotes.length} quote(s)
+      </p>
+      <ul class="chain-results">
+        {#each chainQuotes as q (q.symbol)}
+          <li><strong>{q.symbol}</strong> ${formatPrice(q)} <span class="muted {trend(q)}">({q.change != null && q.change > 0 ? "+" : ""}{q.change})</span></li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
 </main>

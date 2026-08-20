@@ -27,3 +27,11 @@ h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
 .price { font-size: 1.4rem; font-weight: 600; }
 .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
 .err { color: var(--down); }
+.chain { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
+.chain h2 { font-size: 1.1rem; margin: 0 0 .25rem; }
+.chain form { display: flex; gap: .5rem; margin: .75rem 0; }
+.chain input { flex: 1; }
+.chain-results { list-style: none; padding: 0; margin: .5rem 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .5rem; }
+.chain-results li { background: var(--card); border: 1px solid var(--border); border-radius: .4rem; padding: .5rem .75rem; font-size: .9rem; }
+.small { font-size: .8rem; }
+code { background: #f0f0f0; padding: .05rem .3rem; border-radius: .25rem; font-size: .85em; }

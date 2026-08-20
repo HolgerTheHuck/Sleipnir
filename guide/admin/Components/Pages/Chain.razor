@@ -1,0 +1,123 @@
+@page "/chain"
+@inject SleipnirGeneratedClient Sleipnir
+@using SleipnirCommon.Models
+@using Sleipnir.Generated
+@* The generated Batch / BatchEntry / Alias live in Sleipnir.Generated; the
+   runtime SleipnirMultiCallResponse lives in SleipnirClient.Sleipnir (already a
+   global-using in the Blazor host). ExecutionMode is in SleipnirCommon.Models. *@
+
+<PageTitle>Chain — Story.Admin</PageTitle>
+
+<h1>Chaining — one call's result feeds the next</h1>
+
+<p class="text-muted" style="max-width:48rem">
+    Chapter 6. Two calls, <strong>one roundtrip</strong>, no client glue between them.
+    <code>Market.Search(query)</code> returns the tickers it matched; <code>Search</code>
+    <em>exposes</em> its <code>$[*]</code> (every element of the returned array) as the alias
+    <code>symbols</code>; <code>Market.GetQuotes(@@symbols)</code> <em>consumes</em> that alias.
+    The server resolves <code>@@symbols</code> in <strong>Serial</strong> mode — the only mode
+    that resolves <code>@@alias</code> placeholders — so the two calls fold into one request
+    and one response array.
+</p>
+
+<div class="row g-2 mb-3" style="max-width:48rem">
+    <div class="col">
+        <input @bind="query" class="form-control" placeholder="Search, e.g. bit / eth / o" />
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary" @onclick="RunAsync" disabled="@busy">
+            @(busy ? "Chaining…" : "Chain Search → GetQuotes")
+        </button>
+    </div>
+</div>
+
+@if (error != null)
+{
+    <div class="alert alert-danger" style="max-width:48rem">@error</div>
+}
+
+@if (symbols.Count != 0 || quotes.Any())
+{
+    <p class="text-muted small">
+        Searched "<strong>@ranQuery</strong>" → <code>[@string.Join(", ", symbols)]</code>
+        · @quotes.Count quotes · one roundtrip.
+    </p>
+}
+
+@if (quotes.Any())
+{
+    <table class="table table-sm" style="max-width:48rem">
+        <thead><tr><th>Symbol</th><th>Price</th><th>Change</th><th>Time</th></tr></thead>
+        <tbody>
+            @foreach (var q in quotes)
+            {
+                <tr>
+                    <td>@q.Symbol</td>
+                    <td>@q.Price</td>
+                    <td class="@(q.Change > 0 ? "text-success" : q.Change < 0 ? "text-danger" : "text-muted")">
+                        @(q.Change > 0 ? "+" : "")@q.Change
+                    </td>
+                    <td>@q.Time?.ToLocalTime()</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private string query = "bit";
+    private string ranQuery = "";
+    private List<string> symbols = new();
+    private List<Quote> quotes = new();
+    private string? error;
+    private bool busy;
+
+    private async Task RunAsync()
+    {
+        busy = true;
+        error = null;
+        symbols = new();
+        quotes = new();
+        var q = query.Trim();
+        if (q.Length == 0) { error = "Enter a search query."; busy = false; return; }
+        ranQuery = q;
+        try
+        {
+            // Build the chain with the generated Batch builder (Serial — required for @alias).
+            //   1) provider: Search(q).Exposes("$[*]", "symbols") — every element of the
+            //      returned string[] is exposed under the alias "symbols".
+            //   2) consumer: GetQuotes(search.Alias("symbols")) — the @symbols placeholder
+            //      the server substitutes with the provider's resolved tickers.
+            // Both calls are one SleipnirMultiRequest, one roundtrip.
+            // Build the chain with the generated Batch builder (Serial — required for @@alias).
+            // NOTE: fully qualified Sleipnir.Generated.Batch — the sibling Batch.razor page
+            // (class Sleipnir.Guide.Admin.Components.Pages.Batch) would otherwise win the
+            // name lookup in this file's own namespace.
+            var batch = new Sleipnir.Generated.Batch();
+            // .Named(id) lives on Call (the producer/consumer is named before it's enrolled);
+            // .Exposes(path, alias) and .Alias(name) live on BatchEntry. So name the call,
+            // then Add → BatchEntry, then Exposes on the entry. The server reads each call's
+            // result back by the id we set with .Named("search") / .Named("quotes").
+            var search = batch.Add(Sleipnir.Market.Search(q).Named("search"))
+                               .Exposes("$[*]", "symbols");
+            batch.Add(Sleipnir.Market.GetQuotes(search.Alias("symbols")).Named("quotes"));
+
+            var resp = await Sleipnir.Batch(batch);
+
+            // Read each call's result back by the .Named(id) we assigned.
+            symbols = resp.Get<List<string>>("search") ?? new();
+            quotes = resp.Get<List<Quote>>("quotes") ?? new();
+
+            if (symbols.Count == 0)
+                error = $"No symbols matched \"{q}\". Try: bit, eth, sol, doge, coin, o.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

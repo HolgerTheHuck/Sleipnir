@@ -3,7 +3,7 @@
 import { SleipnirCall } from "sleipnir-client";
 import { TypedCall } from "./typed-call.js";
 import type { Quote } from "./types.js";
-import type { QuoteArrayPaths, QuotePaths } from "./typed-call.js";
+import type { QuoteArrayPaths, QuotePaths, _StringArrayPaths } from "./typed-call.js";
 
 export class MarketClient {
   /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
@@ -18,5 +18,10 @@ export class MarketClient {
   /** Bulk-fetch quotes for many symbols in one call. Unknown symbols are skipped. For composing arbitrary methods in one roundtrip, prefer a SleipnirMultiRequest batch (chapter 5). */
   getQuotes(symbols: string[]): TypedCall<Quote[], QuoteArrayPaths> {
     return new TypedCall<Quote[], QuoteArrayPaths>(this._build("Market", "GetQuotes").with({ symbols: symbols }));
+  }
+
+  /** Find symbols whose ticker or full name contains the query (case-insensitive). Returns the matching tickers — the chain provider for GetQuotes(@symbols): Search exposes $[*] as 'symbols', GetQuotes consumes @symbols, one roundtrip. */
+  search(query: string): TypedCall<string[], _StringArrayPaths> {
+    return new TypedCall<string[], _StringArrayPaths>(this._build("Market", "Search").with({ query: query }));
   }
 }

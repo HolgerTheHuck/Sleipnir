@@ -20,6 +20,17 @@ public class MarketController
         ["DOGE"] = 0.12m,
     };
 
+    // Full names so Search has something to match beyond the ticker. This is what makes
+    // the chapter 6 chain interesting: Search("bit") → ["BTC"] → GetQuotes(@symbols),
+    // one roundtrip, the provider's result feeding the consumer via an @alias.
+    private static readonly Dictionary<string, string> SymbolNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["BTC"] = "Bitcoin",
+        ["ETH"] = "Ethereum",
+        ["SOL"] = "Solana",
+        ["DOGE"] = "Dogecoin",
+    };
+
     // Returns the domain type directly (null = unknown symbol), the same shape the
     // canonical Story-01 controllers use. This keeps the discovery return type as `Quote`
     // so the generated clients in chapter 2+ get a typed `Quote`, not an opaque envelope.
@@ -64,5 +75,29 @@ public class MarketController
                 quotes.Add(q);
         }
         return quotes;
+    }
+
+    // The chain PROVIDER (chapter 6): a search that returns the *tickers* it matched.
+    // A consumer then takes those tickers as a parameter — GetQuotes(@symbols) — so the
+    // two calls fold into one roundtrip with no client glue between them. The $[*]
+    // fan-out (every element of the returned array) is what the @alias binds to.
+    [SleipnirMethod("Search")]
+    [SleipnirDocumentation("Find symbols whose ticker or full name contains the query (case-insensitive). Returns the matching tickers — the chain provider for GetQuotes(@symbols): Search exposes $[*] as 'symbols', GetQuotes consumes @symbols, one roundtrip.")]
+    public string[] Search(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return Array.Empty<string>();
+
+        var q = query.Trim();
+        var hits = new List<string>();
+        foreach (var (symbol, name) in SymbolNames)
+        {
+            if (symbol.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                name.Contains(q, StringComparison.OrdinalIgnoreCase))
+            {
+                hits.Add(symbol);
+            }
+        }
+        return hits.ToArray();
     }
 }

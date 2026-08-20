@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Story — HTML/JS client (chapter 3)</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font: 14px/1.5 system-ui, sans-serif; max-width: 38rem; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; }
+    .muted { color: #666; }
+    .row { display: flex; gap: .5rem; margin: 1rem 0; }
+    input { flex: 1; padding: .4rem .5rem; font: inherit; }
+    button { padding: .4rem 1rem; font: inherit; cursor: pointer; }
+    .card { border: 1px solid #ddd; border-radius: .5rem; padding: 1rem; margin-top: 1rem; }
+    .card h2 { margin: 0 0 .5rem; font-size: 1.1rem; }
+    .up { color: #178a3a; } .down { color: #c0392b; } .flat { color: #666; }
+    .err { color: #c0392b; background: #fdecea; border-radius: .4rem; padding: .6rem; margin-top: 1rem; }
+    code { background: #f4f4f4; padding: .1rem .3rem; border-radius: .2rem; }
+  </style>
+
+  <!-- The import map is the whole "trick" of this chapter. The generated client (./api/*.js)
+       imports the bare specifier "sleipnir-client", which has no bundled/standalone browser
+       build — so we map it here to the vendored runtime dist (./vendor/sleipnir-client/dist).
+       Everything below is relative module resolution; no bundler, no build step. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "sleipnir-client": "./vendor/sleipnir-client/dist/index.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <h1>Market quote — plain HTML/JS</h1>
+  <p class="muted">
+    Chapter 3: a generated JS client, REST + SSE only, loaded through an import map. No
+    bundler, no build step — the generated <code>./api/*.js</code> and the vendored
+    <code>sleipnir-client</code> runtime are plain ES modules.
+  </p>
+
+  <div class="row">
+    <input id="symbol" value="BTC" placeholder="symbol, e.g. BTC" />
+    <button id="btn">Get quote</button>
+  </div>
+
+  <div id="out"></div>
+
+  <script type="module">
+    import { SleipnirClient } from "./api/index.js";
+
+    // capability "rest" (from --transport rest) bundles REST + SSE only — no WebSocket,
+    // so "auto" goes straight to REST for calls. Proxy-safe, curl-friendly, no WS-auth limit.
+    const client = new SleipnirClient("https://localhost:5010");
+
+    const $ = (id) => document.getElementById(id);
+    const cls = (c) => c > 0 ? "up" : c < 0 ? "down" : "flat";
+    const sign = (c) => c > 0 ? "+" : "";
+
+    $("btn").addEventListener("click", async () => {
+      const symbol = $("symbol").value.trim();
+      const out = $("out");
+      out.innerHTML = '<p class="muted">Loading…</p>';
+      try {
+        // The generated JS methods are async and return a Call builder — await it, then
+        // hand it to client.call(...) to execute over REST.
+        const call = await client.market.getQuote(symbol);
+        const res = await client.call(call);
+        if (res.code !== 200 || !res.data) {
+          out.innerHTML = `<div class="err">No market for symbol '${symbol}' (code ${res.code}).</div>`;
+          return;
+        }
+        const q = res.data;
+        const t = new Date(q.time).toLocaleTimeString();
+        out.innerHTML = `
+          <div class="card">
+            <h2>${q.symbol}</h2>
+            <div>Price: <strong>${q.price}</strong></div>
+            <div>Change: <span class="${cls(q.change)}">${sign(q.change)}${q.change}</span></div>
+            <div class="muted">Time: ${t}</div>
+          </div>`;
+      } catch (e) {
+        out.innerHTML = `<div class="err">${e.message}</div>`;
+      }
+    });
+  </script>
+</body>
+</html>

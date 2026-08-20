@@ -43,3 +43,12 @@ code { background: #f0f0f0; padding: .05rem .3rem; border-radius: .25rem; font-s
 .holdings { border-collapse: collapse; margin-top: .5rem; font-size: .9rem; }
 .holdings th, .holdings td { border: 1px solid var(--border); padding: .25rem .5rem; }
 .holdings th { background: #f0f0f0; }
+/* Chapter 9 — live feed */
+.feed { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
+.feed h2 { font-size: 1.1rem; margin: 0 0 .25rem; }
+.feed-controls { display: flex; gap: .5rem; flex-wrap: wrap; margin: .75rem 0; }
+.spark { width: 100%; max-width: 600px; height: 120px; color: var(--up); display: block; margin: .5rem 0; }
+.ticks { border-collapse: collapse; margin-top: .5rem; font-size: .85rem; width: 100%; max-width: 28rem; }
+.ticks th, .ticks td { border: 1px solid var(--border); padding: .2rem .5rem; }
+.ticks th { background: #f0f0f0; }
+.ticks .up { color: var(--up); } .ticks .down { color: var(--down); }

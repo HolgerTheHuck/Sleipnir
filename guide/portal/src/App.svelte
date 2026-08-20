@@ -2,7 +2,8 @@
   import { onMount } from "svelte";
   import { client, SEED_SYMBOLS } from "./lib/api.js";
   import { Batch } from "./api/index.js";
-  import type { Quote, Profile, Holding } from "./api/types.js";
+  import type { PriceTick, Quote, Profile, Holding } from "./api/types.js";
+  import type { SleipnirSubscription } from "sleipnir-client";
 
   type Card = { symbol: string; quote: Quote | null; loading: boolean; error: string | null };
 
@@ -36,6 +37,22 @@
   let holdings: Holding[] = $state([]);
   let holdingsError: string | null = $state(null);
   let loadingHoldings = $state(false);
+
+  // Chapter 9: the live BTC price feed (a server-push [SleipnirEvent]). The portal subscribes to
+  // PriceFeed.Ticks("BTC") and draws a rolling sparkline. The feed is anonymous (no
+  // [SleipnirAuthorise] — subscribe as anyone); the admin-only StartFeed/StopFeed controls whether
+  // anything is produced. Transport is selectable: `auto` (WS), `sse` (REST+SSE — the "REST best
+  // friends" path), or `signalr`. The subscription handle carries subscriptionId + lastEventId;
+  // "Drop & resume over SSE" demonstrates cross-transport resume against the durable store.
+  let feedTransport: "auto" | "rest" | "ws" | "signalr" = $state("auto");
+  let priceSeries: number[] = $state([]);
+  let feedTicks: PriceTick[] = $state([]);
+  let feedSub: SleipnirSubscription | null = $state(null);
+  let feedSubId = $state("");
+  let feedLastEventId = $state(0);
+  let feedStatus = $state<string | null>(null);
+  let feedBusy = $state(false);
+  let resumeStatus = $state<string | null>(null);
 
   function authedTransportLabel(): string {
     // After login we pin REST+SSE; reflect that in the badge so the "authed → REST" story is visible.
@@ -202,6 +219,79 @@
     }
   }
 
+  // Chapter 9 feed handlers. The handlers object is the generated `SubscribeHandlers<PriceTick>`
+  // ({ onNext, onError?, onComplete? }). `onNext` fires per tick on the client's pump; we keep a
+  // rolling window of prices for the sparkline and mirror the framework's lastEventId for resume.
+  // All PriceTick fields are optional on the wire (discovery carries no nullability), so narrow.
+  function feedHandlers(): { onNext: (t: PriceTick) => void; onError?: (err: Error) => void; onComplete?: () => void } {
+    return {
+      onNext: (t) => {
+        const price = t.price ?? 0;
+        const change = t.change ?? 0;
+        priceSeries = [...priceSeries, price].slice(-60);
+        feedTicks = [...feedTicks, t].slice(-20);
+        if (feedSub) feedLastEventId = feedSub.lastEventId ?? feedLastEventId;
+        feedStatus = `${feedTicks.length} tick(s) · last ${t.symbol ?? "?"} = $${price} (${change >= 0 ? "+" : ""}${change})`;
+      },
+      onError: (e) => { feedStatus = `feed error: ${e.message}`; },
+      onComplete: () => { feedStatus = "feed completed."; },
+    };
+  }
+
+  async function subscribeFeed() {
+    if (feedSub) return;
+    feedBusy = true; feedStatus = null; resumeStatus = null;
+    try {
+      // Pin the chosen transport, then subscribe. `auto` probes WS (the feed works over WS
+      // anonymous — no browser-Authorization limitation here because it's not authed). `rest`
+      // is the REST+SSE "best friends" path (SSE rides on rest); `signalr` is the hub path.
+      await client.useTransport(feedTransport);
+      feedSub = await client.priceFeed.ticks("BTC", feedHandlers());
+      feedSubId = feedSub.subscriptionId;
+      feedLastEventId = feedSub.lastEventId ?? 0;
+      feedStatus = `subscribed (${feedTransport}) · id ${feedSubId.slice(0, 8)}… · waiting for ticks…`;
+    } catch (e) {
+      feedStatus = `subscribe failed: ${e instanceof Error ? e.message : String(e)}`;
+      feedSub = null;
+    } finally {
+      feedBusy = false;
+    }
+  }
+
+  function unsubscribeFeed() {
+    feedSub?.unsubscribe();
+    feedSub = null;
+    feedStatus = "unsubscribed.";
+  }
+
+  async function dropAndResume() {
+    // Cross-transport resume: capture the durable subscriptionId + the last eventId the client
+    // processed, drop the current handle, then resume over SSE. The server's durable
+    // SleipnirSubscriptionStore is process-wide, so a subscriptionId created over WS/signalr is
+    // resumable over SSE. NB: a clean WS `unsubscribe()` sends `kind:"unsubscribe"` which DESTROYS
+    // the durable subscription → the SSE resume gets 410 and terminates (no fresh fallback in pure
+    // resume). To see a real gap-replay, subscribe over `rest` (SSE) first — its unsubscribe just
+    // closes the HTTP stream, preserving the durable buffer for 60s. The chapter walks through both.
+    if (!feedSub) { resumeStatus = "Subscribe first."; return; }
+    const subId = feedSub.subscriptionId;
+    const cursor = feedSub.lastEventId ?? 0;
+    feedSub.unsubscribe();
+    feedSub = null;
+    resumeStatus = `dropped ${subId.slice(0, 8)}… @ eventId ${cursor}; resuming over SSE…`;
+    feedStatus = null;
+    try {
+      // SSE rides on the `rest` profile; resume goes straight to the SSE backend's resume endpoint.
+      await client.useTransport("rest");
+      const resumed = await client.sse!.resume(subId, cursor, feedHandlers());
+      feedSub = resumed;
+      feedSubId = resumed.subscriptionId;
+      // Same id → the server replayed the gap (durable survived); a 410 throws before we get here.
+      resumeStatus = `resumed over SSE · SAME id ${subId.slice(0, 8)}… · gap replayed from eventId ${cursor}.`;
+    } catch (e) {
+      resumeStatus = `resume failed (410 = durable gone/destroyed): ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+
   function trend(q: Quote | null): string {
     if (!q || q.change === undefined || q.change === null) return "flat";
     if (q.change > 0) return "up";
@@ -212,6 +302,21 @@
   function formatPrice(q: Quote | null): string {
     if (q?.price === undefined || q?.price === null) return "—";
     return q.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  // Map a rolling window of prices to SVG polyline points (viewBox 600×120). The min/max range
+  // spans the visible window so the line fills the height; a flat window draws a centered line.
+  function sparkPoints(prices: number[]): string {
+    const W = 600, H = 120, pad = 6;
+    const min = Math.min(...prices), max = Math.max(...prices);
+    const span = max - min || 1;
+    return prices
+      .map((p, i) => {
+        const x = (i / (prices.length - 1 || 1)) * (W - pad * 2) + pad;
+        const y = H - pad - ((p - min) / span) * (H - pad * 2);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
   }
 </script>
 
@@ -320,6 +425,57 @@
         <p class="err">{loginError}</p>
       {/if}
       <p class="muted small">Try customer / customer. (admin / admin works too, but the feed controls live in the Blazor admin.)</p>
+    {/if}
+  </section>
+
+  <section class="feed">
+    <h2>Live feed — PriceFeed.Ticks, server push (chapter 9)</h2>
+    <p class="muted">
+      <code>priceFeed.ticks("BTC", handlers)</code> subscribes to the <code>[SleipnirEvent]</code>
+      feed. The admin-only <code>StartFeed</code>/<code>StopFeed</code> control whether ticks are
+      produced; the feed itself is anonymous, so the portal can subscribe before login. Pick a
+      transport, subscribe, and watch the BTC random-walk draw itself. Drop &amp; resume over SSE
+      replays the gap from the durable store (subscribe over <code>sse</code> first to see a real
+      replay — a clean WS unsubscribe destroys the durable subscription).
+    </p>
+
+    <fieldset class="mode">
+      <legend>Feed transport</legend>
+      <label><input type="radio" name="ftransport" value="auto" bind:group={feedTransport} /> auto (WebSocket)</label>
+      <label><input type="radio" name="ftransport" value="rest" bind:group={feedTransport} /> rest (REST+SSE — best friends)</label>
+      <label><input type="radio" name="ftransport" value="signalr" bind:group={feedTransport} /> signalr</label>
+    </fieldset>
+
+    <div class="feed-controls">
+      <button type="button" onclick={subscribeFeed} disabled={feedBusy || feedSub !== null}>
+        {feedBusy ? "Subscribing…" : "Subscribe (BTC)"}
+      </button>
+      <button type="button" onclick={unsubscribeFeed} disabled={!feedSub}>Unsubscribe</button>
+      <button type="button" onclick={dropAndResume} disabled={!feedSub}>Drop &amp; resume (SSE)</button>
+    </div>
+
+    {#if feedStatus}<p class="muted small">{feedStatus}</p>{/if}
+    {#if resumeStatus}<p class="ok small">{resumeStatus}</p>{/if}
+    {#if feedSubId}<p class="muted small">subscriptionId <code>{feedSubId}</code> · lastEventId {feedLastEventId}</p>{/if}
+
+    {#if priceSeries.length > 1}
+      <svg class="spark" viewBox="0 0 600 120" preserveAspectRatio="none" aria-hidden="true">
+        <polyline fill="none" stroke="currentColor" stroke-width="1.5"
+          points={sparkPoints(priceSeries)} />
+      </svg>
+    {/if}
+
+    {#if feedTicks.length > 0}
+      <table class="ticks">
+        <thead><tr><th>Time</th><th>Symbol</th><th>Price</th><th>Change</th></tr></thead>
+        <tbody>
+          {#each feedTicks as t (t.time ?? `${t.price}-${feedTicks.indexOf(t)}`)}
+            <tr><td>{t.time ? new Date(t.time).toLocaleTimeString() : "—"}</td><td>{t.symbol ?? "?"}</td>
+              <td>${t.price ?? 0}</td>
+              <td class={(t.change ?? 0) >= 0 ? "up" : "down"}>{(t.change ?? 0) >= 0 ? "+" : ""}{t.change ?? 0}</td></tr>
+          {/each}
+        </tbody>
+      </table>
     {/if}
   </section>
 </main>

@@ -48,6 +48,12 @@ builder.Services.AddSleipnir(options =>
     // portal shows quotes before login). Per-method [SleipnirAuthorise] on Account/Portfolio
     // gates the authed surface instead. (Setting this true would also turn on the
     // connection-level WS/SSE default-deny gate — not what we want for a public Market.)
+
+    // Chapter 9: turn on the SignalR event transport (opt-in, default false) so the portal can
+    // `useTransport("signalr")` and the admin can exercise the hub-streaming path. MessagePack
+    // gives the hub a binary wire (smaller frames); JSON is the fallback protocol either way.
+    options.UseSignalR = true;
+    options.UseMessagePack = true;
 });
 
 // --- Chapter 8: standard ASP.NET JWT bearer auth -------------------------------------
@@ -59,6 +65,14 @@ builder.Services.AddHttpContextAccessor();
 // reads) are singletons — resolved per-call into controllers via the invoker's DI scope.
 builder.Services.AddSingleton<AccountService>();
 builder.Services.AddSingleton<FeedControlService>();
+
+// Chapter 9: the live price feed owns the HotObservable<PriceTick> streams + the random-walk
+// timer. Registered as a singleton so PriceFeedController can inject it, AND as a hosted service
+// (resolving the SAME singleton) so it starts/stops with the host. AddHostedService<T>() alone
+// does not register T as an injectable type — the dual registration makes one instance both the
+// long-lived feed source the controller yields and the IHostedService the host runs.
+builder.Services.AddSingleton<PriceFeedService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PriceFeedService>());
 
 // JWT validation. Issuance uses the SAME symmetric key (AccountService.SecurityKey), issuer
 // and audience — the two sides must agree. RoleClaimType = ClaimTypes.Role so

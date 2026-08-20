@@ -4,25 +4,29 @@
 @using Sleipnir.Guide.Admin.Services
 @using SleipnirClient.Sleipnir
 @using SleipnirCommon.Exceptions
+@using Sleipnir.Generated
 
 <PageTitle>Feed control — Story.Admin</PageTitle>
 
 <h1>Feed control + authed chain</h1>
 
 <p class="text-muted" style="max-width:48rem">
-    Chapter 8. Two admin-only surfaces on <code>Portfolio</code>: <code>StartFeed</code> /
+    Chapter 8/9. Two admin-only surfaces on <code>Portfolio</code>: <code>StartFeed</code> /
     <code>StopFeed</code> carry a method-level <code>[SleipnirAuthorise(Role = "Admin")]</code> —
     a <em>customer</em> token is authenticated but lacks the Admin role → <strong>403</strong>
     (not 401). And the chapter 6 chain, now authed: <code>PlaceOrder</code> exposes
     <code>$.id</code> as <code>orderId</code>, <code>GetOrder(@@orderId)</code> consumes it — one
-    Serial roundtrip.
+    roundtrip. Below that, the chapter 9 <strong>live monitor</strong>: the admin subscribes to
+    the <code>PriceFeed.Ticks</code> event over its server-side <code>auto</code> (WS) path and
+    watches ticks arrive in real time.
 </p>
 
 @if (!Auth.IsLoggedIn)
 {
     <div class="alert alert-warning" style="max-width:48rem">
         Not logged in — <a href="/login">log in</a> as <code>admin</code> to use the feed controls
-        (or as <code>customer</code> to see the 403).
+        (or as <code>customer</code> to see the 403). The live monitor below is anonymous and works
+        without login, but the Start/Stop controls need the Admin role.
     </div>
 }
 
@@ -42,6 +46,56 @@
 @if (feedStatus != null)
 {
     <div class="alert alert-info" style="max-width:48rem">@feedStatus</div>
+}
+
+<hr style="max-width:48rem" />
+
+<h2 class="h5">Live monitor — PriceFeed.Ticks (chapter 9)</h2>
+<p class="text-muted" style="max-width:48rem">
+    <code>Subscribe&lt;PriceTick&gt;(PriceFeed.Ticks("BTC"))</code> opens a server-push
+    subscription. The admin's <code>auto</code> profile probes WebSocket first; the C#
+    <code>ClientWebSocket</code> <em>can</em> set <code>Authorization</code>, so it gets the WS
+    path even authed. Each tick is pushed as a frame; <code>IObserver&lt;PriceTick&gt;.OnNext</code>
+    fires on the framework's pump thread, so the handler marshals onto the Blazor render thread
+    via <code>InvokeAsync</code>. <code>Dispose</code> unsubscribes.
+</p>
+
+<div class="btn-group mb-3" role="group">
+    <button class="btn btn-outline-primary" @onclick="SubscribeAsync" disabled="@subscribing">
+        @(subscribing ? "Subscribing…" : "Subscribe (BTC)")
+    </button>
+    <button class="btn btn-outline-secondary" @onclick="Unsubscribe" disabled="@(_subscription is null)">
+        Unsubscribe
+    </button>
+</div>
+
+@if (monitorError != null)
+{
+    <div class="alert alert-danger" style="max-width:48rem">@monitorError</div>
+}
+@if (lastTick != null)
+{
+    <p class="text-muted small" style="max-width:48rem">
+        @ticks.Count tick(s) · last <strong>@lastTick.Symbol</strong> =
+        $@lastTick.Price @(lastTick.Change >= 0 ? "+" : "")@lastTick.Change
+        @@ @lastTick.Time?.ToString("HH:mm:ss")
+    </p>
+}
+@if (ticks.Count > 0)
+{
+    <table class="table table-sm" style="max-width:48rem">
+        <thead><tr><th>Time</th><th>Symbol</th><th>Price</th><th>Change</th></tr></thead>
+        <tbody>
+            @foreach (var t in ticks)
+            {
+                <tr><td>@t.Time?.ToString("HH:mm:ss")</td><td>@t.Symbol</td>
+                    <td>$@t.Price</td>
+                    <td class="@(t.Change >= 0 ? "text-success" : "text-danger")">
+                        @(t.Change >= 0 ? "+" : "")@t.Change
+                    </td></tr>
+            }
+        </tbody>
+    </table>
 }
 
 <hr style="max-width:48rem" />
@@ -84,6 +138,14 @@
     private string? chainError;
     private bool busy;
 
+    // --- Chapter 9 live monitor -------------------------------------------------------
+    private SleipnirSubscription<PriceTick>? _subscription;
+    private IDisposable? observerToken;
+    private List<PriceTick> ticks = new();
+    private PriceTick? lastTick => ticks.Count > 0 ? ticks[^1] : null;
+    private bool subscribing;
+    private string? monitorError;
+
     private async Task RunFeedAsync(Func<Task<bool>> action, string label)
     {
         if (!Auth.IsLoggedIn) { feedError = "Log in first."; return; }
@@ -109,6 +171,45 @@
     private Task StopFeedAsync() =>
         RunFeedAsync(() => Sleipnir.Call<bool>(Sleipnir.Portfolio.StopFeed()) ?? Task.FromResult(false), "StopFeed");
 
+    private async Task SubscribeAsync()
+    {
+        if (_subscription is not null) return;
+        subscribing = true; monitorError = null;
+        try
+        {
+            // The generated event method returns a Call; Subscribe<PriceTick>(call) routes to the
+            // active event backend (WS here, via `auto`). The returned handle is IObservable<PriceTick>
+            // + IDisposable — subscribe an observer for ticks, dispose to unsubscribe.
+            _subscription = await Sleipnir.Subscribe<PriceTick>(Sleipnir.PriceFeed.Ticks("BTC"));
+            observerToken = _subscription.Subscribe(new TickObserver(this));
+        }
+        catch (Exception ex) { monitorError = ex.Message; }
+        finally { subscribing = false; }
+    }
+
+    private void Unsubscribe()
+    {
+        observerToken?.Dispose();
+        _subscription?.Dispose();
+        _subscription = null;
+        observerToken = null;
+    }
+
+    private void OnTick(PriceTick tick)
+    {
+        // OnNext fires on the framework's pump thread, not the Blazor render thread. Marshal the
+        // state mutation + StateHasChanged onto the render thread via InvokeAsync.
+        _ = InvokeAsync(() =>
+        {
+            ticks.Add(tick);
+            if (ticks.Count > 20) ticks.RemoveRange(0, ticks.Count - 20);   // rolling window
+            StateHasChanged();
+        });
+    }
+
+    private void OnMonitorError(Exception ex) =>
+        _ = InvokeAsync(() => { monitorError = ex.Message; StateHasChanged(); });
+
     private async Task PlaceOrderChainAsync()
     {
         if (!Auth.IsLoggedIn) { chainError = "Log in first."; return; }
@@ -130,5 +231,17 @@
         catch (SleipnirException ex) { chainError = $"HTTP {ex.Error?.Code} — {ex.Error?.Message ?? ex.Message}"; }
         catch (Exception ex) { chainError = ex.Message; }
         finally { busy = false; }
+    }
+
+    // A tiny IObserver<PriceTick> — no System.Reactive dependency. Forwards to the page's
+    // thread-safe OnTick/OnMonitorError. Created per-subscribe; disposing the token the subject
+    // returns detaches THIS observer (SleipnirSubscription.Dispose sends the server unsubscribe).
+    private sealed class TickObserver : IObserver<PriceTick>
+    {
+        private readonly Feed _page;
+        public TickObserver(Feed page) => _page = page;
+        public void OnNext(PriceTick value) => _page.OnTick(value);
+        public void OnError(Exception error) => _page.OnMonitorError(error);
+        public void OnCompleted() { /* terminal: feed completed or unsubscribed */ }
     }
 }

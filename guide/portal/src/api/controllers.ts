@@ -1,8 +1,9 @@
 // Auto-generated Sleipnir controllers. Method names are camelCase; parameter
 // names bind case-sensitively on the wire (keys passed verbatim to SleipnirCall).
 import { SleipnirCall } from "sleipnir-client";
+import type { SleipnirRequest, SubscribeHandlers, SleipnirSubscription } from "sleipnir-client";
 import { TypedCall } from "./typed-call.js";
-import type { Holding, Order, Profile, Quote } from "./types.js";
+import type { Holding, Order, PriceTick, Profile, Quote } from "./types.js";
 import type { HoldingArrayPaths, OrderPaths, ProfilePaths, QuoteArrayPaths, QuotePaths, _BooleanPaths, _StringArrayPaths, _VoidPaths } from "./typed-call.js";
 
 export class AccountClient {
@@ -64,13 +65,29 @@ export class PortfolioClient {
     return new TypedCall<unknown, _VoidPaths>(this._build("Portfolio", "GetOrder").with({ id: id }));
   }
 
-  /** Start the live price feed (chapter 8). Admin role required — a Customer token gets 403. */
+  /** Start the live price feed (chapter 9). Admin role required — a Customer token gets 403. */
   startFeed(): TypedCall<boolean, _BooleanPaths> {
     return new TypedCall<boolean, _BooleanPaths>(this._build("Portfolio", "StartFeed"));
   }
 
-  /** Stop the live price feed (chapter 8). Admin role required — a Customer token gets 403. */
+  /** Stop the live price feed (chapter 9). Admin role required — a Customer token gets 403. */
   stopFeed(): TypedCall<boolean, _BooleanPaths> {
     return new TypedCall<boolean, _BooleanPaths>(this._build("Portfolio", "StopFeed"));
+  }
+}
+
+export class PriceFeedClient {
+  /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
+  /** @internal */ _subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>) => Promise<SleipnirSubscription>;
+  constructor(
+    build: (controller: string, method: string) => SleipnirCall,
+    subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>) => Promise<SleipnirSubscription>,
+  ) {
+    this._build = build;
+    this._subscribe = subscribe;
+  }
+  /** Live price feed. Subscribe to a symbol (e.g. BTC) to receive a PriceTick ~once per second while the feed is running. Resumable: reconnect within 60s and the server replays the missed ticks by eventId. The feed is anonymous (subscribe as anyone); the admin starts/stops it via Portfolio.StartFeed/StopFeed. */
+  ticks(symbol: string, handlers: SubscribeHandlers<PriceTick>): Promise<SleipnirSubscription> {
+    return this._subscribe<PriceTick>(this._build("PriceFeed", "Ticks").with({ symbol: symbol }).toRequest(), handlers);
   }
 }

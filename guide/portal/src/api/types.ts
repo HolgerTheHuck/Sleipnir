@@ -1,6 +1,13 @@
 // Auto-generated Sleipnir data types. Properties are camelCase (wire) and
 // optional (discovery carries no nullability; callers narrow).
 
+export interface PriceTick {
+  symbol?: string;
+  price?: number;
+  change?: number;
+  time?: string;
+}
+
 export interface Holding {
   symbol?: string;
   quantity?: number;

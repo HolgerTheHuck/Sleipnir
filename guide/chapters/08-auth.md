@@ -142,8 +142,9 @@ gets a clear message, not a generic 500.
 
 `Portfolio.PlaceOrder` is the chapter-6 chain provider, now behind the class-level gate: it
 exposes `$.id` (camelCase — the wire document is camelCase and JsonPath is case-sensitive) as
-`orderId`, and `GetOrder(@orderId)` consumes it. Same Serial batch, one roundtrip — the chain
-from chapter 6 works unchanged once you add a bearer.
+`orderId`, and `GetOrder(@orderId)` consumes it. Same one-roundtrip chain — the chain
+from chapter 6 works unchanged once you add a bearer (the server auto-detects the
+`dependencyMapping` → topological; `mode` is irrelevant for chains).
 
 ## The client envelope: HTTP 200, `code: 401`, and the thrown `SleipnirException`
 
@@ -284,7 +285,7 @@ curl -sk -X POST https://localhost:5010/api/sleipnir/json -H "Authorization: Bea
   -H "Content-Type: application/json" -d '{"controller":"Portfolio","method":"StartFeed"}'
 # → {"code":200,"data":true}
 
-# 6. The authed chain PlaceOrder → GetOrder (Serial multi, one roundtrip)
+# 6. The authed chain PlaceOrder → GetOrder (multi, one roundtrip — mode ignored for chains)
 curl -sk -X POST https://localhost:5010/api/sleipnir/json/multi -H "Authorization: Bearer $ATOK" \
   -H "Content-Type: application/json" -d '{
     "requests":[

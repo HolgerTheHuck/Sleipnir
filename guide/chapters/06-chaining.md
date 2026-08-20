@@ -4,7 +4,9 @@
 > **no client glue** between them. `Market.Search("bit")` finds tickers; `GetQuotes` fetches
 > their prices. Instead of "search → read symbols → send a second request", `Search`
 > *exposes* its result under an alias and `GetQuotes` *consumes* that alias. The server
-> resolves the dependency in **Serial** mode. One request in, one response array out.
+> auto-detects the `dependencyMapping` and runs a **topological execution graph** (Kahn):
+> dependents run after their providers, independent requests within a batch run in parallel.
+> One request in, one response array out.
 
 Chapter 5 folded N independent calls into one roundtrip (a batch). Chapter 6 folds **dependent**
 calls into one roundtrip (a chain) — the standout feature. The trick is the `@alias` placeholder:
@@ -56,7 +58,8 @@ dotnet build guide/admin       # C# generator: Sleipnir.Market.Search(query)
   ┌─ request 2 (consumer) ───────────────────────────────┐
   │ Market.GetQuotes(@symbols)   →  GetQuotes(["BTC"…])  │
   └──────────────────────────────────────────────────────┘
-   one SleipnirMultiRequest, mode = Serial, one roundtrip
+   one SleipnirMultiRequest, one roundtrip
+   (the server auto-detects dependencyMapping → topological; mode is ignored for chains)
 ```
 
 The `$[*]` path is a **multi-match JsonPath** — "every element of the returned array".
@@ -65,6 +68,36 @@ parameter (`string[]` / `List<string>`). This is **list fan-out into a *paramete
 never fan-out into N *requests* — one consumer call, one array argument. (See
 `DEPENDENCY_BINDING.md` for the full binding matrix and `PROTOCOL.md` → "Alias
 Serialization & Type Binding".)
+
+## Not only `$[*]` — scalar extraction (`$[0]`, `$.id`)
+
+`$[*]` is the **list fan-out** shape (one producer, a whole array, injected as one list
+parameter). Chaining also has a **scalar** shape: extract a **single value** and feed it into a
+method that takes one argument. Two flavours:
+
+- **`$[0]`** — one element of an array (a single index, not a wildcard). `Search` exposes
+  `$[0]` (the first matched ticker) and `GetQuote(@first)` consumes that one string:
+  ```
+    Market.Search("bit")  →  ["BTC"]        exposes $[0]  ──►  alias "first"
+                                        server resolves @first = "BTC"
+                                              ▼
+    Market.GetQuote(@first)  →  GetQuote("BTC")  →  one Quote
+  ```
+  `$[0]` is a one-match path → the server injects a single `string`, not a list. The consumer
+  `GetQuote(string)` takes one symbol — a scalar fits a scalar parameter. (If `Search` matches
+  nothing, `$[0]` is unresolved and the consumer gets a `400` — the chain fails closed, see
+  below.)
+
+- **`$.id`** — one property of an object (the common **create → getById** pattern). A provider
+  that returns a single object exposes a property: `PlaceOrder` returns an `Order`, exposes
+  `$.id` as `orderId`, and `GetOrder(@orderId)` consumes it. This is the chain behind the authed
+  `Portfolio` surface in [chapter 8](08-auth.md) and the typed `Expose(o => o.Id)` in [chapter 7's
+  LINQ provider](07-linq.md). The guide's anonymous `Market` domain has no single-object
+  producer with an `Id`, so the runnable scalar demo here is the `$[0]` form — but the wire is
+  identical: only the JsonPath shape (`$[0]` vs `$.id` vs `$[*]`) changes.
+
+The admin's `/chain` page runs both: **Chain 1** (`$[*]` → `GetQuotes`) and **Chain 2`
+(`$[0]` → `GetQuote`), same one-roundtrip contract, only the extracted shape differs.
 
 ## The admin: a typed chain (Blazor)
 
@@ -80,9 +113,9 @@ var search = batch.Add(Sleipnir.Market.Search(query).Named("search"))
                    .Exposes("$[*]", "symbols");
 batch.Add(Sleipnir.Market.GetQuotes(search.Alias("symbols")).Named("quotes"));
 
-var resp = await Sleipnir.Batch(batch);           // Serial — required for @alias
-var symbols = resp.Get<List<string>>("search") ?? new();
-var quotes  = resp.Get<List<Quote>>("quotes")  ?? new();
+var resp = await Sleipnir.Batch(batch);   // chain → server auto-detects dependencyMapping
+var symbols = resp.Get<List<string>>("search") ?? new();   //  → topological graph; mode is
+var quotes  = resp.Get<List<Quote>>("quotes")  ?? new();   //  ignored for chains (see below)
 ```
 
 The shape mirrors the diagram exactly:
@@ -104,14 +137,40 @@ from `Alias` sent `"symbols"` on the wire, which the server's `ReplaceDependency
 matched; the typed chain *compiled* but the dependent call got an unresolved literal instead
 of the alias value.
 
-### Serial is the only mode that resolves `@alias`
+### The server builds the execution graph itself (auto-detect)
 
-A `Batch` is always `ExecutionMode.Serial` — chapter 5's `Parallel` batch can't chain, because
-parallel calls run with `Task.WhenAll` and can't see each other's results. If you set
-`dependencyMapping` on any request, the server actually **ignores** `Mode` and runs a
-topological (Kahn) sort instead — so dependents always run after their providers, and
-independent requests within the batch still parallelize. You don't have to pick; the server
-auto-detects.
+You do **not** pick a mode to chain. The `mode` field (chapter 5: `0 = Parallel`,
+`1 = Serial`) governs only **pure batches** — a flat list of independent calls. The moment
+**any** request carries a `dependencyMapping`, the `InvokeDi` dispatcher switches *before* the
+mode switch to the **topological batch executor** (`ExecuteInDependencyBatches` →
+`DependencyGraphBuilder.SortByDependencyBatches`, Kahn's algorithm). It builds the execution
+graph from the `dependencyMapping` — the dependency is statically computable, no runtime
+probing — and runs it as **Kahn-ordered parallel batches**: dependents always run after their
+providers, and **independent requests within a batch run in parallel** (`Task.WhenAll` per
+batch). `mode` is ignored for chains.
+
+So the two shapes are:
+
+- **Pure batch** (no `dependencyMapping`) — `mode` decides: `Parallel` (`Task.WhenAll`, all at
+  once, the chapter-5 fan-out) or `Serial` (sequential). Parallel here genuinely cannot chain —
+  the calls fire simultaneously and can't see each other's results.
+- **Chain** (any `dependencyMapping`) — `mode` is irrelevant; the topological executor wins.
+  Dependent requests are ordered; independent ones parallelize.
+
+```
+  linear chain (this chapter)        branching chain (diamond)
+  Search ──► GetQuotes                Place ──┬─► GetOrder       ← batch 1: Place
+            (batch 1: Search)                 └─► GetQuote(symbol) ← batch 2: GetOrder ‖ GetQuote
+            (batch 2: GetQuotes)              (both depend on Place, not each other → parallel)
+```
+
+The `Search → GetQuotes` chain here is **linear** — each batch happens to hold one request, so
+it runs sequentially *by shape*, not by mode. A **diamond** — one provider, two consumers that
+both depend on it but not each other (`PlaceOrder` → `GetOrder` *and* `GetQuote(@symbol)`) —
+runs the two consumers in parallel in batch 2. You don't wire the parallelism; the graph gives
+it to you for free. `SleipnirBatch` (chapter 7) and the JSON-RPC dispatcher default to `Serial`
+on the wire, but for a chain that value is overridden by auto-detect — it is a no-op, not a
+requirement.
 
 ## The portal: a typed chain over `auto` (Svelte)
 
@@ -148,14 +207,17 @@ cd guide/portal && npm run dev     # → http://localhost:5173, the Chain sectio
 
 On the admin `/chain` page, enter `bit` and click **Chain Search → GetQuotes**: the page shows
 `matched: [BTC]` and one quote row — one roundtrip. Try `o`: `matched: [BTC, SOL, DOGE]` and
-three rows, still one roundtrip. The provider and consumer ran in the same request.
+three rows, still one roundtrip. The provider and consumer ran in the same request. **Chain 2**
+on the same page does the scalar extraction — **Chain Search → GetQuote** exposes `$[0]` (the
+first match) and fetches one quote for it; same one roundtrip, a single value instead of a list.
 
-On the portal, the **Chain** section does the same: type `o`, click **Chain**, see the matched
+On the portal, the **Chain** section does the fan-out: type `o`, click **Chain**, see the matched
 tickers and their quotes appear together.
 
-> **Verify the chain wire without a UI** — the multi endpoint resolves `@alias` in **Serial**
-> mode (`"mode":1`). The provider carries `dependencyMapping` (alias → result-relative JsonPath);
-> the consumer sends `@alias` as the parameter value:
+> **Verify the chain wire without a UI** — the multi endpoint auto-detects the `dependencyMapping`
+> and runs the topological batch executor **regardless of `mode`** (the `mode` field is ignored
+> for chains; it only governs pure batches). The provider carries `dependencyMapping`
+> (alias → result-relative JsonPath); the consumer sends `@alias` as the parameter value:
 > ```bash
 > curl -sk -X POST https://localhost:5010/api/sleipnir/json/multi \
 >   -H "Content-Type: application/json" \
@@ -200,7 +262,5 @@ reproduces these rules as inline warnings.
 
 **Next:** [Chapter 7 — The LINQ provider](07-linq.md). Chaining by hand (`.Exposes` /
 `.Alias`, `exposes` / `alias`) is explicit and exact. The `Sleipnir.Client.Linq` package adds a
-typed ergonomic layer on top — `Dep<T>` and `SleipnirQuery<T>` — so a chain reads like a query
-and the `@alias` wiring is inferred. _(This chapter is planned; the `@alias` mechanics it builds
-on are fully covered above. Skip ahead to [Chapter 8 — Auth](08-auth.md) to continue the
-running story.)_
+typed ergonomic layer on top — `Dep<T>` and a selector expression infer the `@alias` wiring, so
+the scalar `$.id` chain from this chapter reads like a query and the JsonPath is built for you.

@@ -11,13 +11,20 @@
 <h1>Chaining — one call's result feeds the next</h1>
 
 <p class="text-muted" style="max-width:48rem">
-    Chapter 6. Two calls, <strong>one roundtrip</strong>, no client glue between them.
-    <code>Market.Search(query)</code> returns the tickers it matched; <code>Search</code>
-    <em>exposes</em> its <code>$[*]</code> (every element of the returned array) as the alias
-    <code>symbols</code>; <code>Market.GetQuotes(@@symbols)</code> <em>consumes</em> that alias.
-    The server resolves <code>@@symbols</code> in <strong>Serial</strong> mode — the only mode
-    that resolves <code>@@alias</code> placeholders — so the two calls fold into one request
-    and one response array.
+    Chapter 6. Two calls, <strong>one roundtrip</strong>, no client glue between them. A provider
+    call <em>exposes</em> part of its result under an alias; a consumer call sends <code>@@alias</code>
+    where a normal value would go. The server <em>auto-detects</em> the <code>dependencyMapping</code>
+    and runs a <strong>topological execution graph</strong> (Kahn) — dependents after providers —
+    so the calls fold into one request and one response array. The <code>mode</code> field is
+    ignored for chains; it only governs pure batches.
+</p>
+
+<h2 class="h5">Chain 1 — list fan-out: <code>Search → GetQuotes</code> (path <code>$[*]</code>)</h2>
+<p class="text-muted small" style="max-width:48rem">
+    <code>Search(query)</code> returns the tickers it matched; <code>Exposes("$[*]", "symbols")</code>
+    exposes <em>every element</em> of that array under the alias <code>symbols</code>;
+    <code>GetQuotes(@@symbols)</code> consumes it. <strong>List fan-out into a parameter</strong> —
+    one consumer call, one array argument, never N requests.
 </p>
 
 <div class="row g-2 mb-3" style="max-width:48rem">
@@ -64,13 +71,72 @@
     </table>
 }
 
+<hr style="max-width:48rem" />
+
+<h2 class="h5">Chain 2 — scalar extraction: <code>Search → GetQuote</code> (path <code>$[0]</code>)</h2>
+<p class="text-muted small" style="max-width:48rem">
+    Chaining is not only <code>$[*]</code> (the whole list). You can extract a <strong>single
+    value</strong> and feed it into a method that takes one argument. Here
+    <code>Exposes("$[0]", "first")</code> exposes the <em>first</em> matched ticker (one element,
+    a scalar); <code>GetQuote(@@first)</code> consumes that one string and returns one
+    <code>Quote</code>. The same shape with <code>$.id</code> (a single object property) is the
+    <em>create → getById</em> pattern — <code>PlaceOrder → GetOrder</code> in chapter 8, and the
+    typed <code>Expose(o =&gt; o.Id)</code> in chapter 7's LINQ provider.
+</p>
+
+<div class="row g-2 mb-3" style="max-width:48rem">
+    <div class="col">
+        <input @bind="firstQuery" class="form-control" placeholder="Search, e.g. bit / eth / o" />
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary" @onclick="RunFirstAsync" disabled="@busyFirst">
+            @(busyFirst ? "Chaining…" : "Chain Search → GetQuote")
+        </button>
+    </div>
+</div>
+
+@if (firstError != null)
+{
+    <div class="alert alert-danger" style="max-width:48rem">@firstError</div>
+}
+
+@if (firstQuote != null)
+{
+    <p class="text-muted small" style="max-width:48rem">
+        Searched "<strong>@ranFirstQuery</strong>" → first match <code>@firstSymbol</code>
+        (path <code>$[0]</code>) → one quote, one roundtrip.
+    </p>
+    <table class="table table-sm" style="max-width:48rem">
+        <thead><tr><th>Symbol</th><th>Price</th><th>Change</th><th>Time</th></tr></thead>
+        <tbody>
+            <tr>
+                <td>@firstQuote.Symbol</td>
+                <td>@firstQuote.Price</td>
+                <td class="@(firstQuote.Change > 0 ? "text-success" : firstQuote.Change < 0 ? "text-danger" : "text-muted")">
+                    @(firstQuote.Change > 0 ? "+" : "")@firstQuote.Change
+                </td>
+                <td>@firstQuote.Time?.ToLocalTime()</td>
+            </tr>
+        </tbody>
+    </table>
+}
+
 @code {
+    // Chain 1 state — list fan-out ($[*])
     private string query = "bit";
     private string ranQuery = "";
     private List<string> symbols = new();
     private List<Quote> quotes = new();
     private string? error;
     private bool busy;
+
+    // Chain 2 state — scalar extraction ($[0])
+    private string firstQuery = "bit";
+    private string ranFirstQuery = "";
+    private string firstSymbol = "";
+    private Quote? firstQuote;
+    private string? firstError;
+    private bool busyFirst;
 
     private async Task RunAsync()
     {
@@ -83,21 +149,17 @@
         ranQuery = q;
         try
         {
-            // Build the chain with the generated Batch builder (Serial — required for @alias).
+            // Chain 1: list fan-out. Build with the generated Batch builder. The server
+            // auto-detects the dependencyMapping → topological graph; mode is ignored for chains.
             //   1) provider: Search(q).Exposes("$[*]", "symbols") — every element of the
             //      returned string[] is exposed under the alias "symbols".
             //   2) consumer: GetQuotes(search.Alias("symbols")) — the @symbols placeholder
             //      the server substitutes with the provider's resolved tickers.
             // Both calls are one SleipnirMultiRequest, one roundtrip.
-            // Build the chain with the generated Batch builder (Serial — required for @@alias).
             // NOTE: fully qualified Sleipnir.Generated.Batch — the sibling Batch.razor page
             // (class Sleipnir.Guide.Admin.Components.Pages.Batch) would otherwise win the
             // name lookup in this file's own namespace.
             var batch = new Sleipnir.Generated.Batch();
-            // .Named(id) lives on Call (the producer/consumer is named before it's enrolled);
-            // .Exposes(path, alias) and .Alias(name) live on BatchEntry. So name the call,
-            // then Add → BatchEntry, then Exposes on the entry. The server reads each call's
-            // result back by the id we set with .Named("search") / .Named("quotes").
             var search = batch.Add(Sleipnir.Market.Search(q).Named("search"))
                                .Exposes("$[*]", "symbols");
             batch.Add(Sleipnir.Market.GetQuotes(search.Alias("symbols")).Named("quotes"));
@@ -118,6 +180,51 @@
         finally
         {
             busy = false;
+        }
+    }
+
+    private async Task RunFirstAsync()
+    {
+        busyFirst = true;
+        firstError = null;
+        firstQuote = null;
+        firstSymbol = "";
+        var q = firstQuery.Trim();
+        if (q.Length == 0) { firstError = "Enter a search query."; busyFirst = false; return; }
+        ranFirstQuery = q;
+        try
+        {
+            // Chain 2: scalar extraction. The same mechanism, a different JsonPath shape:
+            //   1) provider: Search(q).Exposes("$[0]", "first") — the FIRST matched ticker only
+            //      (a single element, not the whole array). $[0] is a one-match path → the server
+            //      injects that one string, not a list.
+            //   2) consumer: GetQuote(search.Alias("first")) — GetQuote takes one symbol, so the
+            //      scalar @first fits a string parameter (not a string[] like @symbols did).
+            // Same one-roundtrip contract; only the extracted shape differs. If Search returns
+            // no matches, $[0] is unresolved → the consumer gets a 400 (the chain fails closed).
+            var batch = new Sleipnir.Generated.Batch();
+            var search = batch.Add(Sleipnir.Market.Search(q).Named("search"))
+                               .Exposes("$[0]", "first");
+            batch.Add(Sleipnir.Market.GetQuote(search.Alias("first")).Named("firstQuote"));
+
+            var resp = await Sleipnir.Batch(batch);
+
+            // The provider's own result is the full string[] (the $[0] element is only what it
+            // EXPOSED for the consumer). Read the array back, take the first element to display.
+            var searchResults = resp.Get<List<string>>("search") ?? new();
+            firstSymbol = searchResults.Count > 0 ? searchResults[0] : "";
+            firstQuote = resp.Get<Quote>("firstQuote");
+
+            if (firstQuote is null && firstSymbol == "")
+                firstError = $"No symbols matched \"{q}\" — $[0] unresolved (chain fails closed).";
+        }
+        catch (Exception ex)
+        {
+            firstError = ex.Message;
+        }
+        finally
+        {
+            busyFirst = false;
         }
     }
 }

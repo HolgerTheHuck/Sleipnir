@@ -432,12 +432,10 @@ the codegen golden will drift.
   method's summary.
 - **No WebSocket / SignalR discovery.** Only REST `GET /discovery` and JSON-RPC
   `sleipnir.discover` serve `DiscoveryInfo`.
-- **`CODEGEN_REFERENCE.md` is not yet on `main`** — it exists only on the
-  sibling branch `devui-json-view-codegen-relabel` (commit `994dcac`); the nearest
-  existing codegen docs on `main` are `CODEGEN_ONBOARDING.md` and
-  `CLIENT_GENERATION.md`. `TRANSPORT_REFERENCE.md`/`EVENTS_REFERENCE.md`/
-  `DEPENDENCY_BINDING_REFERENCE.md` cross-link it; those links resolve once
-  `devui-json-view-codegen-relabel` merges.
+- **`CODEGEN_REFERENCE.md` is the sibling reference in this set** — the
+  consolidated codegen lookup. `TRANSPORT_REFERENCE.md`/`EVENTS_REFERENCE.md`/
+  `DEPENDENCY_BINDING_REFERENCE.md` cross-link it. (`CODEGEN_ONBOARDING.md`
+  and `CLIENT_GENERATION.md` remain the older, tutorial-shaped codegen docs.)
 - **Name collision is a startup hard-fail** — a duplicated `[SleipnirController]`
   name or `[SleipnirMethod]` name throws at registration (in `Register` — the
   controller-name and method/event-name collision branches), not at call time.
@@ -476,8 +474,7 @@ the codegen golden will drift.
 | `DEPENDENCY_BINDING_REFERENCE.md` | Discovery as the schema source for the DevUI static checker (§11). |
 
 > **Note:** `CODEGEN_REFERENCE.md` is referenced by `TRANSPORT_REFERENCE.md`,
-> `EVENTS_REFERENCE.md`, and `DEPENDENCY_BINDING_REFERENCE.md`. It is not yet on
-> `main` — it lives on the sibling branch `devui-json-view-codegen-relabel`
-> (commit `994dcac`); the codegen docs currently on `main` are
-> `CODEGEN_ONBOARDING.md` and `CLIENT_GENERATION.md`. The cross-links resolve
-> once `devui-json-view-codegen-relabel` merges.
+> `EVENTS_REFERENCE.md`, and `DEPENDENCY_BINDING_REFERENCE.md`. It is the sibling
+> consolidated-reference in this set; the older codegen docs on `main`
+> (`CODEGEN_ONBOARDING.md`, `CLIENT_GENERATION.md`) remain as tutorial-shaped
+> companions.

@@ -363,6 +363,20 @@ npm i sleipnir-client
 | [`LINQ_QUERY.md`](LINQ_QUERY.md) | `Sleipnir.Client.Linq` — typed `Dep<T>` wiring + `SleipnirQuery<T>` navigation façade |
 | [`ROADMAP.md`](ROADMAP.md) | What is planned |
 
+### Consolidated lookup references
+
+Single-file references that put **all knobs, parameters, failure modes, and diagnostics for one area in one place** — use these when something does not work and you need to look it up fast (the docs above are tutorial/overview-shaped; these are lookup-shaped). Each links out to the deeper specs.
+
+| Reference | What it covers |
+|----------|----------------|
+| [`CODEGEN_REFERENCE.md`](CODEGEN_REFERENCE.md) | Build-time contract loop, `contract.sleipnir.json`, Path A (.NET `Sleipnir.Server.Codegen` + Roslyn `Sleipnir.Generator`) and Path B (`sleipnir-gen` Node CLI), all CLI parameters, emitter output shapes, drift gate |
+| [`TRANSPORT_REFERENCE.md`](TRANSPORT_REFERENCE.md) | REST / WebSocket / SignalR / SSE-over-REST endpoints, wire formats, `SleipnirTransportRouter` auto/fallback, client backends, `--transport` capability semantics |
+| [`EVENTS_REFERENCE.md`](EVENTS_REFERENCE.md) | `[SleipnirEvent]`, `IObservable<T>`, ephemeral/durable subscriptions, `EventFrame` wire (event/complete/error), backpressure strategies, cross-transport resume (`Last-Event-Id`) |
+| [`DEPENDENCY_BINDING_REFERENCE.md`](DEPENDENCY_BINDING_REFERENCE.md) | `@alias` chaining, JsonPath extraction, Weak/Strict/Paranoid binding modes, casing regimes, provider-failure propagation |
+| [`DISCOVERY_REFERENCE.md`](DISCOVERY_REFERENCE.md) | Runtime discovery, `DiscoveryInfo`/`TypeRef` schema, contract inference (Weg C), `[SleipnirDataContract]` override, `discoveryVersion` no-drift gate |
+| [`TRACING_TELEMETRY_REFERENCE.md`](TRACING_TELEMETRY_REFERENCE.md) | `SleipnirTracing` ActivitySource, instrumentation sites, `Sleipnir.Telemetry` opt-in, OTel exporter wiring |
+| [`OBSERVABILITY_REFERENCE.md`](OBSERVABILITY_REFERENCE.md) | `/observability` JSON + `/metrics` Prometheus two-surface model, `SleipnirConnectionRegistry`, double-bookkeeping, gauge semantics |
+
 ---
 
 ## Requirements

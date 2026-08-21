@@ -1662,9 +1662,9 @@ namespace SleipnirCore.Services
                             && colParam.Count > MaxParameterArrayLength)
                         {
                             return (null, BadRequest(
-                                $"Parameter '{name}' überschreitet MaxParameterArrayLength " +
-                                $"({MaxParameterArrayLength}; Ist {colParam.Count}). " +
-                                "Paginieren oder Cap erhöhen (0 = unbegrenzt)."));
+                                $"Parameter '{name}' exceeds MaxParameterArrayLength " +
+                                $"({MaxParameterArrayLength}; is {colParam.Count}). " +
+                                "Paginate or raise the cap (0 = unlimited)."));
                         }
                     }
                     else

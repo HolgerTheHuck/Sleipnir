@@ -89,7 +89,7 @@ public static class DependencyGraphBuilder
                 // Cycle detected: remaining items all have unsatisfied dependencies
                 var cycleMembers = remaining.ToList();
                 throw new InvalidOperationException(
-                    $"Zyklus in Abhängigkeiten erkannt. Beteiligte Requests: {string.Join(", ", cycleMembers)}");
+                    $"Cycle detected in dependencies. Involved requests: {string.Join(", ", cycleMembers)}");
             }
 
             var batchRequests = batch.Select(id => requestById[id]).ToList();

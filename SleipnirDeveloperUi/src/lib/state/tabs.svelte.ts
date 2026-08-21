@@ -90,7 +90,10 @@ function loadFromStorage(): StoredTabs {
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<StoredTabs>;
       if (Array.isArray(parsed.tabs)) {
-        return { tabs: parsed.tabs as Tab[], activeTabId: parsed.activeTabId ?? null };
+        const tabs = parsed.tabs as Tab[];
+        // Normalize legacy label persisted before the "Client preview" rename.
+        for (const t of tabs) if (t.type === 'codegen' && t.title === 'Codegen') t.title = 'Client preview';
+        return { tabs, activeTabId: parsed.activeTabId ?? null };
       }
     }
   } catch {
@@ -159,13 +162,15 @@ class TabState {
     const existing = this.tabs.find((t) => t.type === 'codegen');
     if (existing) {
       this.activeTabId = existing.id;
+      // Normalize legacy label persisted before the "Client preview" rename.
+      if (existing.title === 'Codegen') existing.title = 'Client preview';
       this.persist();
       return existing;
     }
     const tab: Tab = {
       type: 'codegen',
       id: generateId(),
-      title: 'Codegen',
+      title: 'Client preview',
       controller: null,
       method: null,
       params: [],

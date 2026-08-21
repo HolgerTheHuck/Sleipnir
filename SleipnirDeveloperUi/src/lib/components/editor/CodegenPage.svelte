@@ -73,6 +73,14 @@
 </script>
 
 <div class="codegen-page">
+  <div class="codegen-intro">
+    <span class="codegen-title">Generated client</span>
+    <span class="codegen-hint">
+      Live preview from the running server's discovery — for real projects use the build pipeline
+      (<code>sleipnir-gen</code> / <code>Sleipnir.Generator</code>); see
+      <code>CODEGEN_REFERENCE.md</code>.
+    </span>
+  </div>
   <div class="codegen-header">
     <div class="lang-tabs">
       <button
@@ -104,6 +112,31 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
+  }
+  .codegen-intro {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+  }
+  .codegen-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+  .codegen-hint {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+  .codegen-hint code {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--code-text);
+    background: var(--code-bg);
+    padding: 0 3px;
+    border-radius: 3px;
   }
   .codegen-header {
     display: flex;

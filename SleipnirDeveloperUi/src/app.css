@@ -26,6 +26,15 @@
   --radius-sm: 4px;
   --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace;
   --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* JSON syntax highlighting (JsonView) */
+  --json-key: #79c0ff;
+  --json-string: #7ee787;
+  --json-number: #ffab70;
+  --json-bool: #d2a8ff;
+  --json-null: #6e7681;
+  --json-punct: #8b949e;
+  --json-toggle: #8b949e;
+  --json-hover-bg: #1c2129;
 }
 
 [data-theme='light'] {
@@ -50,6 +59,15 @@
   --scrollbar-track: transparent;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  /* JSON syntax highlighting (JsonView) */
+  --json-key: #0550ae;
+  --json-string: #1a7f37;
+  --json-number: #bc4c00;
+  --json-bool: #8250df;
+  --json-null: #8c959f;
+  --json-punct: #656d76;
+  --json-toggle: #656d76;
+  --json-hover-bg: #f0f2f5;
 }
 
 /* ===== Reset & Base ===== */

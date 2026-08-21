@@ -12,20 +12,23 @@ roll-forward, zero-controller guard), and DevUI consumption.
 
 Sleipnir is **code-first**: the C# classes decorated with attributes *are* the
 contract, and discovery metadata is generated at runtime from them — no
-`.proto` files, no IDL. `README.md:14`. The discovery payload is the single
-source of truth that the DevUI renders, that `sleipnir-gen`/`Sleipnir.Generator`
-turn into a typed client, and that the wire-vs-contract conformance gate checks.
+`.proto` files, no IDL (`README.md`, code-first framing in the intro). The
+discovery payload is the single source of truth that the DevUI renders, that
+`sleipnir-gen`/`Sleipnir.Generator` turn into a typed client, and that the
+wire-vs-contract conformance gate checks.
 
 This is a **reference**, not a tutorial. When discovery output does not look
 right, look here first — the model field table, the inference rules, the
-attribute table, the endpoint table with `path:line` citations, the codegen
+attribute table, the endpoint table with symbol-anchored citations, the codegen
 ingress gate, a diagnostics catalog (incl. the non-deterministic-defaults drift
 item), and a map of where the deeper docs live. For the type-system spec read
 `docs/discovery-schema.md`; for the wire-level shape read `PROTOCOL.md`
 §"Discovery (MEX)"; for onboarding read `GETTING_STARTED.md`. This doc
 consolidates those and links back for depth.
 
-All citations are `repo-relative/path.cs:line` against the repo root. Code-facing
+All citations are `repo-relative/path.cs` → `Symbol` (or a short verbatim quote
+in `"…"`). Line numbers are deliberately omitted so a citation survives any line
+shift — find the spot by the symbol name or by grepping the quote. Code-facing
 text is English per `CLAUDE.md`.
 
 ## Table of contents
@@ -54,15 +57,15 @@ parameter-based overload resolution. Discovery is the runtime mirror of that
 contract: the server scans registered controllers and emits, per method, its
 name, return type, and parameters (with types and defaults), plus a `Types`
 registry of the contract types referenced. One contract → one discovery
-payload, regardless of which transport carries a call (`CLAUDE.md:70-76`).
+payload, regardless of which transport carries a call (`CLAUDE.md` §"Transports").
 
 The payload is **deterministic**: the REST endpoint and the JSON-RPC
 `sleipnir.discover` capability serialize with the same
 `DiscoverySerialization.Options`, independent of host JSON config (§8). The
 build-integrated codegen tool writes `contract.sleipnir.json` from the same
 payload, sorted by controller name — so a committed golden contract is
-byte-stable across builds and machines (`CLIENT_GENERATION.md:183-184`,
-`Sleipnir.Server.Codegen/Program.cs:117-137`).
+byte-stable across builds and machines (`CLIENT_GENERATION.md` §"Phased plan",
+`Sleipnir.Server.Codegen/Program.cs` "Controllers.OrderBy(c => c.Name").
 
 ---
 
@@ -70,114 +73,116 @@ byte-stable across builds and machines (`CLIENT_GENERATION.md:183-184`,
 
 The model lives in `SleipnirCore/Model/Messages/Mex/`.
 
-### `DiscoveryInfo` — `DiscoveryInfo.cs:9`
+### `DiscoveryInfo` — `DiscoveryInfo.cs` → `DiscoveryInfo`
 
-| Field | Type | Default | Line | Notes |
-|-------|------|---------|------|-------|
-| `DiscoveryVersion` | `string` | `"1"` | `:12` | Additive-only versioning (`docs/discovery-schema.md:35`). |
-| `Controllers` | `List<ControllerMeta>` | — | `:13` | In registration order. |
-| `Types` | `Dictionary<string, TypeMeta>` | — | `:14` | Ordinal-ignore-case key set; the contract-type registry. |
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `DiscoveryVersion` | `string` | `"1"` | Additive-only versioning (`docs/discovery-schema.md` §1). |
+| `Controllers` | `List<ControllerMeta>` | — | In registration order. |
+| `Types` | `Dictionary<string, TypeMeta>` | — | Ordinal-ignore-case key set; the contract-type registry. |
 
-### `ControllerMeta` / `MethodMeta` / `ParameterMeta` — `ControllerMeta.cs:9-30`
+### `ControllerMeta` / `MethodMeta` / `ParameterMeta` — `ControllerMeta.cs`
 
-| Field | Type | Line |
-|-------|------|------|
-| `ControllerMeta.Name` | `string` | `:11` |
-| `ControllerMeta.Methods` | `List<MethodMeta>` | `:12` |
-| `MethodMeta.MethodName` | `string` | `:17` |
-| `MethodMeta.ReturnType` | `TypeRef` | `:19` (default = void) |
-| `MethodMeta.Parameters` | `List<ParameterMeta>` | `:20` |
-| `MethodMeta.Documentation` | `string?` | `:21` |
-| `ParameterMeta.ParameterName` | `string` | `:26` |
-| `ParameterMeta.ParameterType` | `TypeRef` | `:27` (default = opaque) |
-| `ParameterMeta.DefaultValue` | `object?` | `:29` |
-| `ParameterMeta.Documentation` | `string?` | `:30` |
+| Field | Type |
+|-------|------|
+| `ControllerMeta.Name` | `string` |
+| `ControllerMeta.Methods` | `List<MethodMeta>` |
+| `MethodMeta.MethodName` | `string` |
+| `MethodMeta.ReturnType` | `TypeRef` (default = void) |
+| `MethodMeta.Parameters` | `List<ParameterMeta>` |
+| `MethodMeta.Documentation` | `string?` |
+| `ParameterMeta.ParameterName` | `string` |
+| `ParameterMeta.ParameterType` | `TypeRef` (default = opaque) |
+| `ParameterMeta.DefaultValue` | `object?` |
+| `ParameterMeta.Documentation` | `string?` |
 
-### `TypeMeta` / `PropertyMeta` / `EnumMember` — `ControllerMeta.cs:33-80`
+### `TypeMeta` / `PropertyMeta` / `EnumMember` — `ControllerMeta.cs`
 
-| Field | Type | Line | Notes |
-|-------|------|------|-------|
-| `TypeMeta.Kind` | `string` | `:36` | `"object"` or `"enum"`. |
-| `TypeMeta.TypeName` | `string` | `:38` | |
-| `TypeMeta.Properties` | `List<PropertyMeta>` | `:39` | |
-| `TypeMeta.Members` | `List<EnumMember>?` | `:41` | Enum only. |
-| `TypeMeta.Example` | `object?` | `:43` | See §6 + the drift item (§12). |
-| `PropertyMeta.PropertyName` | `string` | `:48` | camelCase on the wire. |
-| `PropertyMeta.PropertyType` | `TypeRef` | `:49` | |
-| `PropertyMeta.Navigation` | `NavigationMeta?` | `:56` | Optional `[SleipnirNavigation]` edge. |
-| `NavigationMeta.Fetch`/`Key`/`ChildKey`/`Param` | — | `:67-73` | |
-| `EnumMember.Name`/`Value` | — | `:79-80` | |
+| Field | Type | Notes |
+|-------|------|-------|
+| `TypeMeta.Kind` | `string` | `"object"` or `"enum"`. |
+| `TypeMeta.TypeName` | `string` | |
+| `TypeMeta.Properties` | `List<PropertyMeta>` | |
+| `TypeMeta.Members` | `List<EnumMember>?` | Enum only. |
+| `TypeMeta.Example` | `object?` | See §6 + the drift item (§12). |
+| `PropertyMeta.PropertyName` | `string` | camelCase on the wire. |
+| `PropertyMeta.PropertyType` | `TypeRef` | |
+| `PropertyMeta.Navigation` | `NavigationMeta?` | Optional `[SleipnirNavigation]` edge. |
+| `NavigationMeta.Fetch`/`Key`/`ChildKey`/`Param` | — | |
+| `EnumMember.Name`/`Value` | — | |
 
-### `TypeRef` — `TypeRef.cs:11`
+### `TypeRef` — `TypeRef.cs` → `TypeRef`
 
-The discriminated union for every type reference. `Kind` (`:17`) is one of
+The discriminated union for every type reference. `Kind` is one of
 `scalar | array | set | map | stream | event | ref | opaque | void`
-(`PROTOCOL.md:971-976`; note: there is **no `kind:"call"`** on the discovery
-wire — calls are method entries without a `kind` discriminator; `stream`/`event`
+(`PROTOCOL.md` §"Discovery (MEX)"; note: there is **no `kind:"call"`** on the
+discovery wire — calls are method entries without a `kind` discriminator; `stream`/`event`
 are return-type kinds, and `subscribe` is a request-frame discriminator, not a
 discovery entry).
 
-| Field | Type | Line |
-|-------|------|------|
-| `Kind` | `string` | `:17` |
-| `Name` | `string?` | `:20` |
-| `Element` | `TypeRef?` | `:23` | array/set element |
-| `Key` | `TypeRef?` | `:26` | map key |
-| `Value` | `TypeRef?` | `:29` | map value |
-| `Ref` | `string?` | `:32` | reference into `Types` |
-| `NativeName` | `string?` | `:35` | opaque type's CLR name |
-| `Nullable` | `bool?` | `:41` |
+| Field | Type | Notes |
+|-------|------|-------|
+| `Kind` | `string` | one of scalar\|array\|set\|map\|stream\|event\|ref\|opaque\|void |
+| `Name` | `string?` | |
+| `Element` | `TypeRef?` | array/set element |
+| `Key` | `TypeRef?` | map key |
+| `Value` | `TypeRef?` | map value |
+| `Ref` | `string?` | reference into `Types` |
+| `NativeName` | `string?` | opaque type's CLR name |
+| `Nullable` | `bool?` | |
 
-The authoritative type-system spec is `docs/discovery-schema.md` (§2 `TypeRef`
-at `:113`, §3 scalars at `:151`, §4 collections at `:186`).
+The authoritative type-system spec is `docs/discovery-schema.md` (§2 `TypeRef`,
+§3 scalars, §4 collections).
 
 ---
 
 ## 3. `SleipnirDiscoveryService` — builder, caching, invalidation
 
-`SleipnirCore/Services/SleipnirDiscoveryService.cs:19`. Constructed by
-`SleipnirInvoker` with the shared `ConcurrentDictionary<string, Type> routeHandlers`
-passed **by reference** (`:21, :25`; `SleipnirInvoker.cs:155`) — so the discovery
-service reads the same route-handler dictionary the invoker dispatches from.
+`SleipnirCore/Services/SleipnirDiscoveryService.cs` → `SleipnirDiscoveryService`.
+Constructed by `SleipnirInvoker` with the shared `ConcurrentDictionary<string, Type> routeHandlers`
+passed **by reference** (the `SleipnirDiscoveryService` ctor `_routeHandlers`
+param; `SleipnirInvoker` ctor → `_discoveryService = new SleipnirDiscoveryService(_routeHandlers)`)
+— so the discovery service reads the same route-handler dictionary the invoker
+dispatches from.
 
-| Member | Line | Purpose |
-|--------|------|---------|
-| `BuildDiscoveryInfo()` | `:109` | The builder. Iterates `_routeHandlers`, builds `ControllerMeta`/`MethodMeta`/`ParameterMeta`, registers expandable types into `discovery.Types`. |
-| `GetDiscoveryInfo()` | `:30` | Double-checked lazy public access. `SleipnirInvoker.GetDiscoveryInfo()` delegates here (`SleipnirInvoker.cs:274-278`). |
-| `InvalidateCache()` | `:41-47` | Nulls `_cachedDiscovery` under `_cacheLock`. |
-| `_cachedDiscovery` / `_cacheLock` | `:22-23` | The single cached `DiscoveryInfo?` snapshot. |
+| Member | Purpose |
+|--------|---------|
+| `BuildDiscoveryInfo()` | The builder. Iterates `_routeHandlers`, builds `ControllerMeta`/`MethodMeta`/`ParameterMeta`, registers expandable types into `discovery.Types`. |
+| `GetDiscoveryInfo()` | Double-checked lazy public access. `SleipnirInvoker.GetDiscoveryInfo()` delegates here. |
+| `InvalidateCache()` | Nulls `_cachedDiscovery` under `_cacheLock`. |
+| `_cachedDiscovery` / `_cacheLock` | The single cached `DiscoveryInfo?` snapshot. |
 
 **Invalidation is unconditional per registration:** there is no cache key —
 `SleipnirInvoker.Register` calls `_discoveryService.InvalidateCache()` after
-**each** controller registration (`SleipnirInvoker.cs:199`, comment `:194-198`).
+**each** controller registration (in `SleipnirInvoker` → `Register`).
 The cache holds one snapshot derived from the shared `_routeHandlers`; the next
-`GetDiscoveryInfo()` rebuilds it. (`CLAUDE.md:66` notes "cached with invalidation
-on new registrations".)
+`GetDiscoveryInfo()` rebuilds it. (`CLAUDE.md` §"Core Engine (`SleipnirCore`)"
+notes "cached with invalidation on new registrations".)
 
-**Builder helpers:** `BuildTypeRef` (`:206`), scalar/Any tables (`:51-89`),
-collection definitions (`:93-107`), `TryCollection` (`:259`), `EnsureRegistered`
-(`:286`), `PopulateObjectMeta` (`:321`), `BuildEnumTypeMeta` (`:305`),
-`IsExpandableType` (`:376`), `TypeKey` (`:398`), `ReadNullable` (`:401`),
-`ReadDefaultValue` (`:418`), per-build `BuildCtx` (`:434`).
+**Builder helpers:** `BuildTypeRef`, scalar/Any tables, collection definitions,
+`TryCollection`, `EnsureRegistered`, `PopulateObjectMeta`, `BuildEnumTypeMeta`,
+`IsExpandableType`, `TypeKey`, `ReadNullable`, `ReadDefaultValue`, per-build
+`BuildCtx`.
 
 ---
 
 ## 4. Contract-type inference (Weg C)
 
-The load-bearing rule (`CLAUDE.md:66`): contract types are **inferred from
-method signatures** by default. Any class type whose assembly belongs to the
-registered controllers' assemblies is **fully expanded** (property schema,
-example, nested types); types from other assemblies (BCL, framework envelope,
-third-party) stay **opaque** unless overridden.
+The load-bearing rule (`CLAUDE.md` §"Core Engine (`SleipnirCore`)"): contract
+types are **inferred from method signatures** by default. Any class type whose
+assembly belongs to the registered controllers' assemblies is **fully
+expanded** (property schema, example, nested types); types from other
+assemblies (BCL, framework envelope, third-party) stay **opaque** unless
+overridden.
 
-- **Contract-assembly set** — computed once per build in `BuildDiscoveryInfo`
-  (`:117-120`): `_routeHandlers.Values.Select(t => t.Assembly).Distinct().ToHashSet()`
-  (comment `:113-116` states the Weg C rationale).
-- **The boundary check** — `IsExpandableType` (`:376-389`), final line
-  `return contractAssemblies.Contains(type.Assembly);` (`:388`). Foreign types
-  become `Kind = "opaque"` with `NativeName = type.Name` (`:256`).
-- **Heuristic ordering** (docstring `:367-375`): primitives/enum/string →
-  opaque; `[SleipnirDataContract(Exclude=true)]` → force-opaque; bare
+- **Contract-assembly set** — computed once per build in `BuildDiscoveryInfo`:
+  `_routeHandlers.Values.Select(t => t.Assembly).Distinct().ToHashSet()`
+  (its comment states the Weg C rationale).
+- **The boundary check** — `IsExpandableType`, final line
+  `return contractAssemblies.Contains(type.Assembly);`. Foreign types become
+  `Kind = "opaque"` with `NativeName = type.Name`.
+- **Heuristic ordering** (the `IsExpandableType` docstring): primitives/enum/string
+  → opaque; `[SleipnirDataContract(Exclude=true)]` → force-opaque; bare
   `[SleipnirDataContract]` → force-expand; assembly-in-set → expand; otherwise
   opaque.
 
@@ -185,20 +190,20 @@ third-party) stay **opaque** unless overridden.
 
 ## 5. The `[SleipnirDataContract]` override
 
-**Attribute:** `SleipnirCommon/Attribute/SleipnirDataContractAttribute.cs:17` —
+**Attribute:** `SleipnirCommon/Attribute/SleipnirDataContractAttribute.cs` →
+`SleipnirDataContractAttribute` —
 `[AttributeUsage(AttributeTargets.Class, Inherited = false)]`, single property
-`bool Exclude { get; set; }` (`:23`). (Namespace `SleipnirCommon.Attribute`,
-consumed by `SleipnirCore` via `using SleipnirCommon.Attribute;`
-at `SleipnirDiscoveryService.cs:1`.)
+`bool Exclude { get; set; }`. (Namespace `SleipnirCommon.Attribute`, consumed by
+`SleipnirCore` via the `using SleipnirCommon.Attribute;` import at the top of
+`SleipnirDiscoveryService.cs`.)
 
 | Form | Effect |
 |------|--------|
 | bare `[SleipnirDataContract]` | **force-expand** a type (e.g. a third-party type you want documented). |
 | `[SleipnirDataContract(Exclude = true)]` | **force-opaque** a type (e.g. an own-assembly type you want hidden). |
 
-Honored in `IsExpandableType` (`SleipnirDiscoveryService.cs:381-386`):
-`if (attr.Exclude) return false;` then `return true;` (read via
-`GetDataContractAttribute` `:391`).
+Honored in `IsExpandableType`: `if (attr.Exclude) return false;` then
+`return true;` (read via `GetDataContractAttribute`).
 
 ---
 
@@ -206,25 +211,25 @@ Honored in `IsExpandableType` (`SleipnirDiscoveryService.cs:381-386`):
 
 ### `[SleipnirDocumentation]`
 
-`SleipnirCommon/Attribute/SleipnirDocumentationAttribute.cs:6` —
+`SleipnirCommon/Attribute/SleipnirDocumentationAttribute.cs` →
+`SleipnirDocumentationAttribute` —
 `[AttributeUsage(Class|Method|Parameter, AllowMultiple=false)]`, ctor
-`string summary` (`:10`), `Summary` getter (`:8`). Consumed for the method doc
-at `SleipnirDiscoveryService.cs:154` (`methodDoc`).
+`string summary`, `Summary` getter. Consumed for the method doc in
+`SleipnirDiscoveryService` (`methodDoc`).
 
 > **Doc-bug:** the attribute allows the `Parameter` target, but the discovery
 > service reads only the **method-level** attribute for `paramDoc`
-> (`SleipnirDiscoveryService.cs:171` uses `method.GetCustomAttribute<...>()`),
-> so **per-parameter documentation is not wired today** — a parameter's
-> `Documentation` resolves to the method's summary.
+> (it uses `method.GetCustomAttribute<...>()`), so **per-parameter documentation
+> is not wired today** — a parameter's `Documentation` resolves to the method's
+> summary.
 
 ### `[SleipnirExample]`
 
-`SleipnirCommon/Attribute/SleipnirExampleAttribute.cs:6` — `sealed`,
-`[AttributeUsage(Class, Inherited=false, AllowMultiple=false)]`, ctor
-`string exampleJson` (`:10`), `ExampleJson` getter (`:8`). Consumed in
-`PopulateObjectMeta` (`SleipnirDiscoveryService.cs:324-333`): if present,
-`JsonSerializer.Deserialize(exampleAttr.ExampleJson, type, WriteIndented=true)`
-becomes `meta.Example`; on exception → `null` (`:332`).
+`SleipnirCommon/Attribute/SleipnirExampleAttribute.cs` → `SleipnirExampleAttribute`
+— `sealed`, `[AttributeUsage(Class, Inherited=false, AllowMultiple=false)]`,
+ctor `string exampleJson`, `ExampleJson` getter. Consumed in `PopulateObjectMeta`:
+if present, `JsonSerializer.Deserialize(exampleAttr.ExampleJson, type, WriteIndented=true)`
+becomes `meta.Example`; on exception → `null`.
 
 > **This is the only stabilization surface** for the non-deterministic-defaults
 > drift item (§12). An explicit `[SleipnirExample]` bypasses the
@@ -238,61 +243,66 @@ becomes `meta.Example`; on exception → `null` (`:332`).
 
 `SleipnirInvoker.Register` throws `InvalidOperationException` at registration
 when names collide (no parameter-based overload resolution —
-`CLAUDE.md:132-138`):
+`CLAUDE.md` §"Name Uniqueness (Registration-Time Hard Fail)"):
 
-- **Controller name** — a different type already holds the name:
-  `SleipnirInvoker.cs:183-190` (lock `:178`, `TryAdd` `:192`). Same-type
-  re-registration is idempotent (`:184`).
-- **Method/event name** — shares the `"{Controller}_{Method}"` key:
-  `SleipnirInvoker.cs:240-248` (key at `:220`). Same-`MethodInfo` re-registration
-  idempotent (`:241`).
-- **Mutual exclusivity** of `[SleipnirMethod]`/`[SleipnirEvent]`:
-  `:209-213`. Event return-type contract (`IObservable<T>` only): `:226-233`.
+- **Controller name** — a different type already holds the name: in
+  `SleipnirInvoker` → `Register` (the controller-name collision branch: lock +
+  `TryAdd`). Same-type re-registration is idempotent.
+- **Method/event name** — shares the `"{Controller}_{Method}"` key: in `Register`
+  (the method/event-name collision branch; dispatch key `"{Controller}_{Method}"`).
+  Same-`MethodInfo` re-registration idempotent.
+- **Mutual exclusivity** of `[SleipnirMethod]`/`[SleipnirEvent]`: in `Register`
+  (the mutual-exclusivity branch). Event return-type contract (`IObservable<T>`
+  only): the event-validation branch.
 
 ### `AutoDiscover` opt-out
 
 `[SleipnirController]` has `public bool AutoDiscover { get; set; } = true`
-(`SleipnirCore/Attributes/SleipnirControllerAttribute.cs:23`, docstring `:14-22`).
+(`SleipnirCore/Attributes/SleipnirControllerAttribute.cs` → `AutoDiscover`
+property; docstring on the property).
 `AutoDiscover = false` excludes a controller from the bulk auto-discovery scans;
 it must then be registered explicitly via `Register<T>()` or
 `SleipnirControllerBuilder.Add<T>()`.
 
 ### Auto-discovery scans
 
-| Site | Line | What it scans |
-|------|------|---------------|
-| `AddSleipnir` (canonical) | `SleipnirHub/Extensions/SleipnirServiceCollectionExtension.cs:241-252` | `AppDomain.CurrentDomain.GetAssemblies()` via `TypeScanning.SafeGetTypes`; registers DI services for `attr != null && attr.AutoDiscover` (`:247`). |
-| `UseSleipnir` | `:304-315` | Invoker registration scan, same `attr.AutoDiscover` filter (`:310`). |
-| `SleipnirControllerBuilder.FromAssemblies` | `SleipnirHub/Extensions/SleipnirControllerBuilder.cs:28-46` | Given assemblies (or AppDomain if empty, `:30`), `attr.AutoDiscover` filter (`:38`). |
-| `AddSleipnir(options, configureControllers)` | `:133` | Sets `options.AutoDiscoverControllers = false`, disabling the bulk scan. |
+| Site | Where | What it scans |
+|------|-------|---------------|
+| `AddSleipnir` (canonical) | `SleipnirServiceCollectionExtension.cs` → `AddSleipnir` | `AppDomain.CurrentDomain.GetAssemblies()` via `TypeScanning.SafeGetTypes`; registers DI services for `attr != null && attr.AutoDiscover`. |
+| `UseSleipnir` | `SleipnirServiceCollectionExtension.cs` → `UseSleipnir` | Invoker registration scan, same `attr.AutoDiscover` filter. |
+| `SleipnirControllerBuilder.FromAssemblies` | `SleipnirControllerBuilder.cs` → `FromAssemblies` | Given assemblies (or AppDomain if empty), `attr.AutoDiscover` filter. |
+| `AddSleipnir(options, configureControllers)` | `SleipnirServiceCollectionExtension.cs` → `AddSleipnir` (fluent overload) | Sets `options.AutoDiscoverControllers = false`, disabling the bulk scan. |
 
-**Tolerant enumeration:** `TypeScanning.SafeGetTypes` (`SleipnirHub/Extensions/TypeScanning.cs:18-32`) swallows `ReflectionTypeLoadException` — a type-load failure in one assembly does not abort discovery.
+**Tolerant enumeration:** `TypeScanning.SafeGetTypes`
+(`SleipnirHub/Extensions/TypeScanning.cs`) swallows `ReflectionTypeLoadException`
+— a type-load failure in one assembly does not abort discovery.
 
-`AutoDiscoverControllers` is an option too — referenced at
-`SleipnirServiceCollectionExtension.cs:239, 247, 301, 310` and documented at
-`SleipnirOptions.cs:113`.
+`AutoDiscoverControllers` is an option too — referenced in `AddSleipnir`/`UseSleipnir`
+(`SleipnirServiceCollectionExtension.cs`) and documented on the
+`AutoDiscoverControllers` property (`SleipnirOptions.cs`).
 
 ---
 
 ## 8. The discovery endpoint & deterministic serialization
 
-| Surface | Route / method | Line | Gating |
-|---------|----------------|------|--------|
-| **REST** | `GET {prefix}/discovery` (default `/api/sleipnir`) | `SleipnirRest/SleipnirEndpointExtensions.cs:86-99` (prefix `:33`) | 401 when `RequireAuthentication && !IsAuthenticated` (`:92`). Serialized with `DiscoverySerialization.Options` (`:97`), `application/json` (`:98`). |
-| **JSON-RPC** | `sleipnir.discover` capability | `SleipnirRest/JsonRpc/JsonRpcDispatcher.cs:146` | Same RequireAuth gate (`:138-140`); declared byte-identical to the REST endpoint (`:23`). Capability name at `JsonRpcModels.cs:46`. |
-| **Build-integrated codegen** | `contract.sleipnir.json` (written to disk) | `Sleipnir.Server.Codegen/Program.cs:117-137` | Sorts controllers by name (`:118`), serializes with `DiscoverySerialization.Options` (`:137`). |
+| Surface | Route / method | Where | Gating |
+|---------|----------------|-------|--------|
+| **REST** | `GET {prefix}/discovery` (default `/api/sleipnir`) | `SleipnirEndpointExtensions.cs` → `MapGet("/discovery")` (prefix is the `MapSleipnirEndpoints` param) | 401 when `RequireAuthentication && !IsAuthenticated`. Serialized with `DiscoverySerialization.Options`, `application/json`. |
+| **JSON-RPC** | `sleipnir.discover` capability | `JsonRpcDispatcher.cs` → the `sleipnir.discover` dispatch arm | Same RequireAuth gate; declared byte-identical to the REST endpoint (shared `DiscoveryOptions` field). Capability name in `JsonRpcModels.cs`. |
+| **Build-integrated codegen** | `contract.sleipnir.json` (written to disk) | `Sleipnir.Server.Codegen/Program.cs` → the contract-export method ("Controllers.OrderBy(c => c.Name") | Sorts controllers by name, serializes with `DiscoverySerialization.Options`. |
 
 **Deterministic serialization:** `DiscoverySerialization.Options`
-(`SleipnirCore/Model/Messages/Mex/DiscoverySerialization.cs:16-20`) —
+(`SleipnirCore/Model/Messages/Mex/DiscoverySerialization.cs` → `Options`) —
 `JsonNamingPolicy.CamelCase` + `DefaultIgnoreCondition = WhenWritingNull`.
-The docstring (`:6-13`) states it is **independent of host JSON config** and is
+The `Options` docstring states it is **independent of host JSON config** and is
 shared by the REST endpoint and the JSON-RPC `sleipnir.discover` capability, so
 both emit byte-identical bytes.
 
 > **No WebSocket or SignalR discovery surface.** Grep across `SleipnirWebSocket`
 > and `SleipnirHub` found no discovery endpoint/hub method. The `/sleipnirhub` hub
 > does not serve `DiscoveryInfo`; `SleipnirHub` only references `/discovery` as
-> the REST endpoint in comments (`SleipnirOptions.cs:73, 139, 222`). Discovery
+> the REST endpoint in comments (`SleipnirOptions.cs` — `/discovery` mentions in
+> the `UseRest`/`RequireAuthentication`/`EnableObservability` docstrings). Discovery
 > is served only by REST and JSON-RPC.
 
 ---
@@ -303,65 +313,67 @@ Discovery is the codegen input. There are **two** codegen cores that consume it:
 
 ### C# core — `Sleipnir.Codegen.Core`
 
-Public facade `SleipnirCodegen` (`Sleipnir.Codegen.Core/SleipnirCodegen.cs:9`).
-`EmitClient` (`:16`): parse → `DiscoveryShape.Assert` (`:19`) →
-`new NamingResolver()` (`:20`) → `EmitterBuilder.Build(discovery, resolver)`
-(`:21`) → `CsEmitter.Emit`. `EmitContracts` (`:37`) additionally calls
-`EmitterBuilder.ValidateNavigation(input)` (`:46`) before `CsContractsEmitter.Emit`.
+Public facade `SleipnirCodegen` (`Sleipnir.Codegen.Core/SleipnirCodegen.cs` →
+`SleipnirCodegen`). `EmitClient`: parse → `DiscoveryShape.Assert` →
+`new NamingResolver()` → `EmitterBuilder.Build(discovery, resolver)` →
+`CsEmitter.Emit`. `EmitContracts` additionally calls
+`EmitterBuilder.ValidateNavigation(input)` before `CsContractsEmitter.Emit`.
 
-- **`EmitterBuilder.Build`** — `Sleipnir.Codegen.Core/EmitterInput.cs:22`. Walks
-  the validated `JsonObject`: registers object type names with the
-  `NamingResolver` (`:33`), skips enum keys (`:32`), builds `ResolvedType`s with
-  `Casing.ToCamelCase` property names (`:44`), builds `ResolvedController`s
-  preserving discovery order (`:48-54`). Header `:1` names the port from
+- **`EmitterBuilder.Build`** — `Sleipnir.Codegen.Core/EmitterInput.cs` →
+  `EmitterBuilder.Build`. Walks the validated `JsonObject`: registers object
+  type names with the `NamingResolver`, skips enum keys, builds `ResolvedType`s
+  with `Casing.ToCamelCase` property names, builds `ResolvedController`s
+  preserving discovery order. The file header names the port from
   `clients/codegen/src/core/model.ts`.
-- **`NamingResolver`** — `Sleipnir.Codegen.Core/NamingResolver.cs:11`:
-  `Register`/`Resolve`/`Disambiguate` (`:17, :30, :44`).
-- **Ingress gate — `DiscoveryShape.Assert`** (`Sleipnir.Codegen.Core/DiscoveryShape.cs:41`):
-  `KnownDiscoveryVersions = { "1" }` (`:23`), `ValidKinds` (`:25`),
-  `ScalarNames` (`:30`), `DiscoveryShapeException` (`:15`). This is the **no-drift
-  ingress gate** — an unknown `discoveryVersion` or `TypeRef.kind` throws before
-  any code is emitted (the `SLEIPNIR001` diagnostic, `CODEGEN_ONBOARDING.md:231`).
+- **`NamingResolver`** — `Sleipnir.Codegen.Core/NamingResolver.cs` →
+  `NamingResolver`: `Register`/`Resolve`/`Disambiguate`.
+- **Ingress gate — `DiscoveryShape.Assert`**
+  (`Sleipnir.Codegen.Core/DiscoveryShape.cs` → `Assert`):
+  `KnownDiscoveryVersions = { "1" }`, `ValidKinds`, `ScalarNames`,
+  `DiscoveryShapeException`. This is the **no-drift ingress gate** — an unknown
+  `discoveryVersion` or `TypeRef.kind` throws before any code is emitted (the
+  `SLEIPNIR001` diagnostic, `CODEGEN_ONBOARDING.md` §"2.4 Diagnostics").
 
 ### TypeScript core — `clients/codegen/src`
 
 The DevUI's `CodegenPage` dogfoods it: `buildEmitterInput`, `NamingResolver`,
 `emitTsClient`/`emitCsClient`/`emitPyClient`
-(`SleipnirDeveloperUi/src/lib/components/editor/CodegenPage.svelte:10-16`). Both
-cores must stay in parity (`CODEGEN_REFERENCE` cross-reference; the
-`CsCodegenParityTests` gate).
+(`SleipnirDeveloperUi/src/lib/components/editor/CodegenPage.svelte` → the
+`sleipnir-codegen` import block). Both cores must stay in parity
+(`CODEGEN_REFERENCE` cross-reference; the `CsCodegenParityTests` gate).
 
 ### Codegen tool — roll-forward + zero-controller guard
 
 - **Roll-forward fix** — `<RollForward>LatestMajor</RollForward>` baked into the
-  tool's `runtimeconfig` (`Sleipnir.Server.Codegen/Sleipnir.Server.Codegen.csproj:18`,
-  rationale `:9-17`). This fixed the empty-discovery-on-net10-consumers bug — the
-  tool is net8-pinned and cannot reflect a net10 assembly without
-  `LatestMajor`. `CHANGELOG.md:341` (1.1.3). Memory `sleipnir-codegen-discovery-rollforward`.
-- **Zero-controller guard** — `Sleipnir.Server.Codegen/Program.cs:127`:
-  `if (discovery.Controllers.Count == 0) throw new InvalidOperationException(...)`
-  (`:129-134`, comment `:120-126`). Exit code 2 (`CHANGELOG.md:345-348`).
-- **Regression test** — `SleipnirTests/Integration/ServerCodegenNet10RollForwardTests.cs:103`
-  (`Net10Server_DiscoveredByTool_RollForwardLatestMajor_NonEmptyContract`), bare
-  `dotnet <tool.dll>` (no `--roll-forward`) `:160`, exit-0 `:165-167`.
+  tool's `runtimeconfig` (`Sleipnir.Server.Codegen/Sleipnir.Server.Codegen.csproj`
+  → `<RollForward>` element; rationale in the comment above it). This fixed the
+  empty-discovery-on-net10-consumers bug — the tool is net8-pinned and cannot
+  reflect a net10 assembly without `LatestMajor`. `CHANGELOG.md` §"[1.1.3]".
+  Memory `sleipnir-codegen-discovery-rollforward`.
+- **Zero-controller guard** — `Sleipnir.Server.Codegen/Program.cs` → the
+  zero-controller guard (`if (discovery.Controllers.Count == 0) throw …`).
+  Exit code 2 (`CHANGELOG.md` §"[1.1.3]").
+- **Regression test** — `SleipnirTests/Integration/ServerCodegenNet10RollForwardTests.cs`
+  → `Net10Server_DiscoveredByTool_RollForwardLatestMajor_NonEmptyContract`
+  (bare `dotnet <tool.dll>` with no `--roll-forward`, asserts exit 0).
 
 ### Navigation drift-gate
 
-`EmitterBuilder.ValidateNavigation` (`Sleipnir.Codegen.Core/EmitterInput.cs:71-142`):
-resolves `Fetch`/`Param`/`Key`, validates scalar match, opaque-target check
-(`:138`); throws `DiscoveryShapeException` on any violation. Only on the
-`EmitContracts` path.
+`EmitterBuilder.ValidateNavigation` (`Sleipnir.Codegen.Core/EmitterInput.cs` →
+`ValidateNavigation`): resolves `Fetch`/`Param`/`Key`, validates scalar match,
+opaque-target check; throws `DiscoveryShapeException` on any violation. Only on
+the `EmitContracts` path.
 
 ---
 
 ## 10. DevUI consumption
 
-| Piece | File:line | Role |
-|-------|-----------|------|
-| Discovery state | `SleipnirDeveloperUi/src/lib/state/discovery.svelte.ts:4` | `DiscoveryState` class with `$state` runes: `data` (`:5`), `loading` (`:6`), `error` (`:7`), `searchQuery` (`:8`); `filteredControllers` getter (`:10`); `fetchDiscovery()` (`:27`) → `apiFetchDiscovery()` (`:31`); singleton export (`:45`). |
-| Endpoint caller | `SleipnirDeveloperUi/src/lib/api/client.ts:49-51` | `fetchDiscovery()` → `client.discover()` from `sleipnir-client` (`SleipnirRestClient`); client rebuilt from `baseUrl`/`apiPath`/`bearer` (`:16-47`). The DevUI dogfoods its own generated TS client (`:1-4`). |
-| Discovery panel | `SleipnirDeveloperUi/src/lib/components/explorer/ExplorerPane.svelte` | Imports `discoveryState` (`:2`), "Discovery" header (`:47-49`), controller count badge (`:56`); composes `ControllerTree` + `TypesTree` (`:4-5`); vertical splitter Discovery/Types (`:12-43`). |
-| Zero-controller guard | `SleipnirDeveloperUi/src/lib/components/editor/DependencyBuilderPage.svelte:442` | `{#if !discoveryState.data || discoveryState.data.controllers.length === 0}`. |
+| Piece | Where | Role |
+|-------|-------|------|
+| Discovery state | `discovery.svelte.ts` → `DiscoveryState` | `$state` runes: `data`, `loading`, `error`, `searchQuery`; `filteredControllers` getter; `fetchDiscovery()` → `apiFetchDiscovery()`; singleton export `discoveryState`. |
+| Endpoint caller | `client.ts` → `fetchDiscovery()` | `fetchDiscovery()` → `client.discover()` from `sleipnir-client` (`SleipnirRestClient`); client rebuilt from `baseUrl`/`apiPath`/`bearer` via `rebuild()`. The DevUI dogfoods its own generated TS client. |
+| Discovery panel | `ExplorerPane.svelte` → `ExplorerPane` | Imports `discoveryState`, "Discovery" header + controller count badge; composes `ControllerTree` + `TypesTree`; vertical splitter Discovery/Types. |
+| Zero-controller guard | `DependencyBuilderPage.svelte` "discoveryState.data.controllers.length === 0" | The empty-discovery `{#if}` guard. |
 
 ---
 
@@ -369,10 +381,10 @@ resolves `Fetch`/`Param`/`Key`, validates scalar match, opaque-target check
 
 Discovery-relevant options on `SleipnirHub/Extensions/SleipnirOptions.cs`:
 
-| Option | Type | Default | Line | Notes |
-|--------|------|---------|------|-------|
-| `AutoDiscoverControllers` | `bool` | `true` | `:113` | Enables the bulk auto-discovery scan in `AddSleipnir`/`UseSleipnir`. Set `false` by the fluent `AddSleipnir(options, configureControllers)` overload. Referenced at `SleipnirServiceCollectionExtension.cs:239, 247, 301, 310`. |
-| `RequireAuthentication` | `bool` | — | (see `SleipnirOptions.cs`) | Gates the REST + JSON-RPC discovery endpoints (401 when unauthenticated). |
+| Option | Type | Default | Notes |
+|--------|------|---------|-------|
+| `AutoDiscoverControllers` | `bool` | `true` | Enables the bulk auto-discovery scan in `AddSleipnir`/`UseSleipnir`. Set `false` by the fluent `AddSleipnir(options, configureControllers)` overload. Referenced in `AddSleipnir`/`UseSleipnir` (`SleipnirServiceCollectionExtension.cs`). |
+| `RequireAuthentication` | `bool` | — | Gates the REST + JSON-RPC discovery endpoints (401 when unauthenticated). |
 
 The inference behavior itself (Weg C, `[SleipnirDataContract]`) is **not
 configurable** — it is fixed by the controller-assembly boundary and the
@@ -384,8 +396,8 @@ attributes on the types.
 
 ### The non-deterministic-defaults drift item
 
-`PopulateObjectMeta` (`SleipnirDiscoveryService.cs:321-365`) generates a
-`TypeMeta.Example` via the **default-instance path** at `:334-338`:
+`PopulateObjectMeta` generates a `TypeMeta.Example` via the **default-instance
+path**:
 
 ```csharp
 else if (type.GetConstructor(Type.EmptyTypes) != null) {
@@ -401,8 +413,8 @@ golden drifts on every build (memory `sleipnir-contract-drift-random-defaults`).
 
 **Status:** no code-level stabilization exists (no `Guid.NewGuid`-default
 stabilization, no deterministic-instance override). The **only mitigation today
-is the explicit `[SleipnirExample("json")]` override** (`:324-333`), which
-bypasses `Activator.CreateInstance` entirely. If a contract type has
+is the explicit `[SleipnirExample("json")]` override** (in `PopulateObjectMeta`),
+which bypasses `Activator.CreateInstance` entirely. If a contract type has
 non-deterministic defaults, annotate it with `[SleipnirExample]` to pin the
 example, or the wire-vs-contract conformance gate (`DiscoveryContractTests`) and
 the codegen golden will drift.
@@ -412,11 +424,12 @@ the codegen golden will drift.
 - **No `kind:"call"` on the wire.** Calls are method entries without a `kind`
   discriminator; `stream`/`event` are return-type kinds; `subscribe` is a
   request-frame discriminator, not a discovery entry
-  (`TypeRef.cs:17`, `PROTOCOL.md:865`, `README_DETAILS.md:738-749`).
+  (`TypeRef.cs` → `Kind`, `PROTOCOL.md` §"Discovery", `README_DETAILS.md` §"Discovery").
 - **Per-parameter `[SleipnirDocumentation]` not wired.** The attribute targets
   `Parameter`, but the discovery service reads only the method-level attribute
-  for `paramDoc` (`SleipnirDiscoveryService.cs:171`) — a parameter's
-  `Documentation` resolves to the method's summary.
+  for `paramDoc` (the `method.GetCustomAttribute<…>()` read in
+  `SleipnirDiscoveryService`) — a parameter's `Documentation` resolves to the
+  method's summary.
 - **No WebSocket / SignalR discovery.** Only REST `GET /discovery` and JSON-RPC
   `sleipnir.discover` serve `DiscoveryInfo`.
 - **`CODEGEN_REFERENCE.md` is not yet on `main`** — it exists only on the
@@ -426,12 +439,12 @@ the codegen golden will drift.
   `DEPENDENCY_BINDING_REFERENCE.md` cross-link it; those links resolve once
   `devui-json-view-codegen-relabel` merges.
 - **Name collision is a startup hard-fail** — a duplicated `[SleipnirController]`
-  name or `[SleipnirMethod]` name throws at registration (`SleipnirInvoker.cs:183-190`,
-  `:240-248`), not at call time.
+  name or `[SleipnirMethod]` name throws at registration (in `Register` — the
+  controller-name and method/event-name collision branches), not at call time.
 - **`ReflectionTypeLoadException` is swallowed** by `TypeScanning.SafeGetTypes`
-  (`TypeScanning.cs:18-32`) — a type-load failure in one assembly silently skips
-  those types; if a controller is missing from discovery, check for a load
-  failure in its assembly.
+  (`TypeScanning.cs` → `SafeGetTypes`) — a type-load failure in one assembly
+  silently skips those types; if a controller is missing from discovery, check
+  for a load failure in its assembly.
 
 ---
 
@@ -439,25 +452,25 @@ the codegen golden will drift.
 
 | Test file | Covers |
 |-----------|--------|
-| `SleipnirTests/Unit/Core/SleipnirDiscoveryServiceTests.cs` | Controller/method enumeration, `CancellationToken` exclusion, primitive/enum/`[SleipnirDataContract]`/Weg-C inference (expand vs opaque vs `Exclude`), collections (map/array/set/stream/event), bytes scalar, nullability, default values, schema version (`:33`–`:340`). |
-| `SleipnirTests/Unit/Core/SleipnirDiscoveryTypeRefTests.cs` | `TypeRef` shape: `HashSet`/`SortedSet` → set, object/`JsonDocument` → any scalar, nullable value-type unwrap, native array, nested list (array of array), map-of-lists, set-of-arrays, parameter default carried, byte-underlying enum, `[SleipnirExample]` populates example, self-referential type cycle (`:44`–`:251`). |
-| `SleipnirTests/Unit/Core/SleipnirDiscoveryServiceNavigationTests.cs` | `[SleipnirNavigation]` → discovery: property without attribute has null navigation, with attribute serializes the edge, camelCase JSON + omitted-when-absent (`:32`–`:56`). |
-| `SleipnirTests/Integration/DiscoveryContractTests.cs` | Wire-vs-contract conformance: `Story01Discovery_MatchesCommittedGolden` (`:197`), `…_CarriesSchemaVersion` (`:229`). |
-| `SleipnirTests/Integration/ServerCodegenNet10RollForwardTests.cs` | Codegen roll-forward fix + zero-controller guard regression (`:103`, `:160-167`). |
+| `SleipnirTests/Unit/Core/SleipnirDiscoveryServiceTests.cs` | Controller/method enumeration, `CancellationToken` exclusion, primitive/enum/`[SleipnirDataContract]`/Weg-C inference (expand vs opaque vs `Exclude`), collections (map/array/set/stream/event), bytes scalar, nullability, default values, schema version — across the class's tests. |
+| `SleipnirTests/Unit/Core/SleipnirDiscoveryTypeRefTests.cs` | `TypeRef` shape: `HashSet`/`SortedSet` → set, object/`JsonDocument` → any scalar, nullable value-type unwrap, native array, nested list (array of array), map-of-lists, set-of-arrays, parameter default carried, byte-underlying enum, `[SleipnirExample]` populates example, self-referential type cycle — across the class's tests. |
+| `SleipnirTests/Unit/Core/SleipnirDiscoveryServiceNavigationTests.cs` | `[SleipnirNavigation]` → discovery: property without attribute has null navigation, with attribute serializes the edge, camelCase JSON + omitted-when-absent — across the class's tests. |
+| `SleipnirTests/Integration/DiscoveryContractTests.cs` | Wire-vs-contract conformance: `Story01Discovery_MatchesCommittedGolden`, `…_CarriesSchemaVersion`. |
+| `SleipnirTests/Integration/ServerCodegenNet10RollForwardTests.cs` | Codegen roll-forward fix + zero-controller guard regression (`Net10Server_DiscoveredByTool_RollForwardLatestMajor_NonEmptyContract`). |
 
 ---
 
 ## 14. Relationship to other docs
 
 | Doc | Covers (discovery-relevant) |
-|-----|-----------------------------|
-| `docs/discovery-schema.md` | **The authoritative type-system spec** — `DiscoveryInfo` envelope (`:23`), `TypeRef` (`:113`), scalars (`:151`), collections (`:186`), `example` (`:77-80`), full synthetic payload (`:297`), `discoveryVersion` additive-only (`:35`). |
-| `PROTOCOL.md` | Wire spec: Discovery (MEX) (`:928`), response shape (`:936-968`), `TypeRef.kind` enumeration (`:971-976`), events-in-discovery (`:857`, `:865`), JSON-RPC `sleipnir.discover` (`:1189`), discovery-enables-codegen (`:1168-1169`). |
-| `README_DETAILS.md` | User-facing: event methods in `DiscoveryInfo` (`:736-749`), code-first framing (`:38, :49-50`), DevUI-as-discovery-console (`:205-222`), `/api/sleipnir/discovery` returns full type metadata (`:237, :367`), media-not-in-discovery boundary (`:349, :356`), dependency-checker discovery schemas (`:443, :454`). |
-| `README.md` | "discovery metadata is generated at runtime" (`:14`), `GET /api/sleipnir/discovery` (`:200`), DevUI turns runtime discovery into a console (`:241`), "Runtime discovery + Developer UI" (`:261`), codegen row "typed client stubs from discovery" (`:320`). |
-| `CLAUDE.md` | `SleipnirDiscoveryService` overview incl. Weg C + `[SleipnirDataContract]` + caching (`:66`), attributes (`:93-98`), name-uniqueness + `AutoDiscover = false` exclusion (`:132-138`), test-list mention (`:143`). |
-| `CODEGEN_ONBOARDING.md` | Discovery as the generator input: schema pointer (`:11-12`), versioning (`:43-44`), build-time regeneration (`:85, :98`), `SLEIPNIR001` unknown-`discoveryVersion` (`:231, :235, :388`), `contract.sleipnir.json` shape (`:414-428`), golden-conformance gate (`:142-149`), drift-fail-build (`:196`). |
-| `CLIENT_GENERATION.md` | Discovery as the addressability bridge: runtime payload (`:25-26`), schema pointer (`:129-130`), non-C# producer emitting same shape (`:134`), conformance gate (`:142-144`), determinism (`:183-184`), build-time regeneration (`:196`), schema versioning (`:210`). |
+|-----|------------------------------|
+| `docs/discovery-schema.md` | **The authoritative type-system spec** — §1 `DiscoveryInfo` envelope, §2 `TypeRef`, §3 scalars, §4 collections, `example`, §10 full synthetic payload, §11 versioning & no-drift gate. |
+| `PROTOCOL.md` | Wire spec: §"Discovery (MEX)" (envelope, response shape, `TypeRef.kind` enumeration), §"Discovery" (events-in-discovery), §"JSON-RPC 2.0 Compatibility" (`sleipnir.discover`), §"Design Principles for Cross-Platform Implementations" (discovery-enables-codegen). |
+| `README_DETAILS.md` | User-facing: event methods in `DiscoveryInfo` (§"Discovery"), code-first framing, DevUI-as-discovery-console (§"Developer UI"), `/api/sleipnir/discovery` returns full type metadata, media-not-in-discovery boundary (§"What is deliberately *not* in v1"), dependency-checker discovery schemas (§"DevUI static checker"). |
+| `README.md` | Runtime discovery framing (intro), `GET /api/sleipnir/discovery`, DevUI turns runtime discovery into a console (§"Developer UI"), "Runtime discovery + Developer UI" (§"Features at a glance"), codegen row "typed client stubs from discovery". |
+| `CLAUDE.md` | `SleipnirDiscoveryService` overview incl. Weg C + `[SleipnirDataContract]` + caching (§"Core Engine (`SleipnirCore`)"), attributes (§"Key Attributes"), name-uniqueness + `AutoDiscover = false` exclusion (§"Name Uniqueness"), test-list mention (§"Test Project"). |
+| `CODEGEN_ONBOARDING.md` | Discovery as the generator input: schema pointer, versioning, build-time regeneration, `SLEIPNIR001` unknown-`discoveryVersion` (§"2.4 Diagnostics"), `contract.sleipnir.json` shape (§"9 Reference"), golden-conformance gate, drift-fail-build. |
+| `CLIENT_GENERATION.md` | Discovery as the addressability bridge: runtime payload, schema pointer, non-C# producer emitting same shape, conformance gate, determinism, build-time regeneration, schema versioning (§"Discovery as a stable spec" / §"Phased plan"). |
 | `TRANSPORT_REFERENCE.md` | The discovery endpoint row (REST `GET /discovery`). |
 | `EVENTS_REFERENCE.md` | `kind:"event"` in discovery (§1, §2). |
 | `DEPENDENCY_BINDING_REFERENCE.md` | Discovery as the schema source for the DevUI static checker (§11). |

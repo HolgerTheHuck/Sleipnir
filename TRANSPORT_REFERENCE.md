@@ -8,14 +8,15 @@ subscription and resume, the server registration flow, and every transport-relat
 option on `SleipnirOptions`.
 
 This is a **reference**, not a tutorial. When something does not work, look here
-first — config tables, endpoint tables, the exact public API with `path:line`
+first — config tables, endpoint tables, the exact public API with symbol-grounded
 citations, a diagnostics/troubleshooting catalog, and a map of where the deeper
 docs live. For onboarding read `GETTING_STARTED.md`; for the marketing-shaped
 overview read `README.md`; for the wire-level spec read `PROTOCOL.md`. This doc
 consolidates those and links back for depth.
 
-All citations are `repo-relative/path.cs:line` against the repo root. Code-facing
-text is English per `CLAUDE.md`.
+All citations anchor on the file path plus the named symbol (method, property, or
+field) or a short verbatim quote — never on line numbers, which drift on every
+edit. Code-facing text is English per `CLAUDE.md`.
 
 ## Table of contents
 
@@ -41,7 +42,7 @@ Sleipnir is code-first: the C# controllers decorated with `[SleipnirController]`
 incoming `SleipnirRequest`/`SleipnirMultiRequest` and delegates to the same
 `ISleipnirCore.InvokeDi()` — so routing, authorization, interceptors, dependency
 chaining and batching behave identically regardless of which transport carried the
-call. `CLAUDE.md:70-76` has the one-line transport table.
+call. `CLAUDE.md` §"Transports" has the one-line transport table.
 
 | Transport | Calls | Events | Binary | Wire |
 |-----------|-------|--------|--------|------|
@@ -55,7 +56,8 @@ as the events channel for the `rest` and `all` capability bundles, and as the
 graceful-degradation fallback when WebSocket is unavailable. SSE is therefore
 **not** a value of the `SleipnirTransport` profile enum; the raw SSE backend is
 reachable only through the `Sse` escape hatch on the router
-(`SleipnirClient/Sleipnir/SleipnirTransportRouter.cs:22-27, 120`).
+(`SleipnirClient/Sleipnir/SleipnirTransportRouter.cs` — `SleipnirTransport` enum +
+`Sse` property).
 
 The runtime selection layer is `SleipnirTransportRouter`: the generated client
 (`SleipnirClient`/`SleipnirGeneratedClient`) wraps a router, so the public call
@@ -68,91 +70,96 @@ transport at runtime") for the codegen side.
 ## 2. Endpoints & wire formats
 
 Default prefix `/api/sleipnir` (param `prefix` to `MapSleipnirEndpoints`,
-`SleipnirRest/SleipnirEndpointExtensions.cs:33`).
+`SleipnirRest/SleipnirEndpointExtensions.cs`).
 
-### REST — `SleipnirRest/SleipnirEndpointExtensions.cs:32-166`
+### REST — `SleipnirRest/SleipnirEndpointExtensions.cs` (`MapSleipnirEndpoints`)
 
-| Route | Method | Body / params | Line |
-|-------|--------|---------------|------|
-| `{prefix}/json` | POST | `SleipnirRequest` → `SleipnirResponse` | `:50-63` |
-| `{prefix}/json/multi` | POST | `SleipnirMultiRequest` → `SleipnirResponse[]` | `:65-84` |
-| `{prefix}/discovery` | GET | – → `DiscoveryInfo` (deterministic serialization) | `:86-99` |
-| `{prefix}/observability` | GET | – → JSON snapshot (opt-in `EnableObservability`) | `:107-133` |
-| `{prefix}/jsonrpc` | POST | JSON-RPC 2.0 object/array (opt-in `EnableJsonRpcCompat`) | `:153-162` |
+| Route | Method | Body / params |
+|-------|--------|---------------|
+| `{prefix}/json` | POST | `SleipnirRequest` → `SleipnirResponse` |
+| `{prefix}/json/multi` | POST | `SleipnirMultiRequest` → `SleipnirResponse[]` |
+| `{prefix}/discovery` | GET | – → `DiscoveryInfo` (deterministic serialization) |
+| `{prefix}/observability` | GET | – → JSON snapshot (opt-in `EnableObservability`) |
+| `{prefix}/jsonrpc` | POST | JSON-RPC 2.0 object/array (opt-in `EnableJsonRpcCompat`) |
 
 - `Content-Type: application/json`; request body limit **1 MB**
-  (`[RequestSizeLimit(1_048_576)]`, `:41`).
+  (the `[RequestSizeLimit(1_048_576)]` attribute on the `/json` route).
 - Rate limiting applied only when `RateLimitPermitLimit > 0` (policy name
-  `"sleipnir"`, `:45-48`).
+  `"sleipnir"`).
 - REST client posts to `{serverBase}/{apiPath}/json` and `.../json/multi`
-  (`SleipnirClient/Sleipnir/SleipnirRestJsonClient.cs:57, 95`).
+  (`SleipnirClient/Sleipnir/SleipnirRestJsonClient.cs` — `Call` / `Call(multi)`).
 
-### SSE-over-REST — `SleipnirRest/SleipnirSseEndpointExtensions.cs:45-113`
+### SSE-over-REST — `SleipnirRest/SleipnirSseEndpointExtensions.cs` (`MapSleipnirSseEndpoints`)
 
-Mapped from the REST group when `UseSse` is on
-(`SleipnirEndpointExtensions.cs:141-144`).
+Mapped from the REST group when `UseSse` is on (the `UseSse` branch of
+`MapSleipnirEndpoints` in `SleipnirEndpointExtensions.cs`).
 
-| Route | Method | Purpose | Line |
-|-------|--------|---------|------|
-| `{prefix}/events/{controller}/{method}` | GET | fresh subscribe; method args as query params | `:48-76` |
-| `{prefix}/events/{subscriptionId}` | GET | resume; `Last-Event-Id:` header (and `?lastEventId=` fallback) | `:79-110` |
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `{prefix}/events/{controller}/{method}` | GET | fresh subscribe; method args as query params |
+| `{prefix}/events/{subscriptionId}` | GET | resume; `Last-Event-Id:` header (and `?lastEventId=` fallback) |
 
 Response: `text/event-stream`, `Cache-Control: no-cache`,
-`X-Accel-Buffering: no` (`:121-128`). Each logical frame becomes an SSE block
-(`id:`/`event:`/`data:`); the **first block is `event: ack`**
-(`SleipnirRest/Sse/SleipnirSseConnection.cs:22-27`).
+`X-Accel-Buffering: no` (set in `MapSleipnirSseEndpoints`). Each logical frame
+becomes an SSE block (`id:`/`event:`/`data:`); the **first block is `event: ack`**
+(`SleipnirRest/Sse/SleipnirSseConnection.cs` — first frame `event: ack`).
 
 > SSE supports **named params only**; positional params and binary are
-> WS/SignalR-only (`SleipnirTransportRouter.cs:267-272`, `PROTOCOL.md:1222-1225`).
+> WS/SignalR-only (`SleipnirTransportRouter.cs` `SubscribeAsync` SSE-unpack
+> branch; `PROTOCOL.md` §"Transport selection (client)").
 
 ### WebSocket — `SleipnirWebSocket`
 
 - Middleware path default **`/sleipnirws`**
-  (`SleipnirWebSocket/SleipnirWebSocketExtensions.cs:14-20`).
-- Accepts the WS upgrade; **1 MB max message** (`MaxMessageSize = 1_048_576`,
-  `SleipnirWebSocket/SleipnirWebSocketMiddleware.cs:80`); rejects unauthenticated
-  upgrades when `RequireAuthentication` (`:67-71`).
+  (`SleipnirWebSocket/SleipnirWebSocketExtensions.cs` — `UseSleipnirWebSocket`).
+- Accepts the WS upgrade; **1 MB max message** (`MaxMessageSize = 1_048_576` in
+  `SleipnirWebSocket/SleipnirWebSocketMiddleware.cs`); rejects unauthenticated
+  upgrades when `RequireAuthentication` (the auth check in `SleipnirWebSocketMiddleware`).
 - Wire: **JSON text frames** (no native binary frames —
-  `SleipnirWebSocket/README.md:184`, `README_DETAILS.md:821`). Messages are
-  auto-detected as multi (`requests` + `mode` fields) vs single (`:279-320`);
-  subscribe/unsubscribe detected via a `kind` field (`:211-268`).
+  `SleipnirWebSocket/README.md`, `README_DETAILS.md` §"Known Limitations (v1)").
+  Messages are auto-detected as multi (`requests` + `mode` fields) vs single;
+  subscribe/unsubscribe detected via a `kind` field — all in the receive loop of
+  `SleipnirWebSocketMiddleware`.
 
 ### SignalR — `SleipnirHub`
 
 - Hub mapped at **`/sleipnirhub`**
-  (`SleipnirHub/Extensions/SleipnirWebAppExtension.cs:12`,
-  `SleipnirServer/SleipnirPipelineExtensions.cs:65, 98`).
+  (`SleipnirHub/Extensions/SleipnirWebAppExtension.cs` `MapSleipnirHub`;
+  `SleipnirServer/SleipnirPipelineExtensions.cs` `MapSleipnir`).
 - Hub methods: `DoWork(SleipnirRequest) → SleipnirResponse?` and
   `DoWorkMany(SleipnirMultiRequest?) → IEnumerable<SleipnirResponse>`
-  (`SleipnirHub/Hub/SleipnirHub.cs:63-86`).
+  (`SleipnirHub/Hub/SleipnirHub.cs` — `DoWork` / `DoWorkMany`).
 - Event subscribe is the streaming
   `SubscribeAsync(SleipnirRequest, string?, long?, [EnumeratorCancellation] CancellationToken) → IAsyncEnumerable<string>`
-  (`SleipnirHub.cs:100-104`). The first yielded item is the `ack` frame, then
-  `event`/`complete`/`error` frames (`SleipnirHub.cs:194, 204-211`) — the **same
-  serialized string frames WS/SSE emit**, so cross-transport resume works.
+  (`SleipnirHub.cs` `SubscribeAsync`). The first yielded item is the `ack` frame,
+  then `event`/`complete`/`error` frames (the `yield return` sites in
+  `SleipnirHub.SubscribeAsync`) — the **same serialized string frames WS/SSE
+  emit**, so cross-transport resume works.
 - Wire: WebSocket + **MessagePack binary** (opt-out via `UseMessagePack=false`;
-  `SleipnirHub/README.md:10`, `SleipnirServiceCollectionExtension.cs:97-105`).
+  `SleipnirHub/README.md`; `SleipnirHub/Extensions/SleipnirServiceCollectionExtension.cs`
+  `AddMessagePackProtocol` branch).
 
 ### JSON-RPC 2.0 compat adapter — `SleipnirRest/JsonRpc/`
 
 - Single endpoint `POST {prefix}/jsonrpc`, opt-in via
   `SleipnirOptions.EnableJsonRpcCompat` (default `false`)
-  (`SleipnirEndpointExtensions.cs:26-30, 151-163`;
-  `SleipnirHub/Extensions/SleipnirOptions.cs:207-214`).
+  (`SleipnirEndpointExtensions.cs` `MapSleipnirEndpoints` jsonrpc branch;
+  `SleipnirHub/Extensions/SleipnirOptions.cs` — `EnableJsonRpcCompat`).
 - Reads raw body (object = single, array = batch); **always 200** with the
   JSON-RPC envelope in the body, **204** only when every item was a notification
-  (`JsonRpcDispatcher.cs:31-60`).
+  (`JsonRpcDispatcher.cs` `Dispatch`).
 - Capability methods dispatched directly: `sleipnir.discover` (auth-gated when
-  `RequireAuthentication`) and `sleipnir.capabilities` (`JsonRpcDispatcher.cs:135-147`,
-  `JsonRpcAdapter.cs:58`).
+  `RequireAuthentication`) and `sleipnir.capabilities` (`JsonRpcDispatcher.cs`
+  capability-method dispatch; `JsonRpcAdapter.cs` `BuildCapabilities`).
 - `method` is `Controller.Method` (split at the last dot); `params` object → named,
   array → positional (by `num`); `id` echoed with original type.
 - Error-code map: routing 404 → `-32601`, business 404 → `-32000`,
   `400/422 → -32602`, `401/403 → -32001`, `500 → -32603`, parse → `-32700`,
-  invalid → `-32600` (`JsonRpcAdapter.cs:13-17`, `CLAUDE.md:78`).
+  invalid → `-32600` (`JsonRpcAdapter.cs` error-code map; `CLAUDE.md` §"Transports").
 - **Limitations:** no `@alias` chaining, Parallel-only (no execution-mode
   selection), no binary out-of-band, no streaming — graduate to the native wire
-  (`CLAUDE.md:78`, `PROTOCOL.md:1190-1192`). Full spec: `JSONRPC_COMPAT.md`.
+  (`CLAUDE.md` §"Transports"; `PROTOCOL.md` §"JSON-RPC 2.0 Compatibility"). Full
+  spec: `JSONRPC_COMPAT.md`.
 
 ---
 
@@ -161,16 +168,15 @@ Response: `text/event-stream`, `Cache-Control: no-cache`,
 File: `SleipnirClient/Sleipnir/SleipnirTransportRouter.cs`.
 
 ```csharp
-public class SleipnirTransportRouter : SleipnirClientBase, IAsyncDisposable   // :75
-public SleipnirTransportRouter(SleipnirRouterOptions opts) : base()            // :90
+public class SleipnirTransportRouter : SleipnirClientBase, IAsyncDisposable
+public SleipnirTransportRouter(SleipnirRouterOptions opts) : base()
 ```
 
-- Throws `ArgumentException` if `BaseUrl` is blank (`:92-93`).
-- Instantiates backends per `HasBackend(...)` (`:99-109`). A non-`Auto`
-  `DefaultTransport` resolves the profile immediately; `Auto` is lazy
-  (`:111-113`).
+- Throws `ArgumentException` if `BaseUrl` is blank (ctor guard).
+- Instantiates backends per `HasBackend(...)`. A non-`Auto`
+  `DefaultTransport` resolves the profile immediately; `Auto` is lazy.
 
-### `SleipnirRouterOptions` — ctor input (`:41-61`)
+### `SleipnirRouterOptions` — ctor input
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
@@ -179,7 +185,7 @@ public SleipnirTransportRouter(SleipnirRouterOptions opts) : base()            /
 | `DefaultTransport` | `SleipnirTransport` | `Auto` | Initial profile |
 | `Bearer` | `string?` | `null` | Auth token |
 | `CallTimeout` | `TimeSpan?` | `null` | Per-call timeout |
-| `ProbeTimeout` | `TimeSpan?` | `1500ms` | WS handshake probe for `auto` (`:50-51, 96`) |
+| `ProbeTimeout` | `TimeSpan?` | `1500ms` | WS handshake probe for `auto` |
 | `ApiPath` | `string` | `"api/sleipnir"` | REST/SSE prefix |
 | `WsPath` | `string` | `"sleipnirws"` | WS path |
 | `HubPath` | `string` | `"sleipnirhub"` | SignalR hub path |
@@ -190,19 +196,18 @@ public SleipnirTransportRouter(SleipnirRouterOptions opts) : base()            /
 ### Auto probe + fallback
 
 ```csharp
-public async Task NegotiateAsync(CancellationToken ct = default)              // :162-177
+public async Task NegotiateAsync(CancellationToken ct = default)
 ```
 
-`RunAutoNegotiationAsync` (`:179-207`):
+`RunAutoNegotiationAsync`:
 
-- If `_ws == null` → fall back to `Rest` immediately (`:182-187`).
-- Otherwise probe the WS handshake under `_probeTimeout` (default **1500 ms**,
-  `:96`) via `_ws.ConnectAsync(probeCts.Token)`.
+- If `_ws == null` → fall back to `Rest` immediately.
+- Otherwise probe the WS handshake under `_probeTimeout` (default **1500 ms**)
+  via `_ws.ConnectAsync(probeCts.Token)`.
   - Success → profile `Ws`.
   - Failure/timeout → profile `Rest`.
-- If the chosen fallback backend is not bundled, `throw NotBundled(Auto)`
-  (`:205-206`).
-- Lazy and concurrent-safe via `_negotiateLock` (`:88`, `:166-176`).
+- If the chosen fallback backend is not bundled, `throw NotBundled(Auto)`.
+- Lazy and concurrent-safe via `_negotiateLock`.
 
 The headline auto-fallback case: **WS dies → calls fall back to REST, events
 resume over SSE.**
@@ -210,21 +215,21 @@ resume over SSE.**
 ### Switching transport at runtime
 
 ```csharp
-public async Task UseTransportAsync(SleipnirTransport t, CancellationToken ct = default)  // :210-221
+public async Task UseTransportAsync(SleipnirTransport t, CancellationToken ct = default)
 ```
 
 `Auto` clears `_profile` and re-runs negotiation; any other value goes through
-`ResolveProfile` (`:137-153`), which throws `NotBundled(t)` — a `SleipnirException`
-(`:155-156`) — if the required backend was not bundled for the current capability.
+`ResolveProfile`, which throws `NotBundled(t)` — a `SleipnirException` — if the
+required backend was not bundled for the current capability.
 
 ### Escape hatches (read-only, `null` if not bundled)
 
 ```csharp
-public SleipnirRestJsonClient?  Rest    { get; }   // :118
-public SleipnirWebSocketClient? Ws      { get; }   // :119
-public SleipnirSseClient?       Sse     { get; }   // :120
-public SleipnirSignalrClient?   Signalr { get; }   // :121
-public string? ActiveTransport { get; }            // :124  — lowercase profile name, null until resolved
+public SleipnirRestJsonClient?  Rest    { get; }
+public SleipnirWebSocketClient? Ws      { get; }
+public SleipnirSseClient?       Sse     { get; }
+public SleipnirSignalrClient?   Signalr { get; }
+public string? ActiveTransport { get; }            // lowercase profile name, null until resolved
 ```
 
 Use these to reach a raw bundled backend directly (e.g. a REST-only call from an
@@ -232,25 +237,24 @@ Use these to reach a raw bundled backend directly (e.g. a REST-only call from an
 
 ### Routing
 
-- Calls: `Call(SleipnirRequest?)` (`:245-253`), `Call(SleipnirMultiRequest?)`
-  (`:255-263`). `CallBackend()` maps `Ws`/`Signalr` to their backend, default
-  `Rest` (`:229-234`).
-- Subscribe: `SubscribeAsync<T>(SleipnirRequest?, ResumePolicy?, CancellationToken)`
-  (`:273-283`). SSE unpacks the request (controller/method/params → query params);
-  WS/SignalR pass it straight through (`:267-272`). `EventBackend()` maps
-  `Ws`/`Signalr`, default `Rest` (SSE) (`:236-241`).
-- Resume: `ResumeAsync<T>(string subscriptionId, long lastEventId, ResumePolicy?, CancellationToken)`
-  (`:291-302`). **Resuming into WebSocket throws `NotSupportedException`** with
-  guidance to switch to `rest`/`auto` (`:296-299`). See §6.
-- `SetBearer(string?)` fans the bearer to **SSE + SignalR only** (`:307-313`).
-- `DisposeAsync` (`:315-324`): disposes WS + SignalR (async), SSE + REST (sync),
-  then `_negotiateLock`.
+- Calls: `Call(SleipnirRequest?)`, `Call(SleipnirMultiRequest?)`. `CallBackend()`
+  maps `Ws`/`Signalr` to their backend, default `Rest`.
+- Subscribe: `SubscribeAsync<T>(SleipnirRequest?, ResumePolicy?, CancellationToken)`.
+  SSE unpacks the request (controller/method/params → query params); WS/SignalR
+  pass it straight through (the SSE-unpack branch of `SubscribeAsync`).
+  `EventBackend()` maps `Ws`/`Signalr`, default `Rest` (SSE).
+- Resume: `ResumeAsync<T>(string subscriptionId, long lastEventId, ResumePolicy?, CancellationToken)`.
+  **Resuming into WebSocket throws `NotSupportedException`** with guidance to
+  switch to `rest`/`auto` (the WS guard in `ResumeAsync`). See §6.
+- `SetBearer(string?)` fans the bearer to **SSE + SignalR only**.
+- `DisposeAsync`: disposes WS + SignalR (async), SSE + REST (sync), then
+  `_negotiateLock`.
 
 ---
 
 ## 4. Capability values & what they bundle
 
-### `SleipnirBundleCapability` (`SleipnirTransportRouter.cs:10-20`)
+### `SleipnirBundleCapability` (`SleipnirTransportRouter.cs`)
 
 | Value | Bundles | Use |
 |-------|---------|-----|
@@ -259,12 +263,12 @@ Use these to reach a raw bundled backend directly (e.g. a REST-only call from an
 | `All` | REST + WS + SSE | Enables `auto` (WS → REST+SSE fallback) — **default** |
 | `Signalr` | `All` + SignalR | Opt-in SignalR add-on (hub-streaming events) |
 
-### `SleipnirTransport` — the runtime profile enum (`:28-38`)
+### `SleipnirTransport` — the runtime profile enum
 
 `Auto, Rest, Ws, Signalr`. There is **no `Sse` profile** (SSE cannot carry calls);
-the raw SSE backend is reachable only via the `Sse` escape hatch (`:22-27`).
+the raw SSE backend is reachable only via the `Sse` escape hatch.
 
-### Backend selection — `HasBackend` switch (`:128-135`)
+### Backend selection — `HasBackend` switch
 
 | Backend | Bundled for capabilities |
 |---------|--------------------------|
@@ -276,121 +280,116 @@ the raw SSE backend is reachable only via the `Sse` escape hatch (`:22-27`).
 ### Where the capability string is set
 
 - **Codegen CLI**: `--transport rest|ws|all|signalr` (default `all`)
-  (`clients/codegen/README.md:37, 53`, `PROTOCOL.md:1200-1202`). TS/JS emitters
-  canonicalize deprecated aliases `sse → rest`, `both → all`
-  (`clients/codegen/src/emitters/ts.ts:45-48`, `js.ts:22`).
+  (`clients/codegen/README.md` — `--transport` flag; `PROTOCOL.md`
+  §"Transport selection (client)"). TS/JS emitters canonicalize deprecated
+  aliases `sse → rest`, `both → all` (`clients/codegen/src/emitters/ts.ts`
+  `canonicalizeCapability`, `js.ts` `canonicalizeCapability`).
 - **C# codegen core**: `EmitCsOptions.Capability` (default `"all"`,
-  `Sleipnir.Codegen.Core/Model.cs:196-199`); the C# emitter bakes the literal
-  (`CsEmitter.cs:30-39, 180`).
+  `Sleipnir.Codegen.Core/Model.cs` `EmitCsOptions`); the C# emitter bakes the
+  literal (`CsEmitter.cs` `Emit`).
 - **.NET Roslyn source generator** (`Sleipnir.Generator`): does **not** parse a
   `--transport` flag — emits with default `EmitCsOptions` (capability `all`)
-  (`Sleipnir.SourceGenerator/CodegenSeam.cs:34`,
-  `SleipnirClientGenerator.cs:89-91`). The only generator global option read is
-  `build_property.sleipnircontractfile` (`SleipnirClientGenerator.cs:53-62`).
+  (`Sleipnir.SourceGenerator/CodegenSeam.cs` `Emit`;
+  `SleipnirClientGenerator.cs` `Generate`). The only generator global option read
+  is `build_property.sleipnircontractfile` (`SleipnirClientGenerator.cs`
+  `ReadAdditionalFiles`).
 - **Runtime**: the generated root ctor wraps
   `new SleipnirRouterOptions { ... Capability = SleipnirBundleCapability.<Cap> }`
-  (`CsEmitter.cs:180`).
+  (`CsEmitter.cs` `Emit` — the root-ctor `SleipnirRouterOptions` block).
 
 ---
 
 ## 5. The individual backends
 
-All implement `ISleipnirClient` (`SleipnirClient/Sleipnir/ISleipnirClient.cs:11-46`)
-and derive from `SleipnirClientBase` (`SleipnirClientBase.cs:7`), which provides
-shared `Call<T>()` (`:28-64`) and `CallBinary()` (`:71-86`) that throw
-`SleipnirException` on non-2xx, and default `SubscribeAsync`/`ResumeAsync` that
-throw `NotSupportedException` (`:99-112`).
+All implement `ISleipnirClient` (`SleipnirClient/Sleipnir/ISleipnirClient.cs`)
+and derive from `SleipnirClientBase` (`SleipnirClientBase.cs`), which provides
+shared `Call<T>()` and `CallBinary()` that throw `SleipnirException` on non-2xx,
+and default `SubscribeAsync`/`ResumeAsync` that throw `NotSupportedException`
+(the throwing defaults in `SleipnirClientBase`).
 
-### `SleipnirRestJsonClient` — `SleipnirRestJsonClient.cs:12`
+### `SleipnirRestJsonClient` — `SleipnirRestJsonClient.cs`
 
 `public class ... : SleipnirClientBase, ISleipnirClient, IDisposable` — **calls
 only**.
 
-- `Call` (`:48-78`), `Call(SleipnirMultiRequest?)` (`:80-118`). No
-  `SubscribeAsync`/`ResumeAsync` override (inherits the throwing base).
-- Owns an `HttpClient` with `SocketsHttpHandler.PooledConnectionLifetime = 2 min`
-  (`:32-39`). **Thread-safe by construction** (HttpClient) — no `SemaphoreSlim`.
-- No auto-reconnect (stateless HTTP). `IDisposable`, not `IAsyncDisposable`
-  (`:120-132`).
+- `Call`, `Call(SleipnirMultiRequest?)`. No `SubscribeAsync`/`ResumeAsync`
+  override (inherits the throwing base).
+- Owns an `HttpClient` with `SocketsHttpHandler.PooledConnectionLifetime = 2 min`.
+  **Thread-safe by construction** (HttpClient) — no `SemaphoreSlim`.
+- No auto-reconnect (stateless HTTP). `IDisposable`, not `IAsyncDisposable`.
 
-### `SleipnirWebSocketClient` — `SleipnirWebSocketClient.cs:23`
+### `SleipnirWebSocketClient` — `SleipnirWebSocketClient.cs`
 
 `public class ... : SleipnirClientBase, ISleipnirClient, IAsyncDisposable` —
 calls + events.
 
-- `ConnectAsync` (`:145-181`), `Call` (`:183-190`), `Call(multi)` (`:192-203`).
+- `ConnectAsync`, `Call`, `Call(multi)`.
 - Subscribe: positional
   `SubscribeAsync<T>(string controller, string method, object?[]? args, ResumePolicy?, CancellationToken)`
-  (`:661-704`) and unified `SubscribeAsync<T>(SleipnirRequest?, ResumePolicy?, CancellationToken)`
-  (`:713-756`).
+  and unified `SubscribeAsync<T>(SleipnirRequest?, ResumePolicy?, CancellationToken)`.
 - **No `ResumeAsync<T>` override** — resuming into WS throws (router guards it
-  explicitly, `SleipnirTransportRouter.cs:296-299`).
-- Thread-safety: `_sendLock` (`:47`), `_connectLock` (`:48`),
-  `ConcurrentDictionary` for pending requests (`:49`), subscriptions (`:50`),
-  subscribe-requests (`:51`).
+  explicitly; see §6).
+- Thread-safety: `_sendLock`, `_connectLock`, `ConcurrentDictionary` for pending
+  requests, subscriptions, subscribe-requests.
 - Auto-reconnect with backoff
-  `DefaultReconnectDelays = {2,2,5,5,10,10,30,30s,1,1,5min}` (`:30-43`); exhausted
-  → `Disconnected` + log `"WebSocket reconnect exhausted — connection stays offline."`
-  (`:589-590`); in-flight calls rejected on drop (`:401`); new calls during
-  reconnect wait on the same in-flight task (`:214-221`). **Empty
-  `reconnectDelays` disables reconnect** (`:131-132`).
+  `DefaultReconnectDelays = {2,2,5,5,10,10,30,30s,1,1,5min}`; exhausted
+  → `Disconnected` + log `"WebSocket reconnect exhausted — connection stays offline."`;
+  in-flight calls rejected on drop; new calls during reconnect wait on the same
+  in-flight task. **Empty `reconnectDelays` disables reconnect**.
 - State enum `SleipnirConnectionState { Disconnected, Connecting, Connected, Reconnecting }`
-  (`SleipnirConnectionState.cs:7-20`).
-- `IAsyncDisposable.DisposeAsync` (`:604-651`).
+  (`SleipnirConnectionState.cs`).
+- `IAsyncDisposable.DisposeAsync`.
 - No constructor `bearer` convenience — inject a pre-configured
-  `ClientWebSocket`/`socketFactory` (`SleipnirClient/README.md:134-136`).
+  `ClientWebSocket`/`socketFactory` (`SleipnirClient/README.md` — bearer-injection note).
 
-### `SleipnirSseClient` — `SleipnirSseClient.cs:33`
+### `SleipnirSseClient` — `SleipnirSseClient.cs`
 
 `public sealed class ... : SleipnirClientBase, ISleipnirClient, IDisposable` —
 **events only**.
 
 - `Call`/`Call(multi)` throw `NotSupportedException`
-  (`"SleipnirSseClient is an events-only transport..."`, `:98-105`).
-- `SubscribeAsync<T>(SleipnirRequest?, ResumePolicy?, CancellationToken)`
-  (`:113-125`), `ResumeAsync<T>(string subscriptionId, long lastEventId, ResumePolicy?, CancellationToken)`
-  (`:133-148`), `SetBearer` (`:95`).
-- Backoff `DefaultReconnectDelays = {0,1,2,5,10,15,30s}` (`:36-45`);
-  `HttpClient.Timeout = InfiniteTimeSpan` (`:82`); empty array disables reconnect
-  (`:89-90`).
+  (`"SleipnirSseClient is an events-only transport..."`).
+- `SubscribeAsync<T>(SleipnirRequest?, ResumePolicy?, CancellationToken)`,
+  `ResumeAsync<T>(string subscriptionId, long lastEventId, ResumePolicy?, CancellationToken)`,
+  `SetBearer`.
+- Backoff `DefaultReconnectDelays = {0,1,2,5,10,15,30s}`;
+  `HttpClient.Timeout = InfiniteTimeSpan`; empty array disables reconnect.
 - Resume URL `{apiPath}/events/{subscriptionId}?lastEventId=…` with the
-  `Last-Event-Id:` header (`:172-188`); **410 Gone** on a GC'd durable id
-  degrades resume → Fresh once, or is terminal on a pure-resume (`:422-449`).
-- `IDisposable.Dispose` (`:196-202`).
+  `Last-Event-Id:` header (built in `ResumeAsync`); **410 Gone** on a GC'd durable
+  id degrades resume → Fresh once, or is terminal on a pure-resume (the
+  410-handling branch in `ResumeAsync`).
+- `IDisposable.Dispose`.
 
-> **Doc-bug note:** `CLAUDE.md:86` and `README_DETAILS.md:816` document this
-> client as `IAsyncDisposable`. The code is `IDisposable` (synchronous `Dispose`
-> disposing the `HttpClient`). This reference follows the code. Fix those two
-> docs when convenient.
+> **Doc-bug note:** `CLAUDE.md` earlier documented this client as
+> `IAsyncDisposable`. The code is `IDisposable` (synchronous `Dispose` disposing
+> the `HttpClient`). This reference follows the code; `CLAUDE.md` has since been
+> corrected — see §10.
 
-### `SleipnirSignalrClient` — `SleipnirSignalrClient.cs:17`
+### `SleipnirSignalrClient` — `SleipnirSignalrClient.cs`
 
 `public class ... : SleipnirClientBase, ISleipnirClient, IAsyncDisposable` —
 calls + events.
 
-- Calls via hub invoke `"DoWork"` (`:105-135`) / `"DoWorkMany"` (`:140-170`).
+- Calls via hub invoke `"DoWork"` / `"DoWorkMany"`.
 - Subscribe `SubscribeAsync<T>(SleipnirRequest?, ResumePolicy?, CancellationToken)`
-  (`:262-275`) and `ResumeAsync<T>(string, long, ResumePolicy?, CancellationToken)`
-  (`:283-306`) — both via hub `StreamAsync<string>("SubscribeAsync", args, ct)`
-  (`:444`). First stream item is the `ack`, then event/complete/error frames
-  (`HandleFrame`, `:453-520`).
-- Thread-safety: `_connectLock = new SemaphoreSlim(1,1)` (`:22`); `_activeSubs`
-  `ConcurrentDictionary` (`:33`).
+  and `ResumeAsync<T>(string, long, ResumePolicy?, CancellationToken)` — both via
+  hub `StreamAsync<string>("SubscribeAsync", args, ct)`. First stream item is the
+  `ack`, then event/complete/error frames (`HandleFrame`).
+- Thread-safety: `_connectLock = new SemaphoreSlim(1,1)`; `_activeSubs`
+  `ConcurrentDictionary`.
 - Auto-reconnect is SignalR's own `WithAutomaticReconnect` with the same backoff
-  schedule (`:79-85`); `Reconnecting`/`Reconnected` handlers **re-stream active
-  subs in resume mode** (`:98-99, 308-324`); a stream-end during reconnect is
-  left for `Reconnected` (`:388-405`).
-- `IAsyncDisposable.DisposeAsync` (`:533-553`).
-- MessagePack: **client defaults `useMessagePack: true`** (`:47, 69-77`) with a
-  custom `JsonElementResolver` to avoid double-wrapping (`:74-76`). Note the
-  server `SleipnirOptions.UseMessagePack` default is `false` — see the
-  mismatch note in §10.
+  schedule; `Reconnecting`/`Reconnected` handlers **re-stream active subs in
+  resume mode**; a stream-end during reconnect is left for `Reconnected`.
+- `IAsyncDisposable.DisposeAsync`.
+- MessagePack: **client defaults `useMessagePack: true`** with a custom
+  `JsonElementResolver` to avoid double-wrapping. Note the server
+  `SleipnirOptions.UseMessagePack` default is `false` — see the mismatch note in
+  §10.
 
-### `SleipnirSubscription<T>` — `SleipnirSubscription.cs:18`
+### `SleipnirSubscription<T>` — `SleipnirSubscription.cs`
 
-`sealed class ... : IObservable<T>, IDisposable`. Wraps a `SleipnirSubject<T>`
-(`:55-111`); `Dispose` sends unsubscribe best-effort with a 5 s timeout
-(`:41-48`).
+`sealed class ... : IObservable<T>, IDisposable`. Wraps a `SleipnirSubject<T>`;
+`Dispose` sends unsubscribe best-effort with a 5 s timeout.
 
 ---
 
@@ -398,31 +397,29 @@ calls + events.
 
 ### The subscribe/resume surface
 
-- **`SubscribeAsync<T>`** — on `ISleipnirClient` (`ISleipnirClient.cs:35`); base
-  default throws `NotSupportedException` (`SleipnirClientBase.cs:99-102`);
-  overridden by WS (`SleipnirWebSocketClient.cs:713`), SSE
-  (`SleipnirSseClient.cs:113`), SignalR (`SleipnirSignalrClient.cs:262`), and the
-  router (`SleipnirTransportRouter.cs:273`).
+- **`SubscribeAsync<T>`** — on `ISleipnirClient` (`ISleipnirClient.cs`); base
+  default throws `NotSupportedException` (`SleipnirClientBase.cs`); overridden by
+  WS (`SleipnirWebSocketClient.cs`), SSE (`SleipnirSseClient.cs`), SignalR
+  (`SleipnirSignalrClient.cs`), and the router (`SleipnirTransportRouter.cs`).
 - **`ResumeAsync<T>(subscriptionId, lastEventId, ResumePolicy?, CancellationToken)`**
-  — `ISleipnirClient.cs:45`; base default throws (`SleipnirClientBase.cs:109-112`);
-  overridden by SSE (`SleipnirSseClient.cs:133`), SignalR
-  (`SleipnirSignalrClient.cs:283`), and the router (`SleipnirTransportRouter.cs:291`).
-  **WS does not override it** → resuming into WS throws (router guards,
-  `SleipnirTransportRouter.cs:296-299`).
+  — `ISleipnirClient.cs`; base default throws (`SleipnirClientBase.cs`);
+  overridden by SSE (`SleipnirSseClient.cs`), SignalR (`SleipnirSignalrClient.cs`),
+  and the router (`SleipnirTransportRouter.cs`). **WS does not override it** →
+  resuming into WS throws (router guards; see §6).
 
 ### `ResumePolicy` & `ResumeDecision` — `ResumeDecision.cs`
 
 ```csharp
-public enum ResumeDecision { Fresh, Resume, Drop }          // :21, :24, :27
-public record struct SubscriptionResumeContext(             // :35-39
+public enum ResumeDecision { Fresh, Resume, Drop }
+public record struct SubscriptionResumeContext(
     string Controller, string Method, string SubscriptionId, long? LastEventId);
-public delegate ResumeDecision? ResumePolicy(SubscriptionResumeContext);  // :48
+public delegate ResumeDecision? ResumePolicy(SubscriptionResumeContext);
 ```
 
-Consulted on WS reconnect (`SleipnirWebSocketClient.cs:854-859`) and SSE reconnect
-(`SleipnirSseClient.cs:498-504`). Returning `null` means "framework default".
-SignalR re-streams in resume mode **without consulting the policy**
-(`SleipnirSignalrClient.cs:314-324`).
+Consulted on WS reconnect (`SleipnirWebSocketClient.cs` reconnect path) and SSE
+reconnect (`SleipnirSseClient.cs` reconnect path). Returning `null` means
+"framework default". SignalR re-streams in resume mode **without consulting the
+policy** (`SleipnirSignalrClient.cs` `Reconnected` handler).
 
 | Decision | Meaning |
 |----------|---------|
@@ -434,104 +431,106 @@ SignalR re-streams in resume mode **without consulting the policy**
 ### Last-Event-Id resume
 
 - **SSE**: resume URL `{apiPath}/events/{subscriptionId}?lastEventId=…` with the
-  `Last-Event-Id:` header on the GET (`SleipnirSseClient.cs:172-188`); server
-  reads the header then the query fallback
-  (`SleipnirSseEndpointExtensions.cs:95-96`).
+  `Last-Event-Id:` header on the GET (`SleipnirSseClient.cs` `ResumeAsync`);
+  server reads the header then the query fallback
+  (`SleipnirSseEndpointExtensions.cs` resume route handler).
 - **WS**: resume sends `subscriptionId` + `lastEventId` fields inside the
-  `subscribe` frame (`SleipnirWebSocketClient.cs:879-888`; server extraction
-  `SleipnirWebSocketMiddleware.cs:233-243`).
+  `subscribe` frame (`SleipnirWebSocketClient.cs` `ResubscribeAllAsync`; server
+  extraction `SleipnirWebSocketMiddleware.cs` subscribe-frame handler).
 - **SignalR**: `StreamAsync("SubscribeAsync", req, resumeId?, lastEventId?, ct)`
-  (`SleipnirSignalrClient.cs:444`).
+  (`SleipnirSignalrClient.cs` `ResumeAsync`).
 
 ### Cross-transport resume
 
 Durable subscriptions live in the **process-wide** `SleipnirSubscriptionStore`
-(`SleipnirCore/Services/SleipnirSubscriptionStore.cs:43`), shared by all three
-event transports (`Lookup`/`Attach`/`Detach`/`Destroy`/`BeginCreate`/`OnAttached`,
-`:81, 95, 102, 110, 123, 264`). A subscription created over WS is resumable over
-SSE/SignalR and vice-versa (`SleipnirSseClient.cs:28-31`,
-`SleipnirSignalrClient.cs:280-282`, `SleipnirHub.cs:18-19`).
+(`SleipnirCore/Services/SleipnirSubscriptionStore.cs`), shared by all three event
+transports (`Lookup`/`Attach`/`Detach`/`Destroy`/`BeginCreate`/`OnAttached`). A
+subscription created over WS is resumable over SSE/SignalR and vice-versa
+(`SleipnirSseClient.cs`, `SleipnirSignalrClient.cs`, `SleipnirHub.cs` — each
+stores into the shared `SleipnirSubscriptionStore`).
 
 The first frame yielded/streamed is always `EventFrame.Ack(subscriptionId, replayedFrom)`
-(`SleipnirCore/Events/EventFrame.cs:38-39`); subsequent frames are the same
-serialized strings every transport emits.
+(`SleipnirCore/Events/EventFrame.cs`); subsequent frames are the same serialized
+strings every transport emits.
 
 ### Intentionally deferred: WS-direction resume
 
 Resuming **into** WebSocket (`router.ResumeAsync` with the active event backend =
 WS) throws `NotSupportedException` with guidance to switch to `rest`/`auto`
-(`SleipnirTransportRouter.cs:296-299`, `PROTOCOL.md:1233-1234`). Reason: a WS
-resume frame needs the original controller/method/params (not carried by a
-`SleipnirSubscription` handle). WS **reconnect** re-subscribe is supported
-(`ResubscribeAllAsync`, `SleipnirWebSocketClient.cs:837-953`); resume-by-id into a
-fresh WS connection is not. The blessed cross-transport bridge is the
-**SSE direction**.
+(`SleipnirTransportRouter.cs` `ResumeAsync` WS guard; `PROTOCOL.md`
+§"Transport selection (client)"). Reason: a WS resume frame needs the original
+controller/method/params (not carried by a `SleipnirSubscription` handle). WS
+**reconnect** re-subscribe is supported (`ResubscribeAllAsync` in
+`SleipnirWebSocketClient.cs`); resume-by-id into a fresh WS connection is not.
+The blessed cross-transport bridge is the **SSE direction**.
 
 > **Server restart:** the durable store is **in-process** — subscriptions do not
-> survive a server restart (`README_DETAILS.md:734`).
+> survive a server restart (`README_DETAILS.md` §"Resume (Last-Event-Id) — resumable events").
 
 ---
 
 ## 7. Server registration & `SleipnirOptions`
 
-### `AddSleipnir` (services) — `SleipnirHub/Extensions/SleipnirServiceCollectionExtension.cs:36-256`
+### `AddSleipnir` (services) — `SleipnirHub/Extensions/SleipnirServiceCollectionExtension.cs` (`AddSleipnir`)
 
-Two overloads: `Action<SleipnirOptions>` (`:36`) and `SleipnirOptions` (`:44`).
+Two overloads: `Action<SleipnirOptions>` and `SleipnirOptions`.
 
-1. Registers `SleipnirOptions` as singleton (`:49`).
-2. Eagerly creates + registers `SleipnirConnectionRegistry` (`:59-62`).
-3. Registers `SleipnirSubscriptionStore` singleton (durable store) (`:69-75`).
-4. If `UseSignalR`: `AddSignalR(...)` with hub-option overrides (`:85-95`); if
-   `UseMessagePack`: `AddMessagePackProtocol` with `JsonElementResolver.Instance`
-   (`:97-105`).
+1. Registers `SleipnirOptions` as singleton.
+2. Eagerly creates + registers `SleipnirConnectionRegistry`.
+3. Registers `SleipnirSubscriptionStore` singleton (durable store).
+4. If `UseSignalR`: `AddSignalR(...)` with hub-option overrides; if
+   `UseMessagePack`: `AddMessagePackProtocol` with `JsonElementResolver.Instance`.
 5. Configures Minimal-API JSON options host-wide (camelCase, relaxed encoder,
-   `SleipnirResponseJsonConverter`) (`:114-119`).
+   `SleipnirResponseJsonConverter`).
 6. Registers the rate limiter with the `"sleipnir"` fixed-window policy when
-   `RateLimitPermitLimit > 0` (`:122-135`).
+   `RateLimitPermitLimit > 0`.
 7. Registers `ISleipnirCore` (`SleipnirInvoker`) singleton with all propagated
-   options (`:140-190`).
+   options.
 8. Registers built-in interceptors (Auth → Telemetry → Logging) when
-   `RegisterBuiltInInterceptors` (`:198-219`); user interceptors appended inner
-   (`:225-232`).
+   `RegisterBuiltInInterceptors`; user interceptors appended inner.
 9. Auto-discovers `[SleipnirController]` types as scoped when
-   `AutoDiscoverControllers` (`:239-253`).
+   `AutoDiscoverControllers`.
 
-### `UseSleipnir` — `:258-318`
+### `UseSleipnir`
 
 Resolves `ISleipnirCore`, applies a `SleipnirControllerBuilder` if registered,
 otherwise auto-registers `[SleipnirController]` types with the invoker
-(`:304-315`). Warns when user interceptors are registered (the batch path
-bypasses the interceptor pipeline — auth still enforced) (`:272-284`).
+(`UseSleipnir` auto-register branch). Warns when user interceptors are registered
+(the batch path bypasses the interceptor pipeline — auth still enforced)
+(`UseSleipnir` interceptor-warning branch).
 
-### `UseSleipnirTransports` — `SleipnirServer/SleipnirPipelineExtensions.cs:35-53`
+### `UseSleipnirTransports` — `SleipnirServer/SleipnirPipelineExtensions.cs` (`UseSleipnirTransports`)
 
 Reads `SleipnirOptions`; if `UseWebSocket != false`, calls `UseWebSockets()` +
 `UseSleipnirWebSocket(webSocketPath)` (default `/sleipnirws`); always calls
 `UseSleipnir()` (controller registration). Emits a startup introspection log
-`Sleipnir transports: REST=…, WebSocket=…, SignalR=…, SSE=…` (`:115-129`).
+`Sleipnir transports: REST=…, WebSocket=…, SignalR=…, SSE=…` (the introspection
+log in `UseSleipnirTransports`).
 
-### `MapSleipnir` — `:62-106`
+### `MapSleipnir` — `SleipnirServer/SleipnirPipelineExtensions.cs` (`MapSleipnir`)
 
 - If `UseRest != false`: `MapSleipnirEndpoints(...)` with
   `enableRateLimiting`/`enableJsonRpcCompat`/`enableObservability`/`signalREnabled`/`useWebSocket`/`useSse`/`sseBufferCapacity`
-  threaded from options (`:80-88`) and `MapSleipnirDeveloperUi` (`:88`).
+  threaded from options (the `MapSleipnirEndpoints` call in `MapSleipnir`) and
+  `MapSleipnirDeveloperUi`.
 - If `UseSignalR == true`: `MapHub<SleipnirHub>(hubPath)` (default `/sleipnirhub`)
   with `RequireAuthorization` when `RequireAuthentication` and
-  `RequireRateLimiting("sleipnir")` when `RateLimitPermitLimit > 0` (`:91-103`).
+  `RequireRateLimiting("sleipnir")` when `RateLimitPermitLimit > 0` (the
+  `MapHub<SleipnirHub>` block in `MapSleipnir`).
 
 ### MessagePack opt-in
 
 `SleipnirOptions.UseMessagePack` → `AddMessagePackProtocol` with
 `JsonElementResolver.Instance` on the server
-(`SleipnirServiceCollectionExtension.cs:97-105`); mirrored on the C# SignalR
-client (`SleipnirSignalrClient.cs:69-77`).
+(`SleipnirServiceCollectionExtension.cs` `AddMessagePackProtocol` branch);
+mirrored on the C# SignalR client (`SleipnirSignalrClient.cs` MessagePack setup).
 
 ### CORS
 
 **Not configured by Sleipnir.** No `AddCors`/`UseCors` call in
 `AddSleipnir`/`UseSleipnirTransports`/`MapSleipnir`. Hosts wire it themselves
-(e.g. `samples/server/Program.cs:31-35, 62`, `guide/server/Program.cs:42-44, 157`).
-Guidance: `BEST_PRACTICES.md:89`.
+(e.g. `samples/server/Program.cs`, `guide/server/Program.cs` — the `UseCors`
+call). Guidance: `BEST_PRACTICES.md` §"1.5 Host and proxy".
 
 ### The canonical 3-call wiring
 
@@ -543,7 +542,7 @@ app.MapSleipnir();             // REST endpoints (+ SSE) + SignalR hub + DevUI
 app.Run();
 ```
 
-(`GETTING_STARTED.md:76-85`.)
+(`GETTING_STARTED.md` §"2. Wire Sleipnir in `Program.cs`".)
 
 ---
 
@@ -599,7 +598,7 @@ await router.ResumeAsync<Quote>(sub.SubscriptionId, lastId, ...);
 ```
 
 > `ResumeAsync` into a WS-active router throws — switch to `rest`/`auto` first
-> (`SleipnirTransportRouter.cs:296-299`).
+> (see §6).
 
 ### 8.5 Events-only consumer (SSE escape hatch)
 
@@ -615,35 +614,35 @@ var sub = await sse.SubscribeAsync<Quote>(req, ...);
 
 ### Server — `SleipnirHub/Extensions/SleipnirOptions.cs`
 
-| Option | Type | Default | Line | Role |
-|--------|------|---------|------|------|
-| `UseRest` | `bool` | `true` | `:81` | Gates REST endpoint group + DevUI |
-| `UseWebSocket` | `bool` | `true` | `:106` | Gates `UseWebSockets` + `UseSleipnirWebSocket` |
-| `UseSse` | `bool` | `true` | `:95` | Gates the SSE `/events/...` endpoints |
-| `UseSignalR` | `bool` | `false` | `:69` | Opt-in SignalR transport + hub mapping |
-| `UseMessagePack` | `bool` | `false` | `:67` | SignalR MessagePack protocol (server) |
-| `EnableJsonRpcCompat` | `bool` | `false` | `:214` | Registers `POST {prefix}/jsonrpc` |
-| `EnableObservability` | `bool` | `false` | `:229` | Registers `GET {prefix}/observability` |
-| `RequireAuthentication` | `bool` | `false` | `:142` | North-bound default-deny (WS upgrade, `/discovery`, `/observability`, JSON-RPC `sleipnir.discover`, hub `RequireAuthorization`) |
-| `RateLimitPermitLimit` | `int` | `0` (off) | `:123` | Fixed-window `"sleipnir"` permit limit; `>0` enables it on REST + hub |
-| `RateLimitWindowSeconds` | `int` | `10` | `:128` | Fixed-window window size |
-| `MaximumReceiveMessageSize` | `long?` | `null` (SignalR default) | `:7` | SignalR hub max message size |
-| `StreamBufferCapacity` | `int?` | `null` | `:9` | SignalR `HubOptions.StreamBufferCapacity` |
-| `MaximumParallelInvocationsPerClient` | `int` | `0` | `:65` | SignalR; only applied when `>0` (else SignalR throws at startup) |
-| `MaximumBatchSize` | `int` | `0` (off) | `:154` | Fan-out DoS cap; enforced at REST `/json/multi`, WS multi, JSON-RPC batch |
-| `EventBufferCapacity` | `int?` | `null` (fb 100) | `:21` | Per-subscription event send-buffer (WS/SSE/SignalR) |
-| `EventBackpressureStrategy` | `EventBackpressureStrategy` | `DropOldest` | `:35` | Overflow strategy |
-| `EventReplayBufferCapacity` | `int?` | `null` (fb 1000) | `:45` | Durable replay ring capacity |
-| `EventResumeTtl` | `TimeSpan?` | `null` (fb 60s) | `:55` | Idle durable subscription TTL |
-| `EventMaxDurableSubscriptions` | `int?` | `null` (fb 10 000) | `:63` | Process-wide durable cap (over-cap → 503) |
+| Option | Type | Default | Role |
+|--------|------|---------|------|
+| `UseRest` | `bool` | `true` | Gates REST endpoint group + DevUI |
+| `UseWebSocket` | `bool` | `true` | Gates `UseWebSockets` + `UseSleipnirWebSocket` |
+| `UseSse` | `bool` | `true` | Gates the SSE `/events/...` endpoints |
+| `UseSignalR` | `bool` | `false` | Opt-in SignalR transport + hub mapping |
+| `UseMessagePack` | `bool` | `false` | SignalR MessagePack protocol (server) |
+| `EnableJsonRpcCompat` | `bool` | `false` | Registers `POST {prefix}/jsonrpc` |
+| `EnableObservability` | `bool` | `false` | Registers `GET {prefix}/observability` |
+| `RequireAuthentication` | `bool` | `false` | North-bound default-deny (WS upgrade, `/discovery`, `/observability`, JSON-RPC `sleipnir.discover`, hub `RequireAuthorization`) |
+| `RateLimitPermitLimit` | `int` | `0` (off) | Fixed-window `"sleipnir"` permit limit; `>0` enables it on REST + hub |
+| `RateLimitWindowSeconds` | `int` | `10` | Fixed-window window size |
+| `MaximumReceiveMessageSize` | `long?` | `null` (SignalR default) | SignalR hub max message size |
+| `StreamBufferCapacity` | `int?` | `null` | SignalR `HubOptions.StreamBufferCapacity` |
+| `MaximumParallelInvocationsPerClient` | `int` | `0` | SignalR; only applied when `>0` (else SignalR throws at startup) |
+| `MaximumBatchSize` | `int` | `0` (off) | Fan-out DoS cap; enforced at REST `/json/multi`, WS multi, JSON-RPC batch |
+| `EventBufferCapacity` | `int?` | `null` (fb 100) | Per-subscription event send-buffer (WS/SSE/SignalR) |
+| `EventBackpressureStrategy` | `EventBackpressureStrategy` | `DropOldest` | Overflow strategy |
+| `EventReplayBufferCapacity` | `int?` | `null` (fb 1000) | Durable replay ring capacity |
+| `EventResumeTtl` | `TimeSpan?` | `null` (fb 60s) | Idle durable subscription TTL |
+| `EventMaxDurableSubscriptions` | `int?` | `null` (fb 10 000) | Process-wide durable cap (over-cap → 503) |
 
 Transport-adjacent (not transport itself, but on the same options object):
-`AliasBindingMode` (`:204`, default `Weak`), `MaxDependencyPathLength` (`:166`),
-`AllowRecursiveDescent` (`:176`), `MaxParameterArrayLength` (`:185`),
-`MaxResultElementCount` (`:193`), `AutoDiscoverControllers` (`:118`),
-`EnableDetailedErrors` (`:5`). See `DEPENDENCY_BINDING.md` for the alias ones.
+`AliasBindingMode` (default `Weak`), `MaxDependencyPathLength`,
+`AllowRecursiveDescent`, `MaxParameterArrayLength`, `MaxResultElementCount`,
+`AutoDiscoverControllers`, `EnableDetailedErrors`. See `DEPENDENCY_BINDING.md`
+for the alias ones.
 
-### Client — `SleipnirRouterOptions` (`SleipnirTransportRouter.cs:41-61`)
+### Client — `SleipnirRouterOptions` (`SleipnirTransportRouter.cs`)
 
 See §3 table. Defaults: `Capability = All`, `DefaultTransport = Auto`,
 `ProbeTimeout = 1500ms`, `ApiPath = "api/sleipnir"`, `WsPath = "sleipnirws"`,
@@ -651,24 +650,25 @@ See §3 table. Defaults: `Capability = All`, `DefaultTransport = Auto`,
 
 ### Reconnect schedules (per backend)
 
-| Backend | `DefaultReconnectDelays` | Line | Disable |
-|----------|--------------------------|------|---------|
-| WS | `{2,2,5,5,10,10,30,30s,1,1,5min}` | `SleipnirWebSocketClient.cs:30-43` | empty array |
-| SSE | `{0,1,2,5,10,15,30s}` | `SleipnirSseClient.cs:36-45` | empty array |
-| SignalR | same schedule via `WithAutomaticReconnect` | `SleipnirSignalrClient.cs:79-85` | (SignalR-managed) |
+| Backend | `DefaultReconnectDelays` | Where | Disable |
+|----------|--------------------------|-------|---------|
+| WS | `{2,2,5,5,10,10,30,30s,1,1,5min}` | `SleipnirWebSocketClient.cs` | empty array |
+| SSE | `{0,1,2,5,10,15,30s}` | `SleipnirSseClient.cs` | empty array |
+| SignalR | same schedule via `WithAutomaticReconnect` | `SleipnirSignalrClient.cs` | (SignalR-managed) |
 | REST | — (stateless) | — | n/a |
 
 ### Message-size caps
 
 | Surface | Cap | Source |
 |---------|-----|--------|
-| REST body | 1 MB | `SleipnirEndpointExtensions.cs:41` |
-| WS message | 1 MB | `SleipnirWebSocketMiddleware.cs:80` |
-| SignalR | `MaximumReceiveMessageSize` (default per SignalR) | `SleipnirOptions.cs:7` |
-| Batch fan-out | `MaximumBatchSize` (default unlimited) | `SleipnirOptions.cs:154` |
+| REST body | 1 MB | `SleipnirEndpointExtensions.cs` (`[RequestSizeLimit(1_048_576)]`) |
+| WS message | 1 MB | `SleipnirWebSocketMiddleware.cs` (`MaxMessageSize`) |
+| SignalR | `MaximumReceiveMessageSize` (default per SignalR) | `SleipnirOptions.cs` (`MaximumReceiveMessageSize`) |
+| Batch fan-out | `MaximumBatchSize` (default unlimited) | `SleipnirOptions.cs` (`MaximumBatchSize`) |
 
-Compression per transport: `BEST_PRACTICES.md:91-135`. Binary per transport:
-`BEST_PRACTICES.md:141-161`, `README.md:252-256`.
+Compression per transport: `BEST_PRACTICES.md` §"1.6 Compression — enable at the
+transport, not in Sleipnir". Binary per transport: `BEST_PRACTICES.md`
+§"2.1 `byte[]` travels out of band", `README.md` (binary-per-transport section).
 
 ---
 
@@ -676,58 +676,61 @@ Compression per transport: `BEST_PRACTICES.md:91-135`. Binary per transport:
 
 ### Errors
 
-**`SleipnirException`** (`SleipnirCommon/Exceptions/SleipnirException.cs:8`) is the
-unified exception for all transport + invocation errors; carries `SleipnirError?`
-(`:13`). `SleipnirError` carries `Code`, `Message`, `RequestId`, `Category`
-(`SleipnirCommon/Models/SleipnirError.cs:12-66`). See `ERROR_CATALOG.md` for the
-category-aware handling (499 = client closed on REST, `:35`).
+**`SleipnirException`** (`SleipnirCommon/Exceptions/SleipnirException.cs`) is the
+unified exception for all transport + invocation errors; carries `SleipnirError?`.
+`SleipnirError` carries `Code`, `Message`, `RequestId`, `Category`
+(`SleipnirCommon/Models/SleipnirError.cs`). See `ERROR_CATALOG.md` for the
+category-aware handling (499 = client closed on REST).
 
 | Symptom | Cause / message | Where |
 |---------|-----------------|-------|
-| `Sleipnir transport 'X' is not available: the client was generated with --transport <cap>...` | `UseTransportAsync`/profile resolve hit a backend not bundled for the capability (`NotBundled`) | `SleipnirTransportRouter.cs:155-156` |
-| `Sleipnir transport 'X' is not a valid profile.` | Unknown `SleipnirTransport` value | `:151` |
-| `SleipnirTransportRouter: BaseUrl is required.` | Blank `BaseUrl` | `:93` |
-| `NotSupportedException` on `ResumeAsync` into WS | WS-direction resume deferred — switch to `rest`/`auto` | `:296-299` |
-| `NotSupportedException` "events-only transport..." on SSE `Call` | `SleipnirSseClient` carries events only | `SleipnirSseClient.cs:99, 104` |
-| `"Not connected to server."` (SignalR) | Hub not connected before a call/subscribe | `SleipnirSignalrClient.cs:111, 146, 227, 269, 290` |
-| `"WebSocket reconnect exhausted — connection stays offline."` | Reconnect backoff exhausted | `SleipnirWebSocketClient.cs:589-590` |
-| `"SSE resume target gone (410): subscription expired."` | Durable id GC'd; pure-resume is terminal, mixed degrades once | `SleipnirSseClient.cs:444` |
-| `"Malformed SSE ack block."` | First SSE block was not a valid `ack` | `SleipnirSseClient.cs:369` |
-| `503` on subscribe | Durable subscription cap exceeded (`EventMaxDurableSubscriptions`) | `SleipnirOptions.cs:63` |
+| `Sleipnir transport 'X' is not available: the client was generated with --transport <cap>...` | `UseTransportAsync`/profile resolve hit a backend not bundled for the capability (`NotBundled`) | `SleipnirTransportRouter.cs` — `NotBundled` |
+| `Sleipnir transport 'X' is not a valid profile.` | Unknown `SleipnirTransport` value | `SleipnirTransportRouter.cs` — `ResolveProfile` |
+| `SleipnirTransportRouter: BaseUrl is required.` | Blank `BaseUrl` | `SleipnirTransportRouter.cs` — ctor guard |
+| `NotSupportedException` on `ResumeAsync` into WS | WS-direction resume deferred — switch to `rest`/`auto` | `SleipnirTransportRouter.cs` — `ResumeAsync` WS guard |
+| `NotSupportedException` "events-only transport..." on SSE `Call` | `SleipnirSseClient` carries events only | `SleipnirSseClient.cs` |
+| `"Not connected to server."` (SignalR) | Hub not connected before a call/subscribe | `SleipnirSignalrClient.cs` |
+| `"WebSocket reconnect exhausted — connection stays offline."` | Reconnect backoff exhausted | `SleipnirWebSocketClient.cs` |
+| `"SSE resume target gone (410): subscription expired."` | Durable id GC'd; pure-resume is terminal, mixed degrades once | `SleipnirSseClient.cs` |
+| `"Malformed SSE ack block."` | First SSE block was not a valid `ack` | `SleipnirSseClient.cs` |
+| `503` on subscribe | Durable subscription cap exceeded (`EventMaxDurableSubscriptions`) | `SleipnirOptions.cs` — `EventMaxDurableSubscriptions` |
 
 ### Known limitations & gotchas
 
 - **MessagePack default mismatch:** `SleipnirOptions.UseMessagePack` defaults
   `false` (server), but the C# `SleipnirSignalrClient` defaults `useMessagePack:
-  true` (`SleipnirSignalrClient.cs:47`). If the server does not enable
-  MessagePack, the SignalR client must be constructed with `useMessagePack: false`
-  or the handshake will fail.
+  true` (`SleipnirSignalrClient.cs` — `useMessagePack` default). If the server does
+  not enable MessagePack, the SignalR client must be constructed with
+  `useMessagePack: false` or the handshake will fail.
 - **`MaximumParallelInvocationsPerClient`** must be `>0` if set, otherwise
-  SignalR throws at startup (`SleipnirServiceCollectionExtension.cs:82-94`).
-- **WS has no native binary frames** — JSON text only
-  (`SleipnirWebSocket/README.md:184`). Use REST/SignalR for `byte[]`.
+  SignalR throws at startup (`SleipnirServiceCollectionExtension.cs` `AddSignalR`
+  validation).
+- **WS has no native binary frames** — JSON text only (`SleipnirWebSocket/README.md`).
+  Use REST/SignalR for `byte[]`.
 - **SSE named-params only** — positional/binary are WS/SignalR-only
-  (`SleipnirTransportRouter.cs:267-272`).
+  (`SleipnirTransportRouter.cs` `SubscribeAsync` SSE-unpack branch).
 - **Durable store is in-process** — no resume across a server restart
-  (`README_DETAILS.md:734`).
+  (`README_DETAILS.md` §"Resume (Last-Event-Id) — resumable events").
 - **Batch paths bypass user interceptors** — REST `/json/multi`, WS multi,
   JSON-RPC batch skip the interceptor pipeline (auth still enforced)
-  (`SleipnirServiceCollectionExtension.cs:267-284`).
+  (`SleipnirServiceCollectionExtension.cs` `UseSleipnir` interceptor-warning branch).
 - **`WebSocketAllowedOrigins` (CSWSH protection) is planned, not implemented**
-  (`docs/audits/2026-08-08-consolidation-roadmap.md:256`).
+  (`docs/audits/2026-08-08-consolidation-roadmap.md` — `WebSocketAllowedOrigins`
+  entry).
 - **Python stays REST-only** (no async WS/SSE runtime in the codegen client)
   (`clients/codegen/README.md`, `sleipnir-unified-transport` memory).
 - **Deprecated capability aliases** `sse` (→ `rest`) and `both` (→ `all`) kept
   for one minor version; scheduled for removal next major
-  (`clients/codegen/src/emitters/ts.ts:45-48`).
+  (`clients/codegen/src/emitters/ts.ts` `canonicalizeCapability`).
 
 ### Doc-bugs addressed
 
-- `CLAUDE.md:86` called `SleipnirSseClient` `IAsyncDisposable`; the code is
-  `IDisposable` (`SleipnirSseClient.cs:33`). **Fixed** — `CLAUDE.md:86` now reads
-  `IDisposable`. (An earlier draft of this note also cited `README_DETAILS.md:816`,
-  but that line concerns REST streaming materialization, not `SleipnirSseClient`
-  disposal — no disposal claim exists in `README_DETAILS.md`.)
+- `CLAUDE.md` §"Client Library (`SleipnirClient`)" called `SleipnirSseClient`
+  `IAsyncDisposable`; the code is `IDisposable` (`SleipnirSseClient.cs`). **Fixed**
+  — `CLAUDE.md` now reads `IDisposable`. (An earlier draft of this note also
+  cited `README_DETAILS.md`, but that passage concerns REST streaming
+  materialization, not `SleipnirSseClient` disposal — no disposal claim exists in
+  `README_DETAILS.md`.)
 
 ---
 
@@ -758,16 +761,16 @@ Shipped as v1.4.0 (2026-08-20, PR #15 → main `b4866ef`). See the
 
 | Doc | Covers (transport-relevant) |
 |-----|------------------------------|
-| `README.md` | Multi-transport thesis, package matrix, server quick start, transport table (`:225-229`), binary-per-transport (`:252-256`) |
-| `README_DETAILS.md` | Transports (`:197-204`), Server-Push Events (`:484-680`), Resume Last-Event-Id (`:681-735`), REST Events SSE (`:761-808`), Known Limitations v1 (`:810-825`) |
-| `PROTOCOL.md` | Wire spec: Transports (`:525-595`), Server-Push Events (`:597-855`), REST Events SSE (`:873-923`), client transport selection + capability→backend table (`:1198-1234`) |
+| `README.md` | Multi-transport thesis, package matrix, server quick start, transport table, binary-per-transport |
+| `README_DETAILS.md` | Transports, Server-Push Events, Resume Last-Event-Id, REST Events SSE, Known Limitations v1 |
+| `PROTOCOL.md` | Wire spec: Transports, Server-Push Events, REST Events SSE, transport selection + capability→backend table |
 | `JSONRPC_COMPAT.md` | JSON-RPC 2.0 adapter: enable, wire shape, endpoint, error-code map, limitations |
-| `BEST_PRACTICES.md` | Host/proxy + message-size caps (`:72-87`), compression per transport (`:91-135`), binary per transport (`:141-161`), REST interplay (`:273-461`) |
-| `STABILITY.md` | Stable vs experimental surface: WS/hub paths (`:45`), transport toggles (`:75-83`), client runtime stability (`:122-128`), Phase R/S status (`:203-211`) |
-| `GETTING_STARTED.md` | Canonical 3-call wiring (`:76-85`) |
+| `BEST_PRACTICES.md` | Host/proxy + message-size caps, compression per transport, binary per transport, REST interplay |
+| `STABILITY.md` | Stable vs experimental surface: WS/hub paths, transport toggles, client runtime stability, Phase R/S status |
+| `GETTING_STARTED.md` | Canonical 3-call wiring |
 | `CODEGEN_REFERENCE.md` | `--transport` capability semantics, generated client wraps `SleipnirTransportRouter` |
 | `ERROR_CATALOG.md` | Transport-uniform `SleipnirError.Category`, 499 = client closed |
-| `CLAUDE.md` | Transport table (`:70-76`), JSON-RPC adapter summary (`:78`), client library (`:80-89`) |
+| `CLAUDE.md` | Transport table, JSON-RPC adapter summary, client library |
 | `SleipnirClient/README.md` | Full client reference: backends, router, escape hatches, events, resume limitations, binary, errors |
 | `SleipnirRest/README.md` / `SleipnirWebSocket/README.md` / `SleipnirHub/README.md` | Per-transport package details |
 | `docs/stories/03-the-same-contract-three-wires.md` | "Same contract, three wires" narrative |

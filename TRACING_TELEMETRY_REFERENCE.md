@@ -374,18 +374,20 @@ are cost-neutral without a listener/SDK.
   `exception.*` tags; only a thrown exception does
   (`SleipnirTracingTests.cs:83`).
 
-### Doc-bugs to fix when convenient
+### Doc-bugs addressed
 
-- **`CLAUDE.md:156-158` names the third instrumentation site
+- **`CLAUDE.md:156-158` named the third instrumentation site
   "ExecuteSingleInvocation".** No method of that exact name exists in
   `SleipnirInvoker.cs`; the name survives only in comments (`:1435`, `:1439`).
   The actual per-request span sites are `ExecuteAuthorized` (`:1449`) and
   `TraceCallError` (`:1543`). The single-call helper
-  `ExecuteSingleInvocationSimple` (`:512`) opens no span.
-- **`CLAUDE.md:158` references "two parallel registration factories
+  `ExecuteSingleInvocationSimple` (`:512`) opens no span. **Fixed** —
+  `CLAUDE.md:158` now names `ExecuteAuthorized`.
+- **`CLAUDE.md:158` referenced "two parallel registration factories
   (`AddSleipnir` + `AddSleipnirCore`)".** `AddSleipnirCore` was deleted in 1.1.2
   (R1); only `AddSleipnir` remains. The "no synchronization" claim is now
-  trivially true (tracing is static, not DI-registered).
+  trivially true (tracing is static, not DI-registered). **Fixed** —
+  `CLAUDE.md:158` now references only `AddSleipnir`.
 
 ---
 

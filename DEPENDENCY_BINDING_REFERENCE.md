@@ -472,9 +472,14 @@ the **executable spec**.
 | `EVENTS_REFERENCE.md` | Events are **not chainable** — `@alias`/`exposes` apply to call results, not event streams (`§1`). |
 | `CODEGEN_REFERENCE.md` | `@alias` literal serialization in generated clients, the `@`-normalization fix. |
 
-> **Doc-bugs to fix when convenient:** the `CLAUDE.md:89` two-argument
-> `WithAlias("@alias", "default")` overload is not present in `SleipnirCall.cs`
-> (only the single-arg form at `:59`) — verify whether it lives in
-> `Sleipnir.Client.Linq` or the line is stale. The German cardinality-cap and
-> cycle messages (`SleipnirInvoker.cs:1659-1668`, `DependencyGraphBuilder.cs:87-93`)
-> are legacy strings CLAUDE.md flags for opportunistic English migration.
+> **Doc-bugs addressed:** the `CLAUDE.md:89` two-argument
+> `WithAlias("@alias", "default")` overload was not present in `SleipnirCall.cs`
+> (only the single-arg form at `:59`); there is no implicit default fallback in
+> v1, so an unresolved `@alias` fails the call. **Fixed** — `CLAUDE.md:89` now
+> shows `.WithAlias("@alias")` and states the no-fallback contract. The German
+> cardinality-cap and cycle messages (`SleipnirInvoker.cs:1659-1668`,
+> `DependencyGraphBuilder.cs:87-93`) were legacy strings CLAUDE.md flagged for
+> opportunistic English migration. **Fixed** — both are now English
+> ("…exceeds MaxParameterArrayLength…", "Cycle detected in dependencies…"),
+> and the `DependencyGraphBuilderTests` assertion moved from `*Zyklus*` to
+> `*Cycle*`.

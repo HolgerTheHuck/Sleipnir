@@ -419,11 +419,12 @@ the codegen golden will drift.
   `Documentation` resolves to the method's summary.
 - **No WebSocket / SignalR discovery.** Only REST `GET /discovery` and JSON-RPC
   `sleipnir.discover` serve `DiscoveryInfo`.
-- **`CODEGEN_REFERENCE.md` does not currently exist** as a file in the repo
-  (the nearest existing codegen docs are `CODEGEN_ONBOARDING.md` and
-  `CLIENT_GENERATION.md`); `TRANSPORT_REFERENCE.md`/`EVENTS_REFERENCE.md`/
-  `DEPENDENCY_BINDING_REFERENCE.md` reference it, so treat those cross-links as
-  pointing at the codegen-onboarding body of knowledge, not a literal file.
+- **`CODEGEN_REFERENCE.md` is not yet on `main`** — it exists only on the
+  sibling branch `devui-json-view-codegen-relabel` (commit `994dcac`); the nearest
+  existing codegen docs on `main` are `CODEGEN_ONBOARDING.md` and
+  `CLIENT_GENERATION.md`. `TRANSPORT_REFERENCE.md`/`EVENTS_REFERENCE.md`/
+  `DEPENDENCY_BINDING_REFERENCE.md` cross-link it; those links resolve once
+  `devui-json-view-codegen-relabel` merges.
 - **Name collision is a startup hard-fail** — a duplicated `[SleipnirController]`
   name or `[SleipnirMethod]` name throws at registration (`SleipnirInvoker.cs:183-190`,
   `:240-248`), not at call time.
@@ -462,8 +463,8 @@ the codegen golden will drift.
 | `DEPENDENCY_BINDING_REFERENCE.md` | Discovery as the schema source for the DevUI static checker (§11). |
 
 > **Note:** `CODEGEN_REFERENCE.md` is referenced by `TRANSPORT_REFERENCE.md`,
-> `EVENTS_REFERENCE.md`, and `DEPENDENCY_BINDING_REFERENCE.md` but does not
-> currently exist as a file — the actual codegen docs are `CODEGEN_ONBOARDING.md`
-> and `CLIENT_GENERATION.md`. Treat the `CODEGEN_REFERENCE.md` cross-links in
-> those docs as pointing at the codegen-onboarding body of knowledge until that
-> reference is written.
+> `EVENTS_REFERENCE.md`, and `DEPENDENCY_BINDING_REFERENCE.md`. It is not yet on
+> `main` — it lives on the sibling branch `devui-json-view-codegen-relabel`
+> (commit `994dcac`); the codegen docs currently on `main` are
+> `CODEGEN_ONBOARDING.md` and `CLIENT_GENERATION.md`. The cross-links resolve
+> once `devui-json-view-codegen-relabel` merges.

@@ -721,10 +721,13 @@ category-aware handling (499 = client closed on REST, `:35`).
   for one minor version; scheduled for removal next major
   (`clients/codegen/src/emitters/ts.ts:45-48`).
 
-### Doc-bugs to fix when convenient
+### Doc-bugs addressed
 
-- `CLAUDE.md:86` and `README_DETAILS.md:816` call `SleipnirSseClient`
-  `IAsyncDisposable`; the code is `IDisposable` (`SleipnirSseClient.cs:33, 196`).
+- `CLAUDE.md:86` called `SleipnirSseClient` `IAsyncDisposable`; the code is
+  `IDisposable` (`SleipnirSseClient.cs:33`). **Fixed** — `CLAUDE.md:86` now reads
+  `IDisposable`. (An earlier draft of this note also cited `README_DETAILS.md:816`,
+  but that line concerns REST streaming materialization, not `SleipnirSseClient`
+  disposal — no disposal claim exists in `README_DETAILS.md`.)
 
 ---
 

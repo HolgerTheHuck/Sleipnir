@@ -105,7 +105,7 @@ public class DependencyGraphBuilderTests
 
         // Assert
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Zyklus*");
+            .WithMessage("*Cycle*");
     }
 
     [Fact]

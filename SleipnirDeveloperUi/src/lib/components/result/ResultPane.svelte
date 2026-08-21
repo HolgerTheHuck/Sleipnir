@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tabState } from '../../state/tabs.svelte.ts';
-  import { formatJson } from '../../utils/json';
+  import JsonView from './JsonView.svelte';
 
   let statusClass = $derived.by(() => {
     const status = tabState.activeTab?.status ?? '';
@@ -33,7 +33,7 @@
     </div>
 
     <span class="field-label">Response</span>
-    <pre class="code view"><code>{tabState.activeTab.responseText}</code></pre>
+    <JsonView value={tabState.activeTab.responseText} />
 
     {#if tabState.activeTab.log}
       <span class="field-label">Errors / Info</span>
@@ -84,6 +84,7 @@
   .error-log {
     color: var(--error);
     max-height: 120px;
+    flex: 0 1 auto;
   }
   .empty-state {
     flex: 1;

@@ -105,35 +105,56 @@ consumers need a standard, not proprietary discovery JSON.
 
 ### 3.1 Discovery → OpenAPI document
 
-**What.** A read-only endpoint (or build-time export) emitting an OpenAPI 3.1 doc:
-each `[SleipnirMethod]` becomes a POST operation against the known REST envelope;
-contract types expand to component schemas (the Weg-C inference already computes these
-for discovery — reuse `SleipnirDiscoveryService` output).
+**What.** A read-only export emitting an OpenAPI 3.1 doc: each `[SleipnirMethod]` becomes
+its own pseudo-operation (`…/json/{Controller}/{Method}`, flat body `{param: value}`,
+typed response schema). Contract types expand to component schemas (the Weg-C inference
+already computes these for discovery — reuse `SleipnirDiscoveryService` output).
+
+**Honest value assessment (discussed 2026-08-22).** All real calls share ONE endpoint with
+the params-envelope; the per-method paths are a *description* device. What the document
+genuinely buys:
+
+- **Structured request editing** in Postman/Insomnia/Swagger UI — typed parameter fields
+  and response trees instead of hand-written JSON (✅ works as-is).
+- **Collection import** — every controller/method as a documented, sorted request set (✅).
+- **Mock servers** for single calls — frontend development without a running backend
+  (⚠️ single-call only; chaining is resolved server-side and cannot be mocked).
+- **Generated foreign clients** (openapi-generator etc.) are NOT functional against the
+  canonical envelope out of the box (⚠️). They become fully functional only if the REST
+  transport additionally accepts the flat path convention
+  `POST /api/sleipnir/json/{controller}/{method}` with a flat body — see 3.3.
+
+So the primary target is **tooling interoperability**, not foreign clients; 3.3 upgrades
+that to full client interop if wanted.
 
 **Concrete steps.**
 1. Spike: map `DiscoveryInfo` → OpenAPI paths/schemas in a new `Sleipnir.Server.Codegen`
    export mode (build-time first — no new runtime surface).
 2. Decide runtime endpoint later (`GET /api/sleipnir/openapi`) behind an option.
-3. Validate round-trip: import the emitted doc into Postman/Swagger UI and execute a call.
+3. Validate round-trip: import the emitted doc into Postman/Swagger UI; assert the editor
+   shows typed fields and a successful call executes.
 
-**Acceptance.** Postman can import and successfully call a Sleipnir method from the
-generated document alone.
+**Acceptance.** Postman imports the document, shows typed parameter editors for every
+method, and successfully executes a call.
 
 **Effort.** M-L (schema mapping is mechanical; envelope details need care).
 
 ### 3.2 Discovery → JSON Schema per contract type
 
-**What.** Simpler sibling of 3.1: emit standalone JSON Schema for each expanded contract
-type. Feeds mocks, form generators, other-language clients directly.
+*(unchanged)*
 
-**Concrete steps.** Reuse the Weg-C expansion; emit `$defs` per type; expose via codegen
-export alongside `contract.sleipnir.json`.
+### 3.3 (optional enabler) Flat path convention on the REST transport
 
-**Acceptance.** Every type visible in DevUI has a downloadable/standalone JSON Schema.
+**What.** Accept `POST /api/sleipnir/json/{controller}/{method}` with a flat JSON body
+(`{"id": 42}`) as syntactic sugar for the canonical envelope. Additive; the params-array
+envelope stays the wire truth (PROTOCOL.md unchanged).
 
-**Effort.** S-M.
+**Why it matters.** This single additive feature is what turns the OpenAPI document from a
+"description" into a working contract for generated foreign clients — without it, P3's
+ceiling is tooling interop only.
 
-*(AsyncAPI for events is a candidate after 3.1/3.2 prove the pattern — not started.)*
+**Effort.** S-M. **Decision needed:** whether that convenience surface fits the protocol's
+minimalism (it does not change the canonical wire, but it doubles the REST ingress shape).
 
 ---
 

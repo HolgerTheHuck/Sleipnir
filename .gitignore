@@ -75,6 +75,11 @@ dist/
 # Standalone-Build der DevUI (regenerierbares Artifact für npm/GitHub Pages)
 dist-standalone/
 
+# npm-Artefakt im Repo-Root: entsteht, wenn versehentlich `npm install` im Root
+# statt in clients/ts ausgeführt wird (leerer Lockfile mit Ordnernamen als Name).
+# Echte Lockfiles liegen in clients/ts und clients/codegen und sind committed.
+/package-lock.json
+
 # BenchmarkDotNet output
 BenchmarkDotNet.Artifacts/
 

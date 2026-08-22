@@ -299,6 +299,17 @@ namespace SleipnirCore.Services
                 throw new InvalidOperationException(
                     $"Batch exceeds MaximumBatchSize ({MaximumBatchSize}): {requestList.Count} requests.");
 
+            // GraphKey-Kollisions-Gate (audit 2026-08-22 / F3) — für ALLE Batch-Modi:
+            // doppelte Ids oder id-lose Requests auf derselben Route kollidieren im
+            // GraphKey-Raum. Primär betrifft das die @alias-Auflösung (GraphBuilder-
+            // requestById überschreibt, priorResponses nimmt den letzten Write, Serial-
+            // TryAdd schlägt still fehl → falsche Alias-Quelle), aber auch ohne Aliase
+            // brechen doppelte Ids die Client-Korrelation (zwei Responses, eine Id).
+            // Fail-loud am Batch-Eingang.
+            var keyCollisionErrors = DetectGraphKeyCollisions(requestList);
+            if (keyCollisionErrors != null)
+                return keyCollisionErrors;
+
             // Batch-Parent-Activity (rpc.system + sleipnir.batch.mode/count). Null ohne Listener.
             using var batchActivity = SleipnirTracing.StartBatch(requestList, mode);
 
@@ -603,6 +614,9 @@ namespace SleipnirCore.Services
             CancellationToken ct)
         {
             var requestList = requests.ToList();
+
+            // GraphKey-Kollisions-Gate läuft zentral in InvokeDi (alle Batch-Modi).
+
             // Lookup nach Id für die @alias-Auflösung innerhalb der Sequenz.
             var responses = new ConcurrentDictionary<string, SleipnirResponse?>();
             // Ergebnis in Request-Reihenfolge sammeln — ConcurrentDictionary.Values
@@ -703,6 +717,20 @@ namespace SleipnirCore.Services
                 }
             }
 
+            // Duplicate-alias gate (fail-loud, analog zur Name-Uniqueness bei der Registrierung):
+            // Zwei Requests, die denselben Alias exposen, machen die Auflösung nichtdeterministisch —
+            // aliasToProvider nimmt "last in request order", während ResolveParameterValues die
+            // ExposedDependencies ALLER priorResponses.Values merged (ConcurrentDictionary.Values
+            // hat keine definierte Reihenfolge). Verfügbarkeitsprüfung könnte gegen Provider A
+            // bestehen, während Provider B's Fragment injiziert wird. Daher: hart am Batch-Eingang
+            // ablehnen, bevor irgendein Request läuft.
+            var duplicateAliasErrors = DetectDuplicateAliasProviders(requests);
+            if (duplicateAliasErrors != null)
+                return duplicateAliasErrors;
+
+            // GraphKey-Kollisions-Gate läuft zentral in InvokeDi (alle Batch-Modi) —
+            // hier im topologischen Pfad kein zweiter Check nötig.
+
             var allResponses = new List<SleipnirResponse?>();
 
             // Aufgetürmte Responses VORHERIGER Batches — abhängige Requests lesen hieraus ihre
@@ -750,6 +778,97 @@ namespace SleipnirCore.Services
             var id = r.Id ?? string.Empty;
             return !string.IsNullOrEmpty(id) ? id : $"{r.Controller}.{r.Method}";
         }
+
+        /// <summary>
+        /// Duplicate-alias gate: prüft, ob zwei Requests im Batch denselben Alias exposen.
+        /// Gibt im Kollisionsfall per-Request-400s für ALLE Requests des Batches zurück
+        /// (der Batch ist als Ganzes nicht ausführbar), sonst <c>null</c>. Vergleich ordinal
+        /// — konsistent mit <see cref="aliasToProvider"/> und der Alias-Erkennung in
+        /// <see cref="ReplaceDependencyByAliasCore"/>.
+        /// </summary>
+        private static List<SleipnirResponse?>? DetectDuplicateAliasProviders(List<SleipnirRequest> requests)
+        {
+            // alias → Graph-Key des ersten Providers (für die Fehlermeldung).
+            var firstProviderByAlias = new Dictionary<string, string>(StringComparer.Ordinal);
+            string? duplicateAlias = null;
+            string duplicateProviderA = string.Empty, duplicateProviderB = string.Empty;
+
+            foreach (var r in requests)
+            {
+                if (r.DependencyMapping == null) continue;
+                foreach (var alias in r.DependencyMapping.Keys)
+                {
+                    if (firstProviderByAlias.TryGetValue(alias, out var first))
+                    {
+                        duplicateAlias = alias;
+                        duplicateProviderA = first;
+                        duplicateProviderB = GraphKey(r);
+                        break;
+                    }
+                    firstProviderByAlias[alias] = GraphKey(r);
+                }
+                if (duplicateAlias != null) break;
+            }
+
+            if (duplicateAlias == null) return null;
+
+            _ = duplicateProviderA; // in der Meldung unten verwendet
+            var message =
+                $"Duplicate alias '@{duplicateAlias}': provided by '{duplicateProviderA}' and '{duplicateProviderB}'. " +
+                "Each alias must be exposed by exactly one request in the batch.";
+            return requests.Select(r => new SleipnirResponse
+            {
+                Code = (int)HttpStatusCode.BadRequest,
+                Id = r.Id,
+                Error = new SleipnirError { Code = 400, Message = message, RequestId = r.Id }
+            }).ToList();
+        }
+
+        /// <summary>
+        /// GraphKey-Kollisions-Gate: prüft, ob zwei Requests im Batch auf denselben effektiven
+        /// Graph-Key fallen (Request-Id, Fallback <c>Controller.Method</c> bei leerer Id).
+        /// Kollisionen entstehen durch (a) zwei Requests mit derselben nicht-leeren Id,
+        /// (b) zwei id-lose Requests auf derselben Route, oder (c) eine Request-Id, die
+        /// zufällig dem <c>Controller.Method</c>-Fallback eines anderen Requests entspricht.
+        /// Gibt im Kollisionsfall per-Request-400s für ALLE Requests zurück, sonst <c>null</c>.
+        /// </summary>
+        private static List<SleipnirResponse?>? DetectGraphKeyCollisions(List<SleipnirRequest> requests)
+        {
+            // key → Graph-Key des ersten Requests (für die Fehlermeldung).
+            var firstByKey = new Dictionary<string, string>(StringComparer.Ordinal);
+            string? collidingKey = null;
+            string collisionOwnerA = string.Empty, collisionOwnerB = string.Empty;
+
+            foreach (var r in requests)
+            {
+                var key = GraphKey(r);
+                if (firstByKey.TryGetValue(key, out var first))
+                {
+                    collidingKey = key;
+                    collisionOwnerA = first;
+                    collisionOwnerB = DescribeRequest(r);
+                    break;
+                }
+                firstByKey[key] = DescribeRequest(r);
+            }
+
+            if (collidingKey == null) return null;
+
+            var message =
+                $"Duplicate request key '{collidingKey}': requests '{collisionOwnerA}' and '{collisionOwnerB}' " +
+                "resolve to the same graph key. Give every request a unique id (or use distinct routes for id-less requests).";
+            return requests.Select(r => new SleipnirResponse
+            {
+                Code = (int)HttpStatusCode.BadRequest,
+                Id = r.Id,
+                Error = new SleipnirError { Code = 400, Message = message, RequestId = r.Id }
+            }).ToList();
+        }
+
+        /// <summary>Menschlich lesbare Beschreibung eines Requests für Fehlermeldungen:
+        ///  die Id wenn vorhanden, sonst Controller.Method.</summary>
+        private static string DescribeRequest(SleipnirRequest r)
+            => !string.IsNullOrEmpty(r.Id) ? r.Id : $"{r.Controller}.{r.Method}";
 
         /// <summary>
         /// Führt einen einzelnen abhängigen Request im topologischen Pfad aus (parallel im Fan-out,
@@ -1220,36 +1339,11 @@ namespace SleipnirCore.Services
         }
 
         /// <summary>
-        /// Durchläuft den JsonNode rekursiv und gibt zurück, ob ein String-Wert gefunden wurde, der mit '@' beginnt.
+        /// Durchläuft den JsonNode rekursiv und gibt zurück, ob ein String-Wert ein
+        /// @alias-Platzhalter ist. Die Erkennung liegt in der gemeinsamen Grammatik
+        /// (<see cref="AliasGrammar.ContainsAlias"/>) — trim-frei, mit @@-Escape.
         /// </summary>
-        private bool ContainsAlias(JsonNode? node)
-        {
-            if (node == null) return false;
-            if (node is JsonValue jsonValue)
-            {
-                if (jsonValue.TryGetValue<string>(out var strValue))
-                {
-                    return strValue.Trim().StartsWith("@"); //|| strValue.Trim().StartsWith("\"@");
-                }
-            }
-            else if (node is JsonObject jsonObj)
-            {
-                foreach (var kvp in jsonObj)
-                {
-                    if (ContainsAlias(kvp.Value))
-                        return true;
-                }
-            }
-            else if (node is JsonArray jsonArr)
-            {
-                foreach (var item in jsonArr)
-                {
-                    if (ContainsAlias(item))
-                        return true;
-                }
-            }
-            return false;
-        }
+        private bool ContainsAlias(JsonNode? node) => AliasGrammar.ContainsAlias(node);
 
 
         #endregion
@@ -1275,9 +1369,10 @@ namespace SleipnirCore.Services
             if (node == null) return;
             if (node is JsonValue jsonValue)
             {
-                if (jsonValue.TryGetValue<string>(out var strValue) && strValue.StartsWith("@"))
+                if (jsonValue.TryGetValue<string>(out var strValue)
+                    && AliasGrammar.Classify(strValue, out var aliasName) == AliasKind.AliasReference)
                 {
-                    string alias = strValue.Substring(1); // z. B. "firstId"
+                    string alias = aliasName; // z. B. "firstId" (aus "@firstId")
                     if (exposedDependencies.TryGetValue(alias, out var actualValue))
                     {
                         // actualValue ist die JSON-Form des extrahierten Werts (siehe
@@ -1308,6 +1403,10 @@ namespace SleipnirCore.Services
                         unresolved.Add(alias);
                     }
                 }
+                // Hinweis: @@-escaped Literale ("@@x") werden bewusst HIER nicht behandelt —
+                // das Unescape passiert zentral in BuildParameters, damit es auf allen Pfaden
+                // gilt (Single-Call, Parallel, Topologie, Subscribe), nicht nur wo die
+                // Alias-Substitution läuft.
             }
             else if (node is JsonObject jsonObj)
             {
@@ -1577,6 +1676,15 @@ namespace SleipnirCore.Services
                         if (numNode is JsonValue nv && nv.TryGetValue<int>(out var ni))
                             num = ni;
                         var data = eo["data"] ?? eo["Data"];
+                        // @@-Escape (AliasGrammar): ein String-Wert "@@x" ist das Literal
+                        // "@x". Das Unescape passiert HIER — zentral für alle Pfade
+                        // (Single-Call, Parallel, Topologie, Subscribe) — und nicht in der
+                        // Alias-Substitution, die nur der topologische Pfad durchläuft.
+                        if (data is JsonValue dv && dv.TryGetValue<string>(out var ds)
+                            && AliasGrammar.IsEscapedLiteral(ds))
+                        {
+                            data = JsonValue.Create(AliasGrammar.Unescape(ds));
+                        }
                         entries.Add((name, num, data));
                     }
                 }

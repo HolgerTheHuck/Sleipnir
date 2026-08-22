@@ -15,6 +15,45 @@ Your C# classes are the contract — no `.proto`, no IDL, no code generation. Th
 
 > **The name.** *Sleipnir* — Odin's eight-legged horse in Norse mythology, who carries the god across all nine realms in a single stride. A multi-transport metaphor: one framework bearing commands across REST, WebSocket, and SignalR. (Named to match the sibling projects Walhalla and Heimdall.)
 
+---
+
+## ⚡ The headline feature: server-side dependency chaining
+
+Business applications are built around commands: `CreateOrder`, `ApproveInvoice`, `CancelBooking`. Traditional RPC forces the client to orchestrate chains: call A → parse → extract → call B → repeat. Sleipnir moves that glue to the server and collapses the whole chain into **one roundtrip** — a provider exposes a typed fragment of its result, a consumer references it as an `@alias` placeholder, and the server resolves the dependency graph before anything runs:
+
+```csharp
+var batch = new SleipnirMultiRequest
+{
+    Requests =
+    [
+        SleipnirCall.Init("Customer", "Search")
+            .With("France")
+            .Exposes("$.items[*].id", "customerIds")   // expose the result fragment
+            .ToRequest(),
+
+        SleipnirCall.Init("Order", "GetOpenByCustomerIds")
+            .WithAlias("@customerIds")                 // consume it — server-resolved
+            .ToRequest()
+    ]
+};
+```
+
+The second call receives the array of customer ids produced by the first — no client-side looping, no intermediate roundtrips. The engine topologically sorts the batch, runs independent commands in parallel, propagates failures to dependents instead of executing them with missing data, and gates every fragment transfer with type-binding checks (Weak/Strict/Paranoid).
+
+```mermaid
+flowchart LR
+    A["Customer.Search<br/>(France)"] -- "exposes $.items[*].id<br/>→ @customerIds" --> B["Order.GetOpenByCustomerIds<br/>(@customerIds)"]
+    C["Audit.Log<br/>(independent)"] --> P["one roundtrip"]
+    A --> P
+    B --> P
+```
+
+- **Why it matters:** N dependent calls become 1 roundtrip — the same problem GraphQL solves, with plain RPC semantics and no query language to learn.
+- **Type-safe variant:** `Sleipnir.Client.Linq` wires `Dep<T>` → `Arg<T>` at compile time (below).
+- **Full spec:** [`DEPENDENCY_BINDING.md`](DEPENDENCY_BINDING.md) — extraction, binding modes, failure propagation.
+
+---
+
 ### Packages
 
 | Package | NuGet | npm | What |
@@ -69,29 +108,7 @@ curl -k -X POST https://localhost:5001/api/sleipnir/json \
 
 ## Why Sleipnir?
 
-Business applications are built around commands: `CreateOrder`, `ApproveInvoice`, `CancelBooking`, `AssignRole`, `GenerateInvoice`.
-
-Traditional RPC forces the client to orchestrate chains: call A → parse → extract → transform → call B → repeat. Sleipnir moves that glue to the server and collapses the whole chain into **one roundtrip**.
-
-```csharp
-var batch = new SleipnirMultiRequest
-{
-    Mode = ExecutionMode.Serial,
-    Requests =
-    [
-        SleipnirCall.Init("Customer", "Search")
-            .With("France")
-            .Exposes("$.items[*].id", "customerIds")
-            .ToRequest(),
-
-        SleipnirCall.Init("Order", "GetOpenByCustomerIds")
-            .WithAlias("@customerIds")
-            .ToRequest()
-    ]
-};
-```
-
-The second call receives the array of customer ids produced by the first — no client-side looping, no intermediate roundtrips.
+Business applications are built around commands: `CreateOrder`, `ApproveInvoice`, `CancelBooking`, `AssignRole`, `GenerateInvoice`. Sleipnir models them as first-class, batchable, chainable operations — see [the headline feature above](#-the-headline-feature-server-side-dependency-chaining).
 
 Full reasoning and trade-offs: [`BEST_PRACTICES.md`](BEST_PRACTICES.md).
 

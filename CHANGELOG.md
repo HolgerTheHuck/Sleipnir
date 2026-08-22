@@ -5,41 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.2] — 2026-08-22
 
-### Fixed — Dependency-chaining hardening (audit 2026-08-22, D1–D3)
+### Fixed — Dependency-chaining hardening (audit 2026-08-22, D1–D7)
 
-Three fail-loud batch-entry gates close correctness defects in the `@alias` /
-`DependencyMapping` feature. Full audit + execution plan:
+Seven fail-loud gates and corrections close all findings of the dependency-chaining
+audit. Full audit + execution plan:
 [`docs/audits/2026-08-22-dependency-chaining-audit.md`](docs/audits/2026-08-22-dependency-chaining-audit.md);
-spec updates in [`DEPENDENCY_BINDING.md`](DEPENDENCY_BINDING.md) §1 and §10.
+spec updates in [`DEPENDENCY_BINDING.md`](DEPENDENCY_BINDING.md) §1, §7, §9, §10.
+
+**Batch-entry gates (fail-loud, per-request `400`s for the whole batch):**
 
 - **Duplicate alias providers rejected (D1).** Two requests exposing the same alias made
   resolution nondeterministic (availability check vs. fragment merge could disagree on the
-  provider). Such batches now get per-request `400`s at batch entry —
+  provider). Such batches are now rejected at batch entry —
   `Duplicate alias '@a': provided by '<key1>' and '<key2>'. …` — and no controller method runs.
-- **Single alias grammar: trim-free detection + `@@` escape (D2).** The three internal
-  detection sites disagreed (one trimmed leading whitespace, one didn't, a third variant in
-  the graph builder); `" @x"` was detected but never substituted. All sites now share one
-  grammar (`AliasGrammar`): only `'@' + [A-Za-z0-9_]+` at string start is an alias; `"@a.b"`
-  refers to alias `a`; **`@@text` is the escape for the literal string `@text`** (unescaped
-  centrally before binding, on all paths).
 - **Duplicate request keys rejected, all batch modes (D3).** Two requests sharing a graph key
   (same non-empty id; two id-less requests on one route; an id equal to another request's
   `Controller.Method` fallback) silently corrupted alias resolution and response correlation.
-  Such batches now get per-request `400`s —
-  `Duplicate request key '<key>': requests '<a>' and '<b>' resolve to the same graph key. …`
+  Now: `Duplicate request key '<key>': requests '<a>' and '<b>' resolve to the same graph key. …`
   Same route twice with distinct ids remains legal.
+- **Self-dependency rejected at graph build (D7).** A request consuming its own alias can
+  never succeed; it now gets a specific `400`
+  (`Request '<key>' depends on its own alias '@a'. …`) instead of a late runtime failure.
+
+**Alias grammar (D2):**
+
+- The three internal detection sites disagreed (one trimmed leading whitespace, one didn't,
+  a third variant in the graph builder); `" @x"` was detected but never substituted. All
+  sites now share one grammar (`AliasGrammar`): only `'@' + [A-Za-z0-9_]+` at string start is
+  an alias; `"@a.b"` refers to alias `a`; **`@@text` is the escape for the literal string
+  `@text`** (unescaped centrally before binding, on all paths).
+
+**Binding & propagation correctness (D4–D6):**
+
+- **Serial path authorizes before alias resolution (D4)** — parity with the topological path:
+  an unauthorized request with an unresolvable alias gets its earned `401`, not a `400` that
+  would leak the route's mapping shape to an unauthorized caller.
+- **Strict/Paranoid honor STJ metadata (D5):** `[JsonIgnore]` properties are no longer
+  demanded as required (false-positive `400`s gone); `[JsonPropertyName]` renames are compared
+  under the wire name; property metadata cached per type.
+- **Honest extraction-failure diagnostics (D6):** an invalid provider JsonPath now yields
+  `failed to extract '@a' (<reason>)` to dependents instead of the misleading "did not expose".
+  Reasons stay generic (no path/payload leak).
 
 #### Breaking changes
+
 - Strings with leading whitespace before `@` (`" @x"`) were previously *detected* as aliases
   by one internal check but never substituted — a silent dead end. They are now consistently
   literals.
 - String parameter values starting with `@` were previously unusable as literals (blocked or
   mis-substituted). Use the new `@@` escape: send `"@@mention"` for the literal `"@mention"`.
+- Strict/Paranoid error messages name camelCase **wire names** (`'name'`, `'address.zip'`)
+  instead of CLR names (`'Name'`, `'Address.Zip'`).
 
 Executable specs: `SleipnirTests/Unit/Core/AliasCollisionTests.cs`,
-`AliasGrammarTests.cs`, `GraphKeyCollisionTests.cs`.
+`AliasGrammarTests.cs`, `GraphKeyCollisionTests.cs`, `DependencyAuditD4toD7Tests.cs`.
 
 ## [1.4.0] — 2026-08-20
 

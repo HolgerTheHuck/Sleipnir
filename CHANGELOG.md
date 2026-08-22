@@ -7,7 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_(nothing yet)_
+### Fixed — Dependency-chaining hardening (audit 2026-08-22, D1–D3)
+
+Three fail-loud batch-entry gates close correctness defects in the `@alias` /
+`DependencyMapping` feature. Full audit + execution plan:
+[`docs/audits/2026-08-22-dependency-chaining-audit.md`](docs/audits/2026-08-22-dependency-chaining-audit.md);
+spec updates in [`DEPENDENCY_BINDING.md`](DEPENDENCY_BINDING.md) §1 and §10.
+
+- **Duplicate alias providers rejected (D1).** Two requests exposing the same alias made
+  resolution nondeterministic (availability check vs. fragment merge could disagree on the
+  provider). Such batches now get per-request `400`s at batch entry —
+  `Duplicate alias '@a': provided by '<key1>' and '<key2>'. …` — and no controller method runs.
+- **Single alias grammar: trim-free detection + `@@` escape (D2).** The three internal
+  detection sites disagreed (one trimmed leading whitespace, one didn't, a third variant in
+  the graph builder); `" @x"` was detected but never substituted. All sites now share one
+  grammar (`AliasGrammar`): only `'@' + [A-Za-z0-9_]+` at string start is an alias; `"@a.b"`
+  refers to alias `a`; **`@@text` is the escape for the literal string `@text`** (unescaped
+  centrally before binding, on all paths).
+- **Duplicate request keys rejected, all batch modes (D3).** Two requests sharing a graph key
+  (same non-empty id; two id-less requests on one route; an id equal to another request's
+  `Controller.Method` fallback) silently corrupted alias resolution and response correlation.
+  Such batches now get per-request `400`s —
+  `Duplicate request key '<key>': requests '<a>' and '<b>' resolve to the same graph key. …`
+  Same route twice with distinct ids remains legal.
+
+#### Breaking changes
+- Strings with leading whitespace before `@` (`" @x"`) were previously *detected* as aliases
+  by one internal check but never substituted — a silent dead end. They are now consistently
+  literals.
+- String parameter values starting with `@` were previously unusable as literals (blocked or
+  mis-substituted). Use the new `@@` escape: send `"@@mention"` for the literal `"@mention"`.
+
+Executable specs: `SleipnirTests/Unit/Core/AliasCollisionTests.cs`,
+`AliasGrammarTests.cs`, `GraphKeyCollisionTests.cs`.
 
 ## [1.4.0] — 2026-08-20
 

@@ -10,6 +10,10 @@
 > Priority rule: items R1–R6 fix verified correctness/security defects and ship as a
 > hotfix train. R7–R10 are architectural consolidation. R11–R13 are process & ecosystem.
 >
+> **Amendments:** `2026-08-22-dependency-chaining-audit.md` extends this roadmap with
+> dependency-chaining findings (D1–D7) and amendments to R8b/R9.3/R9.4/R9.6 — read both
+> together for the affected items.
+>
 > **Global Definition of Done (every item):** regression test(s) for the defect being
 > fixed (the 1.1.1 hotfixes shipped without any — that must not repeat), CHANGELOG entry,
 > docs updated where user-visible, all new user-facing text in English.

@@ -50,12 +50,23 @@ wire (`data` is a native JSON string, not a JSON-string-wrapped value):
 ```
 
 Note `data` is the **raw text `@orderId`** — a native JSON string, not a double-quoted
-`"\"@orderId\""`. The detector (`ContainsAlias`) checks `value.StartsWith("@")`; a value
-that starts with `"` is not recognized as an alias and would be deserialized as a literal
-string (and then likely fail binding). The replacement parses the JSON text stored in step
-1 into a native `JsonNode` and installs it as the parameter's `data`, so after substitution
-the field carries the native fragment value (`7`, `"alice"`, `[1,2,3]`, `{...}`) — not a
-JSON string.
+`"\"@orderId\""`. Recognition follows the **single alias grammar** (one implementation
+shared by detection, substitution, and graph-edge extraction):
+
+- A string is an alias reference iff it starts with exactly one `@` followed by at least
+  one alias character (`[A-Za-z0-9_]`). Detection is **trim-free**: `" @x"` (leading
+  whitespace) is a literal, everywhere.
+- The alias name ends at the first non-alias character: `"@a.b"` refers to alias `a`.
+- A lone `"@"`, `"@."`, `"@-"` are literals.
+- **Escape:** `@@text` is the literal string `@text`. Send `"@@mention"` when the consumer
+  method should receive the literal `"@mention"`. Escaped literals create no graph edge,
+  are never substituted, and are unescaped before the controller sees them.
+
+A value that starts with `"` is not recognized as an alias and would be deserialized as a
+literal string (and then likely fail binding). The replacement parses the JSON text stored
+in step 1 into a native `JsonNode` and installs it as the parameter's `data`, so after
+substitution the field carries the native fragment value (`7`, `"alice"`, `[1,2,3]`,
+`{...}`) — not a JSON string.
 
 ### Step 3 — Bind
 
@@ -418,6 +429,79 @@ delegate, `exposedDependencies` extraction) runs **parallel via `Task.WhenAll` a
 touches `HttpContext`**. This eliminates the framework's concurrent context access
 structurally. Authorization is cheap (claims reads, microseconds), so the serial pre-pass
 does not regress parallel throughput — the heavy work stays fully parallel.
+
+## 10. Batch-entry validation
+
+Before any request in a dependency batch runs, the server validates two structural
+properties of the batch. Both are rejected **fail-loud with per-request `400`s for every
+request in the batch** (the batch as a whole is not executable) — no controller method is
+invoked, and response ids are preserved for client correlation. This mirrors the
+registration-time name-uniqueness rule: ambiguity is a configuration error, not a runtime
+race to be resolved silently.
+
+### Duplicate alias providers
+
+Two requests exposing the **same alias** make resolution nondeterministic: the availability
+check consults a static provider map (last declaration wins), while placeholder substitution
+merges the exposed fragments of all prior responses — whose dictionary order is undefined.
+The check could pass against provider A while provider B's fragment is injected. Therefore:
+
+> A batch in which two requests expose the same alias is rejected at batch entry:
+> `400` — `Duplicate alias '@a': provided by '<key1>' and '<key2>'. Each alias must be
+> exposed by exactly one request in the batch.`
+
+`<key>` is the request id, falling back to `Controller.Method` for id-less requests (the same
+graph key used for propagation). The comparison is ordinal and applies across the whole
+batch, including across different topological levels. Separate `InvokeDi` calls may of course
+reuse an alias name independently. Declaring the same key twice inside one request's mapping
+is not a collision — it is ordinary dictionary semantics (last declaration wins for that
+request's path).
+
+Executable spec: [`AliasCollisionTests.cs`](SleipnirTests/Unit/Core/AliasCollisionTests.cs).
+
+### Duplicate request keys
+
+Every request in a batch resolves to a **graph key**: its id, falling back to
+`Controller.Method` for id-less requests. This key identifies the request in the dependency
+graph, in the provider-response lookup for alias propagation, and (implicitly) in the
+client's response correlation. Collisions silently corrupt all three:
+
+- two requests with the **same non-empty id**;
+- two **id-less** requests on the same route;
+- an id that happens to equal another request's `Controller.Method` fallback.
+
+Before this gate existed, the graph builder's request index silently overwrote on collision,
+the provider-response map took the last write, and an alias could bind to the *wrong*
+provider's fragment. Therefore — enforced for **all batch modes**, not only dependency
+batches:
+
+> `400` — `Duplicate request key '<key>': requests '<a>' and '<b>' resolve to the same
+> graph key. Give every request a unique id (or use distinct routes for id-less requests).`
+
+The same route twice **with distinct ids** remains legal. A single id-less request is legal.
+
+Executable spec: [`GraphKeyCollisionTests.cs`](SleipnirTests/Unit/Core/GraphKeyCollisionTests.cs).
+
+### The single alias grammar
+
+All `@`-string classification — placeholder detection, substitution, and graph-edge
+extraction — goes through one implementation (`AliasGrammar` in `SleipnirCore`), so the
+three sites can no longer disagree (they previously did: leading whitespace was detected
+by one site but not substituted by another). The grammar:
+
+| Input | Classification | Controller receives |
+|---|---|---|
+| `"@orderId"` | alias reference `orderId` | the bound fragment |
+| `"@a.b"` | alias reference `a` | the bound fragment |
+| `"@@mention"` | escaped literal | the literal string `"@mention"` |
+| `"@"`, `" @x"`, `"@."`, `"x@y"` | literal | unchanged |
+
+> **Breaking change vs. earlier 1.x:** strings with leading whitespace before `@`
+> (`" @x"`) were previously *detected* as aliases by one internal check but never
+> substituted — a silent dead end. They are now consistently literals. Strings starting
+> with `@` were previously unusable as literals; use the `@@` escape for them.
+
+Executable spec: [`AliasGrammarTests.cs`](SleipnirTests/Unit/Core/AliasGrammarTests.cs).
 
 > **User-code contract.** A controller can still obtain the context via
 > `IHttpContextAccessor` (the standard ASP.NET pattern; Sleipnir does not register it but

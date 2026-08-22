@@ -777,13 +777,15 @@ public class SleipnirInvokerTests
     [Fact]
     public async Task InvokeDi_ParallelBatch_ExecutesAllRequests()
     {
-        // Arrange
+        // Arrange — Ids müssen batch-unique sein (GraphKey-Kollisions-Gate, D3): der
+        // Helper-Default "{Controller}.{Method}" kollidiert bei zwei Add-Requests.
         var requests = new List<SleipnirRequest>
         {
             CreateRequest("TestInvoker", "Add", ("a", "1"), ("b", "2")),
             CreateRequest("TestInvoker", "Add", ("a", "3"), ("b", "4")),
             CreateRequest("TestInvoker", "Echo", ("message", "\"batch\""))
         };
+        requests[1].Id = "TestInvoker.Add#2";
 
         // Act
         var responses = await _invoker.InvokeDi(requests, null, ExecutionMode.Parallel);

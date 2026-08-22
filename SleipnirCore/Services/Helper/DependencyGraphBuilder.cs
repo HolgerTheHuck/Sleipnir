@@ -66,8 +66,15 @@ public static class DependencyGraphBuilder
             {
                 if (providers.TryGetValue(alias, out var providerId))
                 {
-                    if (providerId != id) // Don't depend on self
-                        dependencies[id].Add(providerId);
+                    // Self-dependency (audit D7/F8): a request consuming its own alias is
+                    // always a configuration error — the fragment only exists after this
+                    // request ran. Fail loud with a specific message instead of letting it
+                    // die later as a runtime-unresolved alias.
+                    if (providerId == id)
+                        throw new InvalidOperationException(
+                            $"Request '{id}' depends on its own alias '@{alias}'. A request cannot consume a fragment it exposes itself.");
+
+                    dependencies[id].Add(providerId);
                 }
             }
         }

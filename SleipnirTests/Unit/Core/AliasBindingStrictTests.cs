@@ -145,6 +145,7 @@ public class AliasBindingStrictTests
     {
         // Provider IdOnly {Id} → Consumer TestDto {Id, Name}: Name (Referenz) fehlt → 400.
         // In Weak wäre dies 2xx mit Name=null; Strict verlangt volle Deckung.
+        // (Seit D5 werden Wire-Namen gemeldet: camelCase "name".)
         var provider = IdOnlyProvider("p", 7, "cust", "$");
         var consumer = Req("c", "DepChain", "DescribeDto", null, Alias("d", "cust"));
 
@@ -152,7 +153,7 @@ public class AliasBindingStrictTests
 
         res.Code.Should().Be((int)HttpStatusCode.BadRequest);
         res.Error!.Message.Should().Contain("Strict alias binding");
-        res.Error.Message.Should().Contain("Name");
+        res.Error.Message.Should().Contain("name");
     }
 
     // === cross-kind bleibt in beiden Modi 400 (STJ wirft ohnehin) ================

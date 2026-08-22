@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using System.Text.Encodings.Web;
+using System.Text.Json.Serialization;
 using SleipnirCore.Attributes;
 using System.Net;
 using System.Text.Json.Nodes;
@@ -629,6 +630,22 @@ namespace SleipnirCore.Services
 
             foreach (var current in requestList)
             {
+                // Auth VOR Alias-Auflösung (audit 2026-08-22 / D4): der topologische Pfad
+                // autorisiert im Pre-Pass vor der Substitution — der Serial-Pfad muss dasselbe
+                // tun, sonst bekommt ein unautorisierter Request mit unversorgtem Alias eine
+                // 400 (unresolved) statt der verdienten 401, und die Auflösungs-Fehler
+                // verraten unautorisierbaren Aufrufern die Mapping-Form der Route.
+                var decision = await ResolveAndAuthorizeAsync(current, context, ct);
+                if (decision.IsError)
+                {
+                    var err = decision.Error!;
+                    if (string.IsNullOrEmpty(err.Id))
+                        err.Id = current?.Id ?? string.Empty;
+                    responses.TryAdd(current?.Id ?? String.Empty, err);
+                    orderedResults.Add(err);
+                    continue;
+                }
+
                 // Verwende den neuen Mechanismus zum Auflösen von Abhängigkeiten
                 var resolution = ResolveParameterValues(current, responses);
                 if (resolution.Error != null)
@@ -652,13 +669,9 @@ namespace SleipnirCore.Services
                     DependencyMapping = current.DependencyMapping
                 };
 
-                // Serial-Pfad: Lookup + Auth (ResolveAndAuthorizeAsync) und Ausführung
-                // (ExecuteAuthorized) nacheinander — serial, daher kein Context-Race. Die
-                // Aufteilung dient der Code-Teilung mit den Parallel-/Topologie-Pfaden.
-                var decision = await ResolveAndAuthorizeAsync(effectiveRequest, context, ct);
-                SleipnirResponse? result = decision.IsError
-                    ? decision.Error
-                    : await ExecuteAuthorized(effectiveRequest, decision.Info!, decision.ControllerType!, ct);
+                // Ausführung mit dem bereits autorisierten Decision (Auth lief oben).
+                SleipnirResponse? result = await ExecuteAuthorized(
+                    effectiveRequest, decision.Info!, decision.ControllerType!, ct);
 
                 if (result != null && string.IsNullOrEmpty(result.Id))
                     result.Id = current?.Id ?? string.Empty;
@@ -694,13 +707,16 @@ namespace SleipnirCore.Services
             }
             catch (InvalidOperationException ex)
             {
-                // Cycle detected – return error for all requests
-                _logger.LogWarning(ex, "Circular dependency detected in request batch.");
+                // Cycle detected OR self-dependency (audit D7) – return error for all requests.
+                // Die konkrete Ursache steht in ex.Message (Cycle: "Cycle detected…";
+                // Self-Dependency: "Request '<key>' depends on its own alias '@a'. …").
+                _logger.LogWarning(ex, "Invalid dependency graph in request batch: {Reason}", ex.Message);
                 return requests.Select(r => new SleipnirResponse
                 {
                     Code = (int)HttpStatusCode.BadRequest,
                     Id = r.Id,
-                    Error = new SleipnirError { Code = 400, Message = "Circular dependency detected in request batch.", RequestId = r.Id }
+                    // Ursache durchreichen: Cycle- oder Self-Dependency-Meldung aus dem GraphBuilder.
+                    Error = new SleipnirError { Code = 400, Message = ex.Message, RequestId = r.Id }
                 });
             }
 
@@ -733,6 +749,11 @@ namespace SleipnirCore.Services
 
             var allResponses = new List<SleipnirResponse?>();
 
+            // Extraktions-Fehler-Diagnose (audit D6): GraphKey → (alias → generischer Grund).
+            // Füllt ExecuteAuthorized bei fehlgeschlagener Exposes-Extraktion; ExplainUnavailability
+            // meldet dem Dependenden dann "extraction failed (<reason>)" statt "did not expose".
+            var extractionFailures = new ConcurrentDictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+
             // Aufgetürmte Responses VORHERIGER Batches — abhängige Requests lesen hieraus ihre
             // @alias-Platzhalter (analog zu ExecuteSequentially) UND die Verfügbarkeits-
             // Propagierung schlägt hier nach, ob ein Provider fehlgeschlagen ist. Innerhalb
@@ -753,7 +774,7 @@ namespace SleipnirCore.Services
                 // Fan-out (OHNE Context): Auth-Fehler → gemerkte Response; sonst Verfügbarkeits-
                 // Check gegen priorResponses, dann @alias-Auflösung + ExecuteAuthorized.
                 var batchResponses = await Task.WhenAll(batch.Select((request, i) =>
-                    ExecuteDependentRequestAsync(request, decisions[i], priorResponses, aliasToProvider, ct)));
+                    ExecuteDependentRequestAsync(request, decisions[i], priorResponses, aliasToProvider, extractionFailures, ct)));
 
                 for (int i = 0; i < batchResponses.Length; i++)
                 {
@@ -880,6 +901,7 @@ namespace SleipnirCore.Services
             AuthDecision decision,
             ConcurrentDictionary<string, SleipnirResponse?> priorResponses,
             Dictionary<string, string> aliasToProvider,
+            ConcurrentDictionary<string, Dictionary<string, string>> extractionFailures,
             CancellationToken ct)
         {
             // Auth-Fehler aus dem Pre-Pass → bereits getracete Response.
@@ -894,7 +916,7 @@ namespace SleipnirCore.Services
             // fehlgeschlagenen Provider nicht bedient? Dann läuft dieser Request nicht, sondern
             // bekommt eine erklärende 400 — spart die verschwendete Ausführung und benennt die
             // Ursache (statt nichtssagendem „Unresolved dependencies" weiter unten).
-            var unavailable = ExplainUnavailability(request!, aliasToProvider, priorResponses);
+            var unavailable = ExplainUnavailability(request!, aliasToProvider, priorResponses, extractionFailures);
             if (unavailable != null)
             {
                 if (string.IsNullOrEmpty(unavailable.Id)) unavailable.Id = request?.Id ?? string.Empty;
@@ -922,7 +944,8 @@ namespace SleipnirCore.Services
                 };
             }
 
-            var response = await ExecuteAuthorized(effective, decision.Info!, decision.ControllerType!, ct);
+            var response = await ExecuteAuthorized(effective, decision.Info!, decision.ControllerType!, ct,
+                extractionFailures, GraphKey(effective));
             if (response != null && string.IsNullOrEmpty(response.Id))
                 response.Id = effective?.Id ?? string.Empty;
             return response;
@@ -938,7 +961,8 @@ namespace SleipnirCore.Services
         private SleipnirResponse? ExplainUnavailability(
             SleipnirRequest request,
             Dictionary<string, string> aliasToProvider,
-            ConcurrentDictionary<string, SleipnirResponse?> priorResponses)
+            ConcurrentDictionary<string, SleipnirResponse?> priorResponses,
+            ConcurrentDictionary<string, Dictionary<string, string>>? extractionFailures = null)
         {
             if (request.Params == null)
                 return null;
@@ -968,11 +992,37 @@ namespace SleipnirCore.Services
 
                 if (providerResponse.ExposedDependencies == null ||
                     !providerResponse.ExposedDependencies.ContainsKey(alias))
+                {
+                    // Diagnose (audit D6): wenn der Provider den Alias deklariert hatte, die
+                    // Extraktion aber scheiterte (ungültiger Pfad, Cap, kein Match), nenne die
+                    // echte Ursache statt des irreführenden "did not expose". Grund-Text ist
+                    // generisch (kein Pfad-/Payload-Inhalt); ohne Eintrag bleibt die
+                    // bisherige Meldung (z. B. void/null-Result).
+                    if (extractionFailures != null &&
+                        extractionFailures.TryGetValue(providerKey, out var failures) &&
+                        failures.TryGetValue(alias, out var failReason))
+                        return TraceCallError(request,
+                            BadRequest($"Dependency '@{alias}' unavailable: provider '{providerKey}' " +
+                                       $"failed to extract '@{alias}' ({failReason})."));
+
                     return TraceCallError(request,
                         BadRequest($"Dependency '@{alias}' unavailable: provider '{providerKey}' did not expose '@{alias}'."));
+                }
             }
 
             return null;
+        }
+
+        /// <summary>Merkt einen Extraktions-Fehler am GraphKey des Providers (audit D6), damit
+        /// die Verfügbarkeits-Propagierung dem Dependenden die echte Ursache melden kann.
+        /// Thread-sicher: das Fan-out schreibt parallel, GraphKeys sind durch das D3-Gate
+        /// eindeutig. Grund-Text bleibt generisch (kein Pfad-/Payload-Inhalt).</summary>
+        private static void RecordExtractionFailure(
+            ConcurrentDictionary<string, Dictionary<string, string>> extractionFailures,
+            string graphKey, string alias, string reason)
+        {
+            var dict = extractionFailures.GetOrAdd(graphKey, _ => new Dictionary<string, string>(StringComparer.Ordinal));
+            lock (dict) dict[alias] = reason;
         }
 
 
@@ -1122,26 +1172,52 @@ namespace SleipnirCore.Services
             return null;
         }
 
-        /// <summary>Die public read-write Eigenschaftsnamen eines Typs, die STJ beim
-        ///  Deserialisieren bindet (und die im Strict-Modus im Fragment vorhanden sein
-        ///  müssen). Indexer, get-only und nicht-public Setter ausgenommen. Liefert leer
-        ///  für Skalare/Strings/Arrays/Dictionarys/object — diese haben keine deckbaren
-        ///  Eigenschaften und werden vom Strict-Check übersprungen.</summary>
+        /// <summary>Die deckungspflichtigen Eigenschaften eines Typs als (Wire-Name → CLR-
+        ///  Property)-Paare: public read-write, ohne [JsonIgnore] (inkl. Condition), unter
+        ///  ihrem STJ-Wire-Namen (JsonPropertyName/CamelCase-Policy). Der Strict/Paranoid-
+        ///  Vergleich läuft gegen den Wire-Namen; die Rekursion in CollectMissing steigt
+        ///  über die CLR-Property in den deklarierten Typ ab. Indexer, get-only und
+        ///  nicht-public Setter ausgenommen. Liefert leer für Skalare/Strings/Arrays/
+        ///  Dictionarys/object — diese haben keine deckbaren Eigenschaften. Pro Typ gecacht
+        ///  (audit D5/R9.5).</summary>
+        private static readonly ConcurrentDictionary<Type, List<(string WireName, PropertyInfo Property)>> CoverablePropertiesCache = new();
+
         private static List<string> RequiredPropertyNames(Type type)
-        {
-            var names = new List<string>();
-            // Nullable<T> und Enums haben keine bindbaren Eigenschaften; string ebenso.
-            if (Nullable.GetUnderlyingType(type) != null || type.IsEnum || type == typeof(string))
-                return names;
-            foreach (var p in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            => CoverableProperties(type).Select(cp => cp.WireName).ToList();
+
+        private static List<(string WireName, PropertyInfo Property)> CoverableProperties(Type type)
+            => CoverablePropertiesCache.GetOrAdd(type, static t =>
             {
-                if (p.GetIndexParameters().Length > 0) continue;       // Indexer
-                if (!p.CanWrite) continue;                              // get-only (computed)
-                if (p.GetSetMethod(nonPublic: false) == null) continue; // kein public Setter
-                names.Add(p.Name);
-            }
-            return names;
-        }
+                var props = new List<(string, PropertyInfo)>();
+                // Nullable<T> und Enums haben keine bindbaren Eigenschaften; string ebenso.
+                if (Nullable.GetUnderlyingType(t) != null || t.IsEnum || t == typeof(string))
+                    return props;
+                foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                {
+                    if (p.GetIndexParameters().Length > 0) continue;       // Indexer
+                    if (!p.CanWrite) continue;                              // get-only (computed)
+                    if (p.GetSetMethod(nonPublic: false) == null) continue; // kein public Setter
+
+                    // STJ-Metadaten (audit D5): [JsonIgnore] respektieren — die Property
+                    // wird nie deserialisiert, darf also nicht als "required" gelten.
+                    var ignore = p.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>();
+                    if (ignore != null && ignore.Condition != JsonIgnoreCondition.Never)
+                        continue;
+
+                    // Wire-Name: [JsonPropertyName] schlägt die Naming-Policy. Der Strict/
+                    // Paranoid-Vergleich läuft case-insensitiv gegen die Fragment-Schlüssel,
+                    // also muss hier der Name stehen, den STJ tatsächlich im JSON erwartet.
+                    var jsonName = p.GetCustomAttribute<System.Text.Json.Serialization.JsonPropertyNameAttribute>()
+                                   ?.Name;
+                    props.Add((string.IsNullOrEmpty(jsonName) ? ToCamelCase(p.Name) : jsonName!, p));
+                }
+                return props;
+            });
+
+        /// <summary>CamelCase-Umsetzung passend zur Invoker-JsonSerializerOptions
+        ///  (PropertyNamingPolicy = CamelCase): erstes Zeichen lowercased.</summary>
+        private static string ToCamelCase(string name)
+            => char.ToLowerInvariant(name[0]) + name[1..];
 
         /// <summary>
         /// Paranoid-Binding-Check — die fail-lauteste Variante. Wie <see cref="StrictBindingCheck"/>,
@@ -1261,7 +1337,7 @@ namespace SleipnirCore.Services
         private static void CollectMissing(
             Type consumerType, JsonObject fragment, string path, List<string> missing)
         {
-            var required = RequiredPropertyNames(consumerType);
+            var required = CoverableProperties(consumerType);
             if (required.Count == 0)
                 return;
 
@@ -1270,7 +1346,7 @@ namespace SleipnirCore.Services
             foreach (var kvp in fragment)
                 present[kvp.Key] = kvp.Value;
 
-            foreach (var propName in required)
+            foreach (var (propName, prop) in required)
             {
                 var childPath = string.IsNullOrEmpty(path) ? propName : $"{path}.{propName}";
 
@@ -1282,9 +1358,8 @@ namespace SleipnirCore.Services
 
                 // Vorhanden → ggf. in den deklarierten Typ absteigen, wenn das Fragment dort
                 // ein Objekt ist (Objekt-Eigenschaft) oder ein Array (Collection-Eigenschaft).
-                var propType = consumerType.GetProperty(propName)?.PropertyType;
-                if (propType == null)
-                    continue;
+                // Abstieg über die CLR-Property (prop), Vergleich über den Wire-Namen.
+                var propType = prop.PropertyType;
 
                 switch (present[propName])
                 {
@@ -1543,7 +1618,9 @@ namespace SleipnirCore.Services
             SleipnirRequest request,
             InvokeInfo invokeInfo,
             Type controllerType,
-            CancellationToken ct)
+            CancellationToken ct,
+            ConcurrentDictionary<string, Dictionary<string, string>>? extractionFailures = null,
+            string? graphKey = null)
         {
             using var activity = SleipnirTracing.StartCall(request);
             var previous = Activity.Current;
@@ -1590,12 +1667,22 @@ namespace SleipnirCore.Services
                                 // bleiben korrekt kodiert, damit die @alias-Substitution weiter unten
                                 // typgetreu injiziert wird (siehe ReplaceDependencyByAlias).
                                 exposed[alias] = extracted.ToJsonString();
+                            // extracted == null bei gültigem Pfad ohne Match ist KEIN Extraktions-
+                            // fehler, sondern der dokumentierte "did not expose"-Fall (auch für
+                            // void/null-Results). Nur die catch-Exception unten bucht die Diagnose.
                         }
                         catch (Exception ex)
                         {
                             _logger.LogWarning(ex,
                                 "Failed to extract dependency for alias {Alias} (path {Path}) — result data could not be resolved.",
                                 alias, jsonPath);
+                            // Diagnose (audit D6): Grund am GraphKey merken, damit die
+                            // Verfügbarkeits-Propagierung dem Dependenden "extraction failed
+                            // (<reason>)" statt des irreführenden "did not expose" meldet.
+                            // Grund-Text bleibt generisch (kein Pfad-/Payload-Inhalt).
+                            if (extractionFailures != null && graphKey != null)
+                                RecordExtractionFailure(extractionFailures, graphKey, alias,
+                                    ex is ArgumentException ? "invalid JsonPath" : "extraction error");
                         }
                     }
                     result.ExposedDependencies = exposed;

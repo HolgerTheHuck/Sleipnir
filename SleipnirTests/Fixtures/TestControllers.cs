@@ -347,6 +347,24 @@ public class DependencyChainController
     /// covers its nested properties; Strict ignores array elements.</summary>
     [SleipnirMethod("TakeOrderList")]
     public int TakeOrderList(List<OrderDto> list) => list.Count;
+
+    // --- STJ metadata (audit D5): [JsonIgnore] / [JsonPropertyName] -------------
+
+    /// <summary>Producer of a WireDto (Id + Name + an [JsonIgnore] Secret property).</summary>
+    [SleipnirMethod("MakeWireDto")]
+    public WireDto MakeWireDto(int id, string name) => new() { Id = id, Name = name, Secret = "never-on-wire" };
+
+    /// <summary>Consumer: WireDto — Strict must not demand the [JsonIgnore] property.</summary>
+    [SleipnirMethod("TakeWireDto")]
+    public int TakeWireDto(WireDto d) => d.Id;
+
+    /// <summary>Producer of a RenamedDto whose Id carries [JsonPropertyName("ref")].</summary>
+    [SleipnirMethod("MakeRenamedDto")]
+    public RenamedDto MakeRenamedDto(int id) => new() { Id = id };
+
+    /// <summary>Consumer: RenamedDto — Strict must compare under the wire name "ref".</summary>
+    [SleipnirMethod("TakeRenamedDto")]
+    public int TakeRenamedDto(RenamedDto d) => d.Id;
 }
 
 /// <summary>Narrow Id-only DTO — own assembly (Weg C inference expands it). Consumer shape
@@ -397,6 +415,25 @@ public class AddressDto
 
 /// <summary>Enum for the enum roundtrip through a chain (default serialization as a number).</summary>
 public enum ChainPriority { Low = 0, Medium = 1, High = 2 }
+
+/// <summary>DTO with an [JsonIgnore] property (audit D5): Strict/Paranoid must not demand
+///  "Secret" in the fragment — STJ never deserializes it, so it is not coverable.</summary>
+public class WireDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string Secret { get; set; } = string.Empty;
+}
+
+/// <summary>DTO with a [JsonPropertyName] rename (audit D5): the wire name is "ref", so
+///  Strict/Paranoid must compare fragment keys against "ref", not the CLR name "Id".</summary>
+public class RenamedDto
+{
+    [System.Text.Json.Serialization.JsonPropertyName("ref")]
+    public int Id { get; set; }
+}
 
 /// <summary>
 /// Nested DataContract for multi-level JsonPath tests ($.Inner.Id) in a chain.

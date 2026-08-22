@@ -357,6 +357,20 @@ The executable specs are
 [`SleipnirTests/Unit/Core/AliasBindingStrictTests.cs`](SleipnirTests/Unit/Core/AliasBindingStrictTests.cs)
 and [`SleipnirTests/Unit/Core/AliasBindingParanoidTests.cs`](SleipnirTests/Unit/Core/AliasBindingParanoidTests.cs).
 
+### STJ metadata is honored (wire names, not CLR names)
+
+The coverage check compares against the **wire** view of the consumer type, exactly as STJ
+reads it:
+
+- `[JsonIgnore]` properties (any `Condition` other than `Never`) are **not required** — STJ
+  never deserializes them, so demanding them would be a false-positive `400`.
+- `[JsonPropertyName("…")]` renames are compared under the **wire name**: a fragment key
+  `"ref"` satisfies a property declared as `[JsonPropertyName("ref")] public int Id`.
+- Properties without the attribute are compared under their camelCase wire form; matching
+  remains case-insensitive.
+
+Executable spec: [`DependencyAuditD4toD7Tests.cs`](SleipnirTests/Unit/Core/DependencyAuditD4toD7Tests.cs) → `D5_*`.
+
 ### When the coverage check fires before System.Text.Json
 
 If a fragment is both *incomplete* (a required property missing) and *kind-mismatched* on an
@@ -390,6 +404,7 @@ half of the contract. It is well-defined, not a crash, and it is **propagated**:
 | Provider was **unauthorized** (`401`) | `400` — `Dependency '@a' unavailable: provider '<id>' was unauthorized (401).` |
 | Provider returned **any other non-2xx** (`400`/`404`/`500`/…) | `400` — `Dependency '@a' unavailable: provider '<id>' returned HTTP <code>.` |
 | Provider succeeded but **did not expose** the alias (JsonPath matched nothing, the method returned `null`/void, or a declared path produced no fragment) | `400` — `Dependency '@a' unavailable: provider '<id>' did not expose '@a'.` |
+| Provider's declared JsonPath was **invalid** or extraction failed otherwise | `400` — `Dependency '@a' unavailable: provider '<id>' failed to extract '@a' (<reason>).` with a generic reason (`invalid JsonPath`, `extraction error`) — no path or payload contents are leaked. |
 | **No provider** in the batch exposes that alias (dangling `@alias`) | `400` — `Dependency '@a' unavailable: no provider exposes '@a'.` |
 
 > **Extraction is gated on success.** A provider exposes fragments **only when its response is `2xx`**. Any non-2xx response — a business error returned via `SleipnirResults` (`NotFound`/`BadRequest`/`Error(ProblemDetails)`/…), a thrown exception (→ `500`), or an unauthorized/missing-route decision from the pre-pass — leaves `exposedDependencies` empty, *even if the error payload itself contains fields the declared JsonPath would match* (e.g. a `ProblemDetails` body with `title`/`status`). No value is ever extracted from an error payload and forwarded to a dependent; the dependent sees the propagation row above instead. This is the guarantee behind property 2 (a failed provider produces no `exposedDependencies`).
@@ -410,6 +425,18 @@ Three properties make this predictable:
    (a `dependencyMapping` anywhere routes to topological), so a dangling `@alias` there keeps
    the legacy `400 Unresolved dependencies: <alias>.` message. The **Parallel** path has no
    providers either and does not resolve `@alias` at all.
+
+> **Authorization precedes alias resolution on every path.** The topological path authorizes
+> in the serial pre-pass before substitution; the Serial path does the same per request since
+> D4 — an unauthorized request with an unresolvable alias gets its earned `401`, not a `400`
+> that would leak the route's mapping shape to an unauthorized caller.
+
+### Self-dependency is a configuration error
+
+A request that consumes an alias it exposes itself can never succeed (the fragment only
+exists after the request ran). Such batches are rejected at graph build with a specific
+`400`: `Request '<key>' depends on its own alias '@a'. A request cannot consume a fragment
+it exposes itself.`
 
 ### Batch authorization is per-request
 

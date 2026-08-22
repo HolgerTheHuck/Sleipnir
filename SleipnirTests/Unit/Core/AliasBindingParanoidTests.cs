@@ -94,11 +94,12 @@ public class AliasBindingParanoidTests
     public async Task Paranoid_LiteralMissingReference_Rejects400()
     {
         // DescribeDto(TestDto{Id,Name}) mit Literal {id:7} — Name (Referenz) fehlt.
+        // (Seit D5 werden Wire-Namen gemeldet: camelCase "name".)
         var res = await RunSingle(Req("c", "DepChain", "DescribeDto", null,
             Lit("d", """{"id":7}""")));
 
         res.Code.Should().Be((int)HttpStatusCode.BadRequest);
-        res.Error!.Message.Should().Contain("Name");
+        res.Error!.Message.Should().Contain("name");
     }
 
     // === Neu gegenüber Strict: rekursive Tiefe in verschachtelte Objekte =========
@@ -109,13 +110,14 @@ public class AliasBindingParanoidTests
         // TakeOrder(OrderDto{Id, Address{Street,Zip}}) mit Literal {id:1,address:{street:"A"}}.
         // Top-Level: Id + Address vorhanden (Strict wäre hier fertig). Paranoid steigt in
         // Address ab und findet das fehlende Zip (Werttyp) → 400.
+        // (Seit D5 werden Wire-Namen gemeldet: camelCase "address.zip".)
         var res = await RunSingle(Req("c", "DepChain", "TakeOrder", null,
             Lit("o", """{"id":1,"address":{"street":"A"}}""")));
 
         res.Code.Should().Be((int)HttpStatusCode.BadRequest);
         res.Error!.Message.Should().Contain("Paranoid binding");
-        res.Error.Message.Should().Contain("Zip");
-        res.Error.Message.Should().Contain("Address.Zip");
+        res.Error.Message.Should().Contain("zip");
+        res.Error.Message.Should().Contain("address.zip");
     }
 
     [Fact]
@@ -142,7 +144,7 @@ public class AliasBindingParanoidTests
         res.Code.Should().Be((int)HttpStatusCode.BadRequest);
         res.Error!.Message.Should().Contain("Paranoid binding");
         res.Error.Message.Should().Contain("list[1]");
-        res.Error.Message.Should().Contain("Zip");
+        res.Error.Message.Should().Contain("zip");
     }
 
     [Fact]
@@ -230,6 +232,7 @@ public class AliasBindingParanoidTests
     {
         // Provider MakeOrderNoZip (Dictionary → JSON ohne zip) → Consumer TakeOrder per @alias.
         // Paranoid steigt auf dem Alias-Pfad rekursiv in Address ab und findet fehlendes Zip.
+        // (Seit D5 werden Wire-Namen gemeldet: camelCase "address.zip".)
         var provider = Req("p", "DepChain", "MakeOrderNoZip", new() { ["order"] = "$" },
             ("id", "1"), ("street", JsonSerializer.Serialize("A")));
         var consumer = Req("c", "DepChain", "TakeOrder", null, Alias("o", "order"));
@@ -238,7 +241,7 @@ public class AliasBindingParanoidTests
 
         res.Code.Should().Be((int)HttpStatusCode.BadRequest);
         res.Error!.Message.Should().Contain("Paranoid binding");
-        res.Error.Message.Should().Contain("Address.Zip");
+        res.Error.Message.Should().Contain("address.zip");
     }
 
     [Fact]

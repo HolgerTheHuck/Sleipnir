@@ -129,6 +129,19 @@ same route twice *with* distinct ids → works (regression guard against over-bl
 
 ### Train 2 — release/1.2.0 (lands with R7–R9, shared files)
 
+**Status 2026-08-22:** D4 ✅, D5 ✅, D6 ✅, D7 ✅ landed (working tree). Implementation
+notes beyond the original plan:
+- D5: the coverage check now works on (wire-name → CLR-property) pairs — the recursion in
+  `CollectMissing` descends via the CLR property while comparing fragment keys against the
+  wire name; results cached per type (`CoverablePropertiesCache`). **Wire-visible change:**
+  Strict/Paranoid error messages now name camelCase wire names (`'name'`, `'address.zip'`)
+  instead of CLR names (`'Name'`, `'Address.Zip'`) — three existing tests updated accordingly.
+- D6: only *exceptional* extraction failures get the new diagnosis (`invalid JsonPath`,
+  `extraction error`); a valid path that matches nothing remains the documented
+  "did not expose" case.
+- D7: the graph builder throws with a specific message; the invoker's invalid-graph catch
+  now forwards `ex.Message` instead of the hardcoded cycle text.
+
 #### D4 — Align serial-path auth/resolution order (F4)
 
 **Why.** Serial path answers 400 (unresolved alias) before checking authorization; topological

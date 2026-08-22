@@ -107,10 +107,11 @@ public static class DependencyGraphBuilder
 
     /// <summary>
     /// Extrahiert alle @alias-Platzhalter aus dem nativen <see cref="SleipnirRequest.Params"/>-
-    /// <see cref="JsonNode"/>. Durchläuft den Knotenbaum und sammelt String-Werte, die mit
-    /// <c>@</c> beginnen (der Alias-Name ist der alphanumerische+_--Anteil danach). Wird für
-    /// die statische Verfügbarkeits-Propagierung genutzt, wo die Abhängigkeiten noch nicht
-    /// aufgelöst sind; die präzise Match-Logik liegt im Invoker (ReplaceDependencyByAlias).
+    /// <see cref="JsonNode"/>. Durchläuft den Knotenbaum und sammelt String-Werte, die unter
+    /// der gemeinsamen Alias-Grammatik (<see cref="AliasGrammar"/>) eine Alias-Referenz sind —
+    /// trim-frei, mit @@-Escape (escaped Literale erzeugen keine Kante). Wird für die statische
+    /// Verfügbarkeits-Propagierung genutzt, wo die Abhängigkeiten noch nicht aufgelöst sind;
+    /// die präzise Match-Logik liegt im Invoker (ReplaceDependencyByAlias).
     /// </summary>
     internal static HashSet<string> ExtractAliases(JsonNode? paramsNode)
     {
@@ -122,17 +123,12 @@ public static class DependencyGraphBuilder
     private static void CollectAliases(JsonNode? node, HashSet<string> aliases)
     {
         if (node == null) return;
-        if (node is JsonValue v && v.TryGetValue<string>(out var s) && s.StartsWith("@"))
+        if (node is JsonValue v && v.TryGetValue<string>(out var s))
         {
-            // Alias-Name: alphanumerisch + _ (wie früherer Token-Scan).
-            var sb = new System.Text.StringBuilder();
-            for (int j = 1; j < s.Length; j++)
-            {
-                char c = s[j];
-                if (char.IsLetterOrDigit(c) || c == '_') sb.Append(c); else break;
-            }
-            if (sb.Length > 0)
-                aliases.Add(sb.ToString());
+            // Gemeinsame Grammatik: nur echte Alias-Referenzen erzeugen eine Kante
+            // ("@a.b" → Kante zu "a"); "@@x" ist ein escaped Literal und keine Kante.
+            if (AliasGrammar.Classify(s, out var aliasName) == AliasKind.AliasReference)
+                aliases.Add(aliasName);
         }
         else if (node is JsonObject obj)
         {

@@ -1,0 +1,38 @@
+# R11.2 (08-08 consolidation roadmap): scheduled CodeQL security analysis over the C#/
+# .NET code. Runs on every push to main and weekly — cheap for a repo of this size and
+# the only code-scanning that exists here today.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, off-hour Monday minute (deliberately not :00 to avoid the fleet's cron peak).
+    - cron: '43 4 * * 1'
+
+jobs:
+  analyze:
+    name: Analyze (csharp)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+
+      # .NET 8 is preinstalled on GitHub runners, but pin it so the analysis runtime
+      # tracks the solution's target framework rather than the runner default.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: github/codeql-action/autobuild@v3
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:csharp"

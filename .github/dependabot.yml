@@ -1,0 +1,25 @@
+# R11.2 (08-08 consolidation roadmap): automated dependency updates. The build gates
+# on vulnerable NuGet packages (build.yml), but only updates notices here — auto-merge
+# is deliberately off for a stability-first side project: review each bump before merge.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  # The two npm packages live in separate directories with their own lockfiles.
+  - package-ecosystem: npm
+    directory: "/clients/ts"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: "/clients/codegen"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

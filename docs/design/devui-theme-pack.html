@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="en" data-theme="sleipnir">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sleipnir Developer — Theme Pack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" />
+<style>
+  /* ===== Neutral token defaults (= Sleipnir) ===== */
+  :root {
+    --ground: #0e1116; --surface: #161b22; --surface-2: #1e242d;
+    --ink: #f1efe7; --ink-muted: #b3bbc8; --ink-dim: #8089a0;
+    --line: #3d4654; --line-soft: #2b323d;
+    --accent: #f0a14a; --accent-hi: #ffb869; --accent-2: #5cb0ff;
+    --ok: #5ed884; --warn: #ecb94a; --err: #ff6a4a; --stone: #9aa8bc;
+    --code-bg: #0a0d12; --grain: rgba(150,160,175,0.05);
+    --shadow: 0 12px 32px rgba(0,0,0,0.6);
+    --json-key: #5cb0ff; --json-string: #7ee0a0; --json-number: #ffb868;
+    --json-bool: #c9a0ff; --json-null: #8089a0; --json-punct: #b3bbc8;
+    --radius: 8px; --radius-sm: 4px;
+    --font-display: 'Cinzel', 'IBM Plex Sans', Georgia, serif;
+    --font-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'Cascadia Code', Consolas, monospace;
+    --font-rune: 'Cinzel', 'Segoe UI Symbol', 'Noto Sans Runic', 'Apple Symbols', serif;
+  }
+
+  /* ===== Sleipnir (Nordic — default) ===== */
+  :root[data-theme='sleipnir'] {
+    --ground: #0e1116; --surface: #161b22; --surface-2: #1e242d;
+    --ink: #f1efe7; --ink-muted: #b3bbc8; --ink-dim: #8089a0;
+    --line: #3d4654; --line-soft: #2b323d;
+    --accent: #f0a14a; --accent-hi: #ffb869; --accent-2: #5cb0ff;
+    --ok: #5ed884; --warn: #ecb94a; --err: #ff6a4a; --stone: #9aa8bc;
+    --code-bg: #0a0d12; --grain: rgba(150,160,175,0.05);
+    --shadow: 0 12px 32px rgba(0,0,0,0.6);
+    --json-key: #5cb0ff; --json-string: #7ee0a0; --json-number: #ffb868;
+    --json-bool: #c9a0ff; --json-null: #8089a0; --json-punct: #b3bbc8;
+    --radius: 8px; --radius-sm: 4px;
+    --font-display: 'Cinzel', 'IBM Plex Sans', Georgia, serif;
+    --font-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'Cascadia Code', Consolas, monospace;
+  }
+
+  /* ===== Classic (legacy shipped DevUI) ===== */
+  :root[data-theme='classic'] {
+    --ground: #0d1117; --surface: #161b22; --surface-2: #1c2129;
+    --ink: #e6edf3; --ink-muted: #b1b9c2; --ink-dim: #8b949e;
+    --line: #30363d; --line-soft: #21262d;
+    --accent: #ff6a00; --accent-hi: #ff8a2b; --accent-2: #58a6ff;
+    --ok: #3fb950; --warn: #d29922; --err: #f85149; --stone: #6e7681;
+    --code-bg: #0d1117; --grain: transparent;
+    --shadow: 0 8px 24px rgba(0,0,0,0.4);
+    --json-key: #79c0ff; --json-string: #7ee787; --json-number: #ffab70;
+    --json-bool: #d2a8ff; --json-null: #8b949e; --json-punct: #b1b9c2;
+    --radius: 8px; --radius-sm: 4px;
+    --font-display: 'Inter', system-ui, sans-serif;
+    --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  }
+
+  /* ===== VS Code Dark ===== */
+  :root[data-theme='vscode-dark'] {
+    --ground: #1e1e1e; --surface: #252526; --surface-2: #2d2d2d;
+    --ink: #d4d4d4; --ink-muted: #b4b4b4; --ink-dim: #8a8a8a;
+    --line: #3c3c3c; --line-soft: #333333;
+    --accent: #007acc; --accent-hi: #1a8ad4; --accent-2: #4ec9b0;
+    --ok: #73c991; --warn: #d7ba7d; --err: #f48771; --stone: #808080;
+    --code-bg: #1e1e1e; --grain: transparent;
+    --shadow: 0 4px 12px rgba(0,0,0,0.35);
+    --json-key: #569cd6; --json-string: #ce9178; --json-number: #b5cea8;
+    --json-bool: #569cd6; --json-null: #808080; --json-punct: #d4d4d4;
+    --radius: 4px; --radius-sm: 3px;
+    --font-display: 'Segoe UI', system-ui, sans-serif;
+    --font-ui: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --font-mono: 'Cascadia Code', 'SF Mono', Consolas, monospace;
+  }
+
+  /* ===== VS Code Light ===== */
+  :root[data-theme='vscode-light'] {
+    --ground: #ffffff; --surface: #f3f3f3; --surface-2: #e8e8e8;
+    --ink: #262626; --ink-muted: #5a5a5a; --ink-dim: #808080;
+    --line: #d0d0d0; --line-soft: #e2e2e2;
+    --accent: #007acc; --accent-hi: #0067b8; --accent-2: #2a8c8c;
+    --ok: #487a3a; --warn: #b37200; --err: #d83a3a; --stone: #909090;
+    --code-bg: #f3f3f3; --grain: transparent;
+    --shadow: 0 4px 12px rgba(0,0,0,0.1);
+    --json-key: #0a4f9f; --json-string: #a31515; --json-number: #098658;
+    --json-bool: #0a4f9f; --json-null: #808080; --json-punct: #262626;
+    --radius: 4px; --radius-sm: 3px;
+    --font-display: 'Segoe UI', system-ui, sans-serif;
+    --font-ui: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --font-mono: 'Cascadia Code', 'SF Mono', Consolas, monospace;
+  }
+
+  /* ===== Modern = Tokyo Night ===== */
+  :root[data-theme='tokyo-night'] {
+    --ground: #1a1b26; --surface: #24283b; --surface-2: #2e333f;
+    --ink: #c0caf5; --ink-muted: #9aa5ce; --ink-dim: #7a82a8;
+    --line: #3b4261; --line-soft: #2a2e44;
+    --accent: #7aa2f7; --accent-hi: #8ab4fa; --accent-2: #7dcfff;
+    --ok: #9ece6a; --warn: #e0af68; --err: #f7768e; --stone: #6b7396;
+    --code-bg: #16161e; --grain: transparent;
+    --shadow: 0 10px 30px rgba(0,0,0,0.45);
+    --json-key: #7aa2f7; --json-string: #9ece6a; --json-number: #ff9e64;
+    --json-bool: #bb9af7; --json-null: #7a82a8; --json-punct: #9aa5ce;
+    --radius: 8px; --radius-sm: 4px;
+    --font-display: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  }
+
+  /* ===== Nord (arctic) ===== */
+  :root[data-theme='nord'] {
+    --ground: #2e3440; --surface: #3b4252; --surface-2: #434c5e;
+    --ink: #eceff4; --ink-muted: #d8dee9; --ink-dim: #9aa3b5;
+    --line: #4c566a; --line-soft: #434c5e;
+    --accent: #88c0d0; --accent-hi: #a9d3dc; --accent-2: #81a1c1;
+    --ok: #a3be8c; --warn: #ebcb8b; --err: #bf616a; --stone: #6b7390;
+    --code-bg: #2a2f3b; --grain: transparent;
+    --shadow: 0 10px 30px rgba(0,0,0,0.4);
+    --json-key: #81a1c1; --json-string: #a3be8c; --json-number: #d08770;
+    --json-bool: #b48ead; --json-null: #7b849a; --json-punct: #d8dee9;
+    --radius: 8px; --radius-sm: 4px;
+    --font-display: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  }
+
+  /* ===== Solarized Dark ===== */
+  :root[data-theme='solarized'] {
+    --ground: #002b36; --surface: #073642; --surface-2: #0d4350;
+    --ink: #93a1a1; --ink-muted: #c2ccd0; --ink-dim: #7c949a;
+    --line: #1a4a55; --line-soft: #0f3a44;
+    --accent: #268bd2; --accent-hi: #2aa5e8; --accent-2: #2aa198;
+    --ok: #859900; --warn: #b58900; --err: #dc322f; --stone: #586e75;
+    --code-bg: #032830; --grain: transparent;
+    --shadow: 0 10px 28px rgba(0,0,0,0.4);
+    --json-key: #268bd2; --json-string: #859900; --json-number: #cb4b16;
+    --json-bool: #6c71c4; --json-null: #7c949a; --json-punct: #93a1a1;
+    --radius: 6px; --radius-sm: 3px;
+    --font-display: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  }
+
+  /* ===== Gruvbox ===== */
+  :root[data-theme='gruvbox'] {
+    --ground: #282828; --surface: #3c3836; --surface-2: #504945;
+    --ink: #ebdbb2; --ink-muted: #d5c9a0; --ink-dim: #a8997f;
+    --line: #504945; --line-soft: #3c3836;
+    --accent: #fabd2f; --accent-hi: #fce08a; --accent-2: #83a598;
+    --ok: #b8bb26; --warn: #fe8019; --err: #fb4934; --stone: #928374;
+    --code-bg: #1d2021; --grain: transparent;
+    --shadow: 0 10px 28px rgba(0,0,0,0.45);
+    --json-key: #83a598; --json-string: #b8bb26; --json-number: #fe8019;
+    --json-bool: #d3869b; --json-null: #928374; --json-punct: #ebdbb2;
+    --radius: 6px; --radius-sm: 3px;
+    --font-display: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  }
+
+  /* ===== Dracula ===== */
+  :root[data-theme='dracula'] {
+    --ground: #282a36; --surface: #343746; --surface-2: #44475a;
+    --ink: #f8f8f2; --ink-muted: #c5c9e8; --ink-dim: #7780b0;
+    --line: #44475a; --line-soft: #3a3d4d;
+    --accent: #bd93f9; --accent-hi: #caa6fc; --accent-2: #8be9fd;
+    --ok: #50fa7b; --warn: #ffb86c; --err: #ff5555; --stone: #6272a4;
+    --code-bg: #21222c; --grain: transparent;
+    --shadow: 0 12px 30px rgba(0,0,0,0.5);
+    --json-key: #ff79c6; --json-string: #f1fa8c; --json-number: #bd93f9;
+    --json-bool: #bd93f9; --json-null: #7780b0; --json-punct: #f8f8f2;
+    --radius: 8px; --radius-sm: 4px;
+    --font-display: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  }
+
+  /* ===== Reset ===== */
+  *, *::before, *::after { box-sizing: border-box; }
+  html { font-size: 14px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  body {
+    margin: 0; font-family: var(--font-ui); color: var(--ink); background: var(--ground);
+    background-image: radial-gradient(var(--grain) 1px, transparent 1px); background-size: 3px 3px;
+    display: flex; flex-direction: column; min-height: 100vh; overflow: hidden;
+    transition: background-color .25s ease, color .25s ease;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  a { color: var(--accent-2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+  :focus-visible { outline: 2px solid var(--accent-2); outline-offset: 1px; border-radius: 3px; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; border: 2px solid var(--ground); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--ink-dim); }
+
+  /* ===== Atoms ===== */
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 9px; border-radius: 999px;
+    font: 500 0.76rem/1.4 var(--font-ui);
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-muted); white-space: nowrap;
+  }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-dim); }
+  .pill.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: color-mix(in srgb, var(--ok) 10%, var(--surface)); }
+  .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 10%, var(--surface)); }
+  .pill.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 42%, transparent); background: color-mix(in srgb, var(--accent) 9%, var(--surface)); font-weight: 600; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 11px; border-radius: var(--radius-sm);
+    border: 1px solid var(--line); background: var(--surface-2);
+    color: var(--ink); font: 500 0.82rem/1 var(--font-ui);
+    cursor: pointer; transition: border-color .15s, background .15s, color .15s, transform .05s; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent-2); }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--ink-muted); }
+  .btn.ghost:hover { background: var(--surface-2); border-color: var(--line); color: var(--ink); }
+  .btn.icon { padding: 5px; }
+  .btn.run {
+    background: linear-gradient(180deg, var(--accent-hi), var(--accent));
+    border-color: var(--accent); color: #100b04; font-weight: 700; padding: 5px 14px 5px 12px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 1px 2px rgba(0,0,0,.25);
+  }
+  .btn.run:hover { filter: brightness(1.06); border-color: var(--accent-hi); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn:active:not(:disabled) { transform: translateY(.5px); }
+
+  input, textarea, select {
+    font: 400 0.86rem/1.4 var(--font-ui);
+    padding: 6px 10px; border: 1px solid var(--line);
+    border-radius: var(--radius-sm); background: var(--code-bg);
+    color: var(--ink); outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-2) 22%, transparent); }
+  input::placeholder { color: var(--ink-dim); }
+
+  /* theme select (topbar) */
+  .theme-select {
+    font: 500 0.8rem/1 var(--font-ui); padding: 5px 9px; cursor: pointer;
+    background: var(--surface-2); border: 1px solid var(--line); color: var(--ink);
+    border-radius: var(--radius-sm); -webkit-appearance: none; appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--ink-muted) 50%), linear-gradient(135deg, var(--ink-muted) 50%, transparent 50%);
+    background-position: calc(100% - 14px) 52%, calc(100% - 10px) 52%;
+    background-size: 4px 4px, 4px 4px; background-repeat: no-repeat;
+    padding-right: 26px; min-width: 130px;
+  }
+  .theme-select:hover { border-color: var(--accent-2); }
+
+  .eyebrow { display: flex; align-items: center; gap: 9px; font: 600 0.7rem/1 var(--font-display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-muted); }
+  .eyebrow::after { content: ''; flex: 1; height: 1px; background: var(--line-soft); opacity: .9; }
+  .eyebrow .ct { font-family: var(--font-mono); font-weight: 500; letter-spacing: .02em; text-transform: none; color: var(--ink-dim); font-size: .72rem; }
+  .eyebrow.nowrap { gap: 7px; }
+  .eyebrow.nowrap::after { display: none; }
+  .field-label { display: block; margin: 2px 0 6px; font: 600 0.62rem/1 var(--font-display); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-dim); }
+
+  /* ===== Shell ===== */
+  .app-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+  /* ===== Top bar ===== */
+  .topbar { display: flex; justify-content: space-between; align-items: center; padding: 0 14px; height: 52px; flex-shrink: 0; background: var(--surface); border-bottom: 1px solid var(--line); z-index: 40; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 11px; }
+  .brand-mark { flex-shrink: 0; display: block; }
+  .brand .title { font: 700 1.02rem/1 var(--font-display); letter-spacing: 0.06em; color: var(--ink); }
+  .brand .title em { font-style: normal; color: var(--ink-muted); font-weight: 500; letter-spacing: 0.04em; }
+  .top-actions { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+  .endpoint-chip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); font: 500 0.76rem/1 var(--font-mono); color: var(--ink-muted); }
+  .endpoint-chip .live { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+
+  /* ===== Main / panes ===== */
+  .main-content { display: flex; flex: 1; min-height: 0; padding: 9px; gap: 0; overflow: hidden; position: relative; }
+  .pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 11px 12px 12px; flex-shrink: 0; box-shadow: var(--shadow); }
+  .pane-left { width: 268px; }
+  .pane-center { flex: 1; min-width: 340px; }
+  .pane-right { width: 340px; }
+
+  /* splitter (the bridge between realms) */
+  .bifrost { width: 12px; flex-shrink: 0; position: relative; cursor: col-resize; display: flex; align-items: center; justify-content: center; }
+  .bifrost::before { content: ''; position: absolute; top: 10px; bottom: 10px; left: 50%; width: 2px; transform: translateX(-1px); background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent-2) 55%, transparent) 12%, color-mix(in srgb, var(--accent-2) 80%, transparent) 50%, color-mix(in srgb, var(--accent-2) 55%, transparent) 88%, transparent); opacity: .55; }
+  .bifrost:hover::before, .bifrost.active::before { opacity: 1; width: 3px; }
+  .rider { position: relative; z-index: 2; width: 13px; height: 22px; border-radius: 999px; background: var(--surface); border: 1px solid var(--accent-2); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; }
+  .rider span { width: 3px; height: 3px; border-radius: 50%; background: var(--accent-2); }
+  .bifrost:hover .rider, .bifrost.active .rider { border-color: var(--accent); }
+  .bifrost:hover .rider span, .bifrost.active .rider span { background: var(--accent); }
+
+  /* ===== Explorer ===== */
+  .explorer { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .explorer .discovery { flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0; }
+  .explorer .types { flex: 1; display: flex; flex-direction: column; min-height: 0; margin-top: 16px; }
+  .search-box { position: relative; margin: 9px 0 8px; }
+  .search-box svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--ink-dim); pointer-events: none; }
+  .search-box input { width: 100%; padding-left: 30px; }
+
+  .tree { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -4px; padding: 2px 4px; }
+  .tree-row { display: flex; align-items: center; gap: 7px; padding: 3px 5px; border-radius: var(--radius-sm); font-size: 0.82rem; color: var(--ink); cursor: pointer; -webkit-user-select: none; user-select: none; }
+  .tree-row:hover { background: var(--surface-2); }
+  .tree-row.sel { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+  .tree-row.sel .name { color: var(--accent); }
+  .tree-row .caret { width: 12px; color: var(--ink-dim); flex-shrink: 0; display: inline-flex; justify-content: center; transition: transform .14s; font-family: var(--font-mono); }
+  .tree-row .caret.open { transform: rotate(90deg); color: var(--accent); }
+  .tree-row .bud { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--line); background: var(--surface); }
+  .tree-row.ctrl .bud { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 30%, var(--surface)); }
+  .tree-row.meth .bud { width: 5px; height: 5px; border-color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 35%, var(--surface)); }
+  .tree-row.type .bud { border-color: var(--stone); background: color-mix(in srgb, var(--stone) 30%, var(--surface)); }
+  .tree-row .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tree-row.ctrl .name { font-family: var(--font-display); font-weight: 600; letter-spacing: 0.03em; }
+  .tree-row.meth .name { font-family: var(--font-mono); font-size: 0.8rem; }
+  .tree-row.type .name { font-family: var(--font-ui); font-size: 0.82rem; }
+  .tree-row .badge { margin-left: auto; font: 500 0.66rem/1 var(--font-mono); color: var(--ink-dim); }
+
+  .branch { position: relative; padding-left: 14px; }
+  .branch::before { content: ''; position: absolute; left: 6px; top: 0; bottom: 6px; width: 1px; background: linear-gradient(180deg, var(--line), color-mix(in srgb, var(--stone) 40%, var(--line))); }
+  .branch .tree-row { position: relative; }
+  .branch .tree-row::before { content: ''; position: absolute; left: -8px; top: 50%; width: 8px; height: 1px; background: var(--line); transform: translateY(-.5px); }
+  .branch .tree-row.sel::before { background: var(--accent); }
+
+  .type-prop { display: flex; align-items: baseline; gap: 7px; padding: 2px 5px 2px 20px; position: relative; font: 400 0.78rem/1.4 var(--font-mono); color: var(--ink-muted); }
+  .type-prop::before { content: ''; position: absolute; left: -8px; top: 50%; width: 8px; height: 1px; background: var(--line-soft); }
+  .type-prop .k { color: var(--json-key); }
+  .type-prop .t { color: var(--ink-dim); font-size: 0.72rem; }
+
+  /* ===== Editor ===== */
+  .editor { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .tabbar { display: flex; gap: 2px; align-items: flex-end; margin: -2px -2px 9px; padding: 0 2px; border-bottom: 1px solid var(--line); }
+  .tab { display: flex; align-items: center; gap: 7px; padding: 6px 11px 7px; border: 1px solid transparent; border-bottom: none; border-radius: var(--radius-sm) var(--radius-sm) 0 0; font: 500 0.8rem/1 var(--font-mono); color: var(--ink-muted); cursor: pointer; position: relative; }
+  .tab:hover { color: var(--ink); background: var(--surface-2); }
+  .tab.sel { color: var(--ink); background: var(--surface); border-color: var(--line); }
+  .tab.sel::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--accent); border-radius: 2px; }
+  .tab .x { opacity: .5; font-size: .9rem; }
+  .tab.add { color: var(--ink-dim); }
+
+  .toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; flex-shrink: 0; }
+  .toolbar .right { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .batch-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--ink-muted); cursor: pointer; -webkit-user-select: none; user-select: none; }
+  .switch { position: relative; width: 30px; height: 17px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; transition: background .15s, border-color .15s; flex-shrink: 0; }
+  .switch::after { content: ''; position: absolute; top: 1px; left: 1px; width: 13px; height: 13px; border-radius: 50%; background: var(--ink-dim); transition: transform .15s, background .15s; }
+  .batch-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .batch-toggle input:checked + .switch { background: color-mix(in srgb, var(--accent) 28%, var(--surface-2)); border-color: var(--accent); }
+  .batch-toggle input:checked + .switch::after { transform: translateX(12px); background: var(--accent); }
+
+  .editor-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 4px; }
+  .card { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); overflow: hidden; }
+  .card .card-head { padding: 7px 11px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; }
+  .card .card-body { padding: 10px 11px; }
+
+  .params { display: flex; flex-direction: column; gap: 9px; }
+  .param-row { display: flex; align-items: center; gap: 10px; }
+  .param-row .pname { font: 500 0.8rem/1 var(--font-mono); color: var(--ink); min-width: 110px; }
+  .param-row .ptype { font: 400 0.72rem/1 var(--font-mono); color: var(--ink-dim); }
+  .param-row input { flex: 1; font-family: var(--font-mono); }
+  .param-row input[type=number] { max-width: 140px; }
+
+  .json-editor pre { margin: 0; padding: 11px 13px; font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.6; color: var(--ink); background: var(--code-bg); white-space: pre; overflow-x: auto; tab-size: 2; }
+  .tok-key { color: var(--json-key); }
+  .tok-str { color: var(--json-string); }
+  .tok-num { color: var(--json-number); }
+  .tok-bool { color: var(--json-bool); }
+  .tok-null { color: var(--json-null); }
+  .tok-punct { color: var(--json-punct); }
+
+  .codegen .card-body { padding: 0; }
+  .codegen pre { margin: 0; padding: 11px 13px; font-family: var(--font-mono); font-size: 0.76rem; line-height: 1.6; color: var(--ink-muted); background: var(--code-bg); overflow-x: auto; white-space: pre; }
+  .codegen .kw { color: var(--json-key); }
+  .codegen .fn { color: var(--accent); }
+  .codegen .str { color: var(--json-string); }
+  .codegen .cmt { color: var(--ink-dim); font-style: italic; }
+
+  /* ===== Result ===== */
+  .result { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .result-meta { display: flex; gap: 16px; margin: 10px 0; font-size: 0.8rem; flex-shrink: 0; flex-wrap: wrap; }
+  .result-meta .m { display: flex; flex-direction: column; gap: 3px; }
+  .result-meta .ml { font: 600 0.6rem/1 var(--font-display); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-dim); }
+  .result-meta .mv { font: 600 0.92rem/1 var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+  .result-meta .mv.ok { color: var(--ok); }
+  .result-meta .mv.bronze { color: var(--accent); }
+
+  .cloth { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 13px 14px; background: var(--code-bg); border: 1px solid var(--line); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.6; white-space: pre; color: var(--ink); }
+  .cloth mark { background: color-mix(in srgb, var(--ok) 22%, transparent); border-radius: 2px; padding: 1px 0; }
+
+  /* ===== Eight-leg gait ribbon (signature) ===== */
+  .gait { flex-shrink: 0; display: grid; grid-template-columns: 1fr; gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 12px 11px; margin: 0 9px 9px; position: relative; overflow: hidden; box-shadow: var(--shadow); }
+  .gait-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 7px; flex-wrap: wrap; }
+  .gait-head .h-title { font: 600 0.7rem/1 var(--font-display); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-muted); }
+  .gait-head .h-sub { font: 400 0.74rem/1 var(--font-ui); color: var(--ink-dim); }
+  .gait-head .h-stamp { margin-left: auto; font: 500 0.72rem/1 var(--font-mono); color: var(--ok); font-variant-numeric: tabular-nums; }
+  .gait-grid { display: grid; grid-template-columns: 1fr; gap: 3px; position: relative; }
+  .lane { display: grid; grid-template-columns: 22px 92px 1fr 54px; align-items: center; gap: 9px; height: 17px; }
+  .lane .rune { font-family: var(--font-rune); font-size: 0.96rem; color: var(--accent); text-align: center; line-height: 1; }
+  .lane .lname { font: 500 0.72rem/1 var(--font-mono); color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lane .track { position: relative; height: 17px; display: flex; align-items: flex-end; gap: 2px; overflow: hidden; }
+  .lane .track .bar { flex: 1 1 0; min-width: 0; background: color-mix(in srgb, var(--accent-2) 65%, var(--surface-2)); border-radius: 1px; opacity: .8; transition: height .25s ease; }
+  .lane.active .bar { background: color-mix(in srgb, var(--accent) 75%, var(--surface-2)); opacity: .9; }
+  .lane.active .rune { color: var(--accent-hi); }
+  .lane .rate { font: 500 0.68rem/1 var(--font-mono); color: var(--ink-dim); text-align: right; font-variant-numeric: tabular-nums; }
+  .gait::after { content: ''; position: absolute; top: 0; bottom: 0; left: -20%; width: 18%; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-2) 28%, transparent), transparent); opacity: 0; pointer-events: none; }
+  .gait.sweep::after { animation: bifrost-sweep 1.1s cubic-bezier(.4,.05,.2,1); }
+  @keyframes bifrost-sweep { 0% { left: -20%; opacity: 0; } 15% { opacity: 1; } 100% { left: 122%; opacity: 0; } }
+
+  /* ===== Footer ===== */
+  .footer { display: flex; justify-content: space-between; align-items: center; padding: 5px 15px; height: 28px; flex-shrink: 0; font: 400 0.73rem/1 var(--font-ui); color: var(--ink-dim); border-top: 1px solid var(--line); background: var(--surface); }
+  .footer .links { display: flex; gap: 14px; }
+  .footer .fbrand { display: flex; align-items: center; gap: 8px; }
+  .footer .hooves { display: inline-flex; gap: 2px; }
+  .footer .hooves i { width: 3px; height: 7px; border-radius: 1px; background: var(--ink-dim); display: block; }
+  .footer .hooves i:nth-child(odd) { background: var(--accent); opacity: .8; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+    .gait.sweep::after { display: none; }
+  }
+
+  /* ===== Responsive ===== */
+  @media (max-width: 980px) {
+    body { overflow: auto; height: auto; }
+    #app, .app-shell { height: auto; min-height: 100vh; }
+    .main-content { flex-direction: column; padding: 8px; }
+    .pane { width: 100% !important; min-height: 240px; }
+    .bifrost { display: none; }
+    .gait { margin: 0 8px 8px; }
+    .lane { grid-template-columns: 22px 80px 1fr 46px; }
+    .top-actions .lbl { display: none; }
+    .topbar { height: auto; padding: 8px 10px; }
+    .brand .title { font-size: 0.9rem; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="app-shell">
+
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand-mark" width="26" height="22" viewBox="0 0 26 22" fill="none" aria-hidden="true">
+          <path d="M2 9 C 8 7, 14 6, 23 7" stroke="var(--accent)" stroke-width="1.9" stroke-linecap="round"/>
+          <path d="M21 6.4 L24 7 L22.5 9.2" stroke="var(--accent)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          <g stroke="var(--stone)" stroke-width="1.5" stroke-linecap="round">
+            <line x1="4" y1="10" x2="2.5" y2="19"/><line x1="6" y1="10" x2="5.5" y2="20"/>
+            <line x1="9" y1="10" x2="8" y2="20"/><line x1="11" y1="10" x2="11.5" y2="19"/>
+            <line x1="14" y1="10" x2="13" y2="20"/><line x1="16" y1="10" x2="17" y2="19"/>
+            <line x1="19" y1="10" x2="18.5" y2="20"/><line x1="21" y1="10" x2="22" y2="19"/>
+          </g>
+        </svg>
+        <span class="title">SLEIPNIR <em>Developer</em></span>
+      </div>
+
+      <div class="top-actions">
+        <span class="endpoint-chip"><span class="live"></span>/api/sleipnir</span>
+
+        <select class="theme-select" id="themeSelect" title="Theme" aria-label="Theme">
+          <optgroup label="Brand">
+            <option value="sleipnir">Sleipnir</option>
+            <option value="classic">Classic</option>
+          </optgroup>
+          <optgroup label="IDE">
+            <option value="vscode-dark">VS Code Dark</option>
+            <option value="vscode-light">VS Code Light</option>
+          </optgroup>
+          <optgroup label="Editor">
+            <option value="tokyo-night">Tokyo Night</option>
+            <option value="nord">Nord</option>
+            <option value="solarized">Solarized</option>
+            <option value="gruvbox">Gruvbox</option>
+            <option value="dracula">Dracula</option>
+          </optgroup>
+        </select>
+
+        <button class="btn ghost" title="Connection & workspace">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.2.56.69.97 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span class="lbl">Settings</span>
+        </button>
+
+        <button class="btn ghost" title="Bearer token for auth">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+          <span class="lbl">Auth</span>
+          <span class="dot" id="authDot" style="width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 2px var(--surface);"></span>
+        </button>
+
+        <button class="btn ghost" title="Preview the generated client — live from discovery">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <span class="lbl">Client preview</span>
+        </button>
+
+        <button class="btn ghost" title="Dependency builder — compose @alias batches visually">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><line x1="7.41" y1="7.41" x2="10.59" y2="14.59"/><line x1="16.59" y1="7.41" x2="13.41" y2="14.59"/></svg>
+          <span class="lbl">Dependency builder</span>
+        </button>
+
+        <button class="btn ghost" title="Observability — the eight legs, live">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+          <span class="lbl">Observability</span>
+        </button>
+
+        <button class="btn ghost icon" title="Refresh discovery" id="refreshBtn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="main-content">
+      <aside class="pane pane-left">
+        <div class="explorer">
+          <div class="discovery">
+            <div class="eyebrow"><span>Discovery</span><span class="ct">2 ctrl</span></div>
+            <div class="search-box">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="search" placeholder="Filter controllers or methods…" id="filterInput" />
+            </div>
+            <div class="tree" id="discoveryTree">
+              <div class="tree-row ctrl" data-toggle="c-customer"><span class="caret open">›</span><span class="bud"></span><span class="name">Customer</span><span class="badge">11</span></div>
+              <div class="branch" data-children="c-customer">
+                <div class="tree-row meth" data-method="GetCustomerById"><span class="bud"></span><span class="name">GetCustomerById</span></div>
+                <div class="tree-row meth" data-method="GetAllCustomers"><span class="bud"></span><span class="name">GetAllCustomers</span></div>
+                <div class="tree-row meth" data-method="GetOrderByOrderId"><span class="bud"></span><span class="name">GetOrderByOrderId</span></div>
+                <div class="tree-row meth" data-method="AddCustomer"><span class="bud"></span><span class="name">AddCustomer</span></div>
+                <div class="tree-row meth" data-method="UpdateCustomerName"><span class="bud"></span><span class="name">UpdateCustomerName</span></div>
+                <div class="tree-row meth" data-method="DeleteCustomer"><span class="bud"></span><span class="name">DeleteCustomer</span></div>
+              </div>
+              <div class="tree-row ctrl" data-toggle="c-test" style="margin-top:3px"><span class="caret">›</span><span class="bud"></span><span class="name">TestService</span><span class="badge">4</span></div>
+              <div class="branch" data-children="c-test" style="display:none">
+                <div class="tree-row meth"><span class="bud"></span><span class="name">GetAdresse</span></div>
+                <div class="tree-row meth"><span class="bud"></span><span class="name">GetAdresses</span></div>
+                <div class="tree-row meth"><span class="bud"></span><span class="name">AddAdresse</span></div>
+                <div class="tree-row meth"><span class="bud"></span><span class="name">GetAdresseParallel</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="types">
+            <div class="eyebrow"><span>Types</span><span class="ct">3</span></div>
+            <div class="tree" style="margin-top:9px">
+              <div class="tree-row type" data-toggle="t-customer"><span class="caret open">›</span><span class="bud"></span><span class="name">Customer</span></div>
+              <div class="branch" data-children="t-customer">
+                <div class="type-prop"><span class="k">Id</span><span class="t">int</span></div>
+                <div class="type-prop"><span class="k">Name</span><span class="t">string</span></div>
+                <div class="type-prop"><span class="k">Created</span><span class="t">DateTime</span></div>
+                <div class="type-prop"><span class="k">Addresses</span><span class="t">List&lt;Address&gt;</span></div>
+                <div class="type-prop"><span class="k">Map</span><span class="t">Dictionary&lt;string,int&gt;?</span></div>
+              </div>
+              <div class="tree-row type" data-toggle="t-order" style="margin-top:3px"><span class="caret">›</span><span class="bud"></span><span class="name">Order</span></div>
+              <div class="branch" data-children="t-order" style="display:none">
+                <div class="type-prop"><span class="k">Id</span><span class="t">int</span></div>
+                <div class="type-prop"><span class="k">ProductName</span><span class="t">string</span></div>
+                <div class="type-prop"><span class="k">Price</span><span class="t">decimal</span></div>
+              </div>
+              <div class="tree-row type" data-toggle="t-addr" style="margin-top:3px"><span class="caret">›</span><span class="bud"></span><span class="name">Address</span></div>
+              <div class="branch" data-children="t-addr" style="display:none">
+                <div class="type-prop"><span class="k">Street</span><span class="t">string</span></div>
+                <div class="type-prop"><span class="k">City</span><span class="t">string</span></div>
+                <div class="type-prop"><span class="k">PostalCode</span><span class="t">string</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <div class="bifrost" role="separator" aria-label="Resize explorer and editor" tabindex="0"><div class="rider"><span></span><span></span><span></span></div></div>
+
+      <section class="pane pane-center">
+        <div class="editor">
+          <div class="tabbar">
+            <div class="tab sel"><span>Customer.GetCustomerById</span><span class="x">×</span></div>
+            <div class="tab"><span>Customer.GetAllCustomers</span><span class="x">×</span></div>
+            <div class="tab add"><span>+</span></div>
+          </div>
+          <div class="toolbar">
+            <span class="pill accent">Customer.GetCustomerById</span>
+            <span class="pill"><span class="dot" style="background:var(--accent-2)"></span>1 param</span>
+            <span class="pill"><span class="dot" style="background:var(--ok)"></span><span id="durPill">14 ms</span></span>
+            <div class="right">
+              <label class="batch-toggle" title="Switch to batch mode">
+                <input type="checkbox" id="batchChk" /><span class="switch"></span><span>Batch</span>
+              </label>
+              <button class="btn ghost" title="Format request JSON">Format</button>
+              <button class="btn ghost" title="Reset to defaults">Reset</button>
+              <button class="btn run" id="runBtn" title="Spur Sleipnir — run the request">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12 h3"/><path d="M8 8 L19 12 L8 16 z" fill="currentColor" stroke="none"/></svg>
+                Run
+              </button>
+            </div>
+          </div>
+          <div class="editor-scroll">
+            <div class="card">
+              <div class="card-head"><span class="eyebrow nowrap"><span>Parameters</span></span><span class="pill" style="font-family:var(--font-mono)">1</span></div>
+              <div class="card-body">
+                <div class="params">
+                  <div class="param-row"><span class="pname">id</span><span class="ptype">int</span><input type="number" value="7" id="idInput" aria-label="id" /></div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <span class="field-label">Request · params</span>
+              <div class="card json-editor">
+                <pre id="reqJson"><span class="tok-punct">[</span>
+  <span class="tok-punct">{</span> <span class="tok-key">"name"</span><span class="tok-punct">:</span> <span class="tok-str">"id"</span><span class="tok-punct">,</span> <span class="tok-key">"data"</span><span class="tok-punct">:</span> <span class="tok-num">7</span> <span class="tok-punct">}</span>
+<span class="tok-punct">]</span></pre>
+              </div>
+            </div>
+            <div class="card codegen">
+              <div class="card-head"><span class="eyebrow nowrap"><span>Generated client</span></span><span class="pill">TypeScript</span></div>
+              <div class="card-body">
+<pre><span class="cmt">// live from discovery — no .proto, no IDL</span>
+<span class="kw">const</span> customer = <span class="kw">await</span> sleipnir.<span class="fn">call</span>(<span class="str">"Customer"</span>, <span class="str">"GetCustomerById"</span>, {
+  id: <span class="str">7</span>,
+});
+<span class="cmt">// customer: Customer | null</span></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="bifrost" role="separator" aria-label="Resize editor and result" tabindex="0"><div class="rider"><span></span><span></span><span></span></div></div>
+
+      <aside class="pane pane-right">
+        <div class="result">
+          <div class="eyebrow"><span>Response</span><span class="ct" id="resStamp">just now</span></div>
+          <div class="result-meta">
+            <div class="m"><span class="ml">Status</span><span class="mv ok" id="resStatus">200</span></div>
+            <div class="m"><span class="ml">Duration</span><span class="mv bronze" id="resDur">14 ms</span></div>
+            <div class="m"><span class="ml">Route</span><span class="mv" style="font-size:.76rem">Customer.GetCustomerById</span></div>
+          </div>
+          <span class="field-label">Result · carried across</span>
+          <pre class="cloth" id="cloth"><span class="tok-punct">{</span>
+  <span class="tok-key">"code"</span><span class="tok-punct">:</span> <mark><span class="tok-num">200</span></mark><span class="tok-punct">,</span>
+  <span class="tok-key">"data"</span><span class="tok-punct">:</span> <span class="tok-punct">{</span>
+    <span class="tok-key">"id"</span><span class="tok-punct">:</span> <span class="tok-num">7</span><span class="tok-punct">,</span>
+    <span class="tok-key">"orderId"</span><span class="tok-punct">:</span> <span class="tok-num">42</span><span class="tok-punct">,</span>
+    <span class="tok-key">"name"</span><span class="tok-punct">:</span> <span class="tok-str">"Acme Textile Co."</span><span class="tok-punct">,</span>
+    <span class="tok-key">"created"</span><span class="tok-punct">:</span> <span class="tok-str">"2026-08-14T09:12:03Z"</span><span class="tok-punct">,</span>
+    <span class="tok-key">"resourceId"</span><span class="tok-punct">:</span> <span class="tok-str">"8f3b1a2c-…-a91c"</span><span class="tok-punct">,</span>
+    <span class="tok-key">"map"</span><span class="tok-punct">:</span> <span class="tok-punct">{</span> <span class="tok-key">"eu"</span><span class="tok-punct">:</span> <span class="tok-num">3</span><span class="tok-punct">,</span> <span class="tok-key">"us"</span><span class="tok-punct">:</span> <span class="tok-num">1</span> <span class="tok-punct">}</span><span class="tok-punct">,</span>
+    <span class="tok-key">"addresses"</span><span class="tok-punct">:</span> <span class="tok-punct">[</span>
+      <span class="tok-punct">{</span> <span class="tok-key">"id"</span><span class="tok-punct">:</span> <span class="tok-num">12</span><span class="tok-punct">,</span> <span class="tok-key">"street"</span><span class="tok-punct">:</span> <span class="tok-str">"2 Indigo Mill"</span><span class="tok-punct">,</span> <span class="tok-key">"city"</span><span class="tok-punct">:</span> <span class="tok-str">"Lyon"</span><span class="tok-punct">,</span> <span class="tok-key">"postalCode"</span><span class="tok-punct">:</span> <span class="tok-str">"69001"</span> <span class="tok-punct">}</span><span class="tok-punct">,</span>
+      <span class="tok-punct">{</span> <span class="tok-key">"id"</span><span class="tok-punct">:</span> <span class="tok-num">18</span><span class="tok-punct">,</span> <span class="tok-key">"street"</span><span class="tok-punct">:</span> <span class="tok-str">"14 Warp Lane"</span><span class="tok-punct">,</span> <span class="tok-key">"city"</span><span class="tok-punct">:</span> <span class="tok-str">"Leeds"</span><span class="tok-punct">,</span> <span class="tok-key">"postalCode"</span><span class="tok-punct">:</span> <span class="tok-str">"LS1 4AB"</span> <span class="tok-punct">}</span>
+    <span class="tok-punct">]</span>
+  <span class="tok-punct">}</span><span class="tok-punct">,</span>
+  <span class="tok-key">"id"</span><span class="tok-punct">:</span> <span class="tok-str">"Customer.GetCustomerById"</span>
+<span class="tok-punct">}</span></pre>
+        </div>
+      </aside>
+    </div>
+
+    <div class="gait" id="gait">
+      <div class="gait-head">
+        <span class="h-title">Gait</span>
+        <span class="h-sub">the eight legs, live — one coordinated beat across every realm</span>
+        <span class="h-stamp" id="gaitStamp">142 calls · 0 dropped</span>
+      </div>
+      <div class="gait-grid" id="gaitGrid"></div>
+    </div>
+
+    <footer class="footer">
+      <span class="fbrand">
+        <span class="hooves"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        Sleipnir · code-first RPC — carried across every transport
+      </span>
+      <div class="links"><a href="#" target="_blank">GitHub</a><a href="#" target="_blank">Swagger</a><a href="#" target="_blank">Discovery</a></div>
+    </footer>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var html = document.documentElement;
+    var themeSelect = document.getElementById('themeSelect');
+    function applyTheme(name) {
+      html.setAttribute('data-theme', name);
+      themeSelect.value = name;
+      try { localStorage.setItem('sleipnir-devui-theme', name); } catch (e) {}
+    }
+    var saved = 'sleipnir';
+    try { saved = localStorage.getItem('sleipnir-devui-theme') || 'sleipnir'; } catch (e) {}
+    applyTheme(saved);
+    themeSelect.addEventListener('change', function () { applyTheme(themeSelect.value); });
+
+    // Caret toggles
+    document.querySelectorAll('[data-toggle]').forEach(function (row) {
+      row.addEventListener('click', function () {
+        var key = row.getAttribute('data-toggle');
+        var caret = row.querySelector('.caret');
+        var body = document.querySelector('[data-children="' + key + '"]');
+        if (!body) return;
+        var open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : '';
+        if (caret) caret.classList.toggle('open', !open);
+      });
+    });
+
+    // Method selection
+    document.querySelectorAll('[data-method]').forEach(function (row) {
+      row.addEventListener('click', function () {
+        document.querySelectorAll('.tree-row.sel').forEach(function (s) { s.classList.remove('sel'); });
+        row.classList.add('sel');
+      });
+    });
+    var init = document.querySelector('[data-method="GetCustomerById"]');
+    if (init) init.classList.add('sel');
+
+    // Filter
+    var filterInput = document.getElementById('filterInput');
+    filterInput.addEventListener('input', function () {
+      var q = filterInput.value.trim().toLowerCase();
+      document.querySelectorAll('#discoveryTree .tree-row').forEach(function (row) {
+        var name = (row.textContent || '').toLowerCase();
+        row.style.display = !q || name.indexOf(q) !== -1 ? '' : 'none';
+      });
+    });
+
+    // ===== Eight-leg gait (signature) =====
+    var LEGS = [
+      { rune: 'ᚠ', name: 'REST', active: true },
+      { rune: 'ᚢ', name: 'WebSocket', active: true },
+      { rune: 'ᚦ', name: 'SignalR', active: false },
+      { rune: 'ᚨ', name: 'SSE', active: true },
+      { rune: 'ᚱ', name: 'Batch', active: true },
+      { rune: 'ᚲ', name: 'Discovery', active: false },
+      { rune: 'ᚷ', name: 'Events', active: true },
+      { rune: 'ᚹ', name: 'Auth', active: false }
+    ];
+    var BARS = 34;
+    var gaitGrid = document.getElementById('gaitGrid');
+    var laneTracks = [];
+    LEGS.forEach(function (leg) {
+      var lane = document.createElement('div'); lane.className = 'lane' + (leg.active ? ' active' : '');
+      var rune = document.createElement('span'); rune.className = 'rune'; rune.textContent = leg.rune;
+      var lname = document.createElement('span'); lname.className = 'lname'; lname.textContent = leg.name;
+      var track = document.createElement('span'); track.className = 'track';
+      for (var b = 0; b < BARS; b++) { var bar = document.createElement('span'); bar.className = 'bar'; bar.style.height = '10%'; track.appendChild(bar); }
+      var rate = document.createElement('span'); rate.className = 'rate'; rate.textContent = '—';
+      lane.appendChild(rune); lane.appendChild(lname); lane.appendChild(track); lane.appendChild(rate);
+      gaitGrid.appendChild(lane); laneTracks.push({ track: track, leg: leg, rate: rate });
+    });
+    function rand(min, max) { return min + Math.random() * (max - min); }
+    function paintGait() {
+      laneTracks.forEach(function (t, i) {
+        var bars = t.track.querySelectorAll('.bar'); var phase = i * 0.7; var count = 0;
+        for (var b = 0; b < BARS; b++) {
+          var x = b / BARS;
+          var base = t.leg.active ? 40 : 12;
+          var wave = Math.sin((x * 6) + phase) * 0.5 + 0.5;
+          var beat = Math.sin((x * 22) + phase * 2) * 0.5 + 0.5;
+          var h = base + (t.leg.active ? 55 : 12) * (wave * 0.7 + beat * 0.3) + rand(-6, 6);
+          h = Math.max(8, Math.min(100, h));
+          bars[b].style.height = h.toFixed(0) + '%';
+          if (h > 60) count++;
+        }
+        t.rate.textContent = (t.leg.active ? (count / 3).toFixed(0) : '0') + ' /s';
+      });
+    }
+    paintGait();
+    var gaitTimer = setInterval(paintGait, 1600);
+
+    // ===== Run = spur the horse =====
+    var runBtn = document.getElementById('runBtn');
+    var gait = document.getElementById('gait');
+    var durPill = document.getElementById('durPill');
+    var resDur = document.getElementById('resDur');
+    var resStamp = document.getElementById('resStamp');
+    var idInput = document.getElementById('idInput');
+    var reqJson = document.getElementById('reqJson');
+    var gaitStamp = document.getElementById('gaitStamp');
+    var calls = 142, dropped = 0;
+    function renderReq(v) {
+      reqJson.innerHTML = '<span class="tok-punct">[</span>\n  <span class="tok-punct">{</span> <span class="tok-key">"name"</span><span class="tok-punct">:</span> <span class="tok-str">"id"</span><span class="tok-punct">,</span> <span class="tok-key">"data"</span><span class="tok-punct">:</span> <span class="tok-num">' + v + '</span> <span class="tok-punct">}</span>\n<span class="tok-punct">]</span>';
+    }
+    runBtn.addEventListener('click', function () {
+      gait.classList.remove('sweep'); void gait.offsetWidth; gait.classList.add('sweep');
+      paintGait();
+      var d = 8 + Math.floor(Math.random() * 14);
+      durPill.textContent = d + ' ms'; resDur.textContent = d + ' ms'; resStamp.textContent = 'just now';
+      calls += 1 + Math.floor(Math.random() * 3);
+      if (Math.random() < 0.12) dropped += 1;
+      gaitStamp.textContent = calls + ' calls · ' + dropped + ' dropped';
+      renderReq(idInput.value || '7');
+    });
+    idInput.addEventListener('input', function () { renderReq(idInput.value || '7'); });
+
+    var refreshBtn = document.getElementById('refreshBtn');
+    refreshBtn.addEventListener('click', function () {
+      refreshBtn.style.transform = 'rotate(360deg)'; refreshBtn.style.transition = 'transform .5s';
+      setTimeout(function () { refreshBtn.style.transform = ''; }, 520);
+    });
+  })();
+</script>
+</body>
+</html>

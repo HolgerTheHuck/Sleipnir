@@ -189,6 +189,13 @@ batch. Documented as supported configuration.
 - **More binding modes** beyond Weak/Strict/Paranoid.
 - **Feature accretion** generally. Sleipnir gets more mature by
   *less-capable-with-guarantees*, not more-capable-with-asterisks.
+- **DevUI theme pack / reskin** — decision 2026-08-29: not worth the effort now. The DevUI's
+  value lives in what it does (dependency builder, client preview, observability panels);
+  a skin is the easiest feature to defer. The prototype (design tokens, font direction —
+  Cinzel display, IBM Plex UI, JetBrains Mono — and 11 `data-theme` variants with `sleipnir`
+  as the Nordic default) is parked at [`devui-theme-pack.html`](devui-theme-pack.html) —
+  a standalone static mockup, never referenced by any build or component. Revisit only if/when
+  the DevUI gets a deliberate redesign.
 
 ## Housekeeping
 

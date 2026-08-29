@@ -12,9 +12,10 @@
 //      rewritten to match the runtime discovery again.
 //
 // The tool runs in its own process (dotnet Sleipnir.Server.Codegen.dll ...), loading the built
-// Story01 assembly exactly as the MSBuild target does. Requires `dotnet build Sleipnir.sln` first
-// (Story01 and the tool are not ProjectReferences of SleipnirTests — same constraint as
-// DiscoveryContractTests).
+// Story01 assembly exactly as the MSBuild target does. Story01 and the tool are not
+// ProjectReferences of SleipnirTests (same constraint as DiscoveryContractTests) → they come out
+// of the regular `dotnet build Sleipnir.sln`; guide/server is NOT in the sln and is built lazily
+// on first use (EnsureGuideServerBuilt).
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -95,6 +96,7 @@ public class ServerCodegenDriftTests
     private static string ResolveGuideDll()
     {
         var repo = ResolveRepoRoot();
+        EnsureGuideServerBuilt(repo);
         var binRoot = Path.Combine(repo.FullName, "guide", "server", "bin");
         foreach (var cfg in ConfigOrder())
         {
@@ -107,7 +109,45 @@ public class ServerCodegenDriftTests
             if (found.Length > 0) return found[0];
         }
         throw new FileNotFoundException(
-            "Story.Api.dll not built. Run `dotnet build Sleipnir.sln` first. Searched under " + binRoot);
+            "Story.Api.dll not built (the lazy build finished without producing it). Searched under " + binRoot);
+    }
+
+    // guide/server is NOT in Sleipnir.sln (it is the standalone tutorial companion), so the
+    // usual `dotnet build Sleipnir.sln` does not produce Story.Api.dll — CI's build step gives
+    // stories/* but not this. Build it lazily, once per test process, in the SAME configuration
+    // the tests themselves are running under (via #if DEBUG), so the ConfigOrder lookup below
+    // deterministically finds the fresh output. Cheap when already up to date (no-op build).
+    private static bool _guideServerBuilt;
+
+    private static void EnsureGuideServerBuilt(DirectoryInfo repo)
+    {
+        if (_guideServerBuilt) return;
+        var csproj = Path.Combine(repo.FullName, "guide", "server", "Story.Api.csproj");
+#if DEBUG
+        const string configuration = "Debug";
+#else
+        const string configuration = "Release";
+#endif
+        var psi = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"build \"{csproj}\" --configuration {configuration} --nologo --verbosity quiet",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start `dotnet build` for " + csproj);
+        // Read BOTH piped streams to completion — never WaitForExit alone: a full stdout pipe
+        // while only stderr is being drained deadlocks the child mid-write.
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+        process.WaitForExit();
+        var err = string.Join('\n', stdout.Result, stderr.Result).Trim();
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException(
+                $"Building {csproj} failed with exit code {process.ExitCode}:\n{err}");
+        _guideServerBuilt = true;
     }
 
     private static string ResolveGuideContract()

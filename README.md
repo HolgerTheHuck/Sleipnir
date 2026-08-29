@@ -94,7 +94,7 @@ curl -k -X POST https://localhost:5001/api/sleipnir/json \
 ```
 
 > Want a full server + Svelte SPA? Use `dotnet new sleipnir-server-spa` instead.  
-> Want a drop-in sample that uses Sleipnir from NuGet (no repo clone needed)? See [`samples/HelloSleipnir`](samples/HelloSleipnir) — a minimal server with `<PackageReference Include="Sleipnir.Server" Version="1.1.0" />`.
+> Want a drop-in sample that uses Sleipnir from NuGet (no repo clone needed)? See [`samples/HelloSleipnir`](samples/HelloSleipnir) — a minimal server with `<PackageReference Include="Sleipnir.Server" Version="1.4.2" />`.
 
 > **New to the framework?** The [`guide/`](guide/) folder is a progressive, runnable
 > **10-chapter tutorial** — one growing 3-tier app (Sleipnir API + Blazor Pflege-Backend +
@@ -346,13 +346,13 @@ push streams). Full guide + lifecycle/backpressure: [`README_DETAILS.md`](README
 
 ```xml
 <!-- All transports + Developer UI -->
-<PackageReference Include="Sleipnir.Server" Version="1.1.0" />
+<PackageReference Include="Sleipnir.Server" Version="1.4.2" />
 
 <!-- Optional: OpenTelemetry bootstrap -->
-<PackageReference Include="Sleipnir.Telemetry" Version="1.1.0" />
+<PackageReference Include="Sleipnir.Telemetry" Version="1.4.2" />
 
 <!-- C# client -->
-<PackageReference Include="Sleipnir.Client" Version="1.1.0" />
+<PackageReference Include="Sleipnir.Client" Version="1.4.2" />
 ```
 
 ### Client (npm)

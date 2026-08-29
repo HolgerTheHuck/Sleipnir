@@ -96,8 +96,9 @@ npm run start:1              # nur Szenario 1 (auch :2 :3 :4)
 ## Kernkonzepte kurz
 
 - **Vertrag = C#-Klassen** (`[SleipnirController]` / `[SleipnirMethod]`) — kein `.proto`, keine IDL.
-- **Parameter** werden als `SleipnirParameter[]` (Name + JSON-`Data`) gesendet, serverseitig
-  nach Name gebunden. `CancellationToken` injiziert der Server automatisch.
+- **Parameter** werden als `Params`-JsonArray (`{ parameterName, data }`-Einträge,
+  `data` nativer JSON-Wert) gesendet, serverseitig nach Name gebunden.
+  `CancellationToken` injiziert der Server automatisch.
 - **JsonPath ist ergebnisrelativ**: `$` ist der serialisierte Rückgabewert der Methode
   (z. B. ein `int` oder ein `Customer`-Objekt) — **kein** `$.data`-Envelope.
   `$.Id` → Eigenschaft, `$[0].Id` → erstes Listenelement.

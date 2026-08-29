@@ -10,7 +10,7 @@
 //     Rückgabewert; "$.Id" = Eigenschaft; "$[0].Id" = erstes Listenelement.
 //     KEIN "$.data"-Envelope.
 //   • Der Server extrahiert den Wert und speichert ihn in ExposedDependencies.
-//   • Request B nutzt "@alias" als Parameterwert (Data-String mit @-Präfix).
+//   • Request B nutzt "@alias" als Parameterwert (data-Wert mit @-Präfix).
 //     Der Server ersetzt es vor der Ausführung.
 //   • Mode = Serial (sobald ein DependencyMapping existiert, schaltet der Server
 //     ohnehin auf topologische Batch-Ausführung — Mode wird dann ignoriert).
@@ -71,13 +71,15 @@ public static class DependencyChainScenario
             Requests = new List<SleipnirRequest>
             {
                 // step1: Kunden anlegen, neue Id als "custId" weitergeben.
+                // Params ist ein JsonArray von { parameterName, data }-Einträgen;
+                // data ist ein NATIVER JSON-Wert (keine Doppelkodierung mehr).
                 new SleipnirRequest
                 {
                     Controller = "Customer", Method = "AddCustomer", Id = "step1",
-                    StringData = JsonSerializer.Serialize(new[]
+                    Params = JsonSerializer.SerializeToNode(new object?[]
                     {
-                        new SleipnirParameter { Num = 0, ParameterName = "name",  Data = JsonSerializer.Serialize("Dave") },
-                        new SleipnirParameter { Num = 1, ParameterName = "email", Data = JsonSerializer.Serialize("dave@x.com") },
+                        new { parameterName = "name",  data = "Dave" },
+                        new { parameterName = "email", data = "dave@x.com" },
                     }),
                     DependencyMapping = new Dictionary<string, string> { ["custId"] = "$" },
                 },
@@ -87,11 +89,11 @@ public static class DependencyChainScenario
                 new SleipnirRequest
                 {
                     Controller = "Order", Method = "CreateOrder", Id = "step2",
-                    StringData = JsonSerializer.Serialize(new[]
+                    Params = JsonSerializer.SerializeToNode(new object?[]
                     {
-                        // Data="@custId" → Server erkennt @-Präfix und substituiert.
-                        new SleipnirParameter { Num = 0, ParameterName = "customerId", Data = "@custId" },
-                        new SleipnirParameter { Num = 1, ParameterName = "total",      Data = JsonSerializer.Serialize(99.90m) },
+                        // data="@custId" → Server erkennt das @-Präfix und substituiert.
+                        new { parameterName = "customerId", data = "@custId" },
+                        new { parameterName = "total",      data = 99.90m },
                     }),
                     DependencyMapping = new Dictionary<string, string> { ["orderId"] = "$" },
                 },
@@ -100,9 +102,9 @@ public static class DependencyChainScenario
                 new SleipnirRequest
                 {
                     Controller = "Order", Method = "GetOrderById", Id = "step3",
-                    StringData = JsonSerializer.Serialize(new[]
+                    Params = JsonSerializer.SerializeToNode(new object?[]
                     {
-                        new SleipnirParameter { Num = 0, ParameterName = "id", Data = "@orderId" },
+                        new { parameterName = "id", data = "@orderId" },
                     }),
                 },
             },

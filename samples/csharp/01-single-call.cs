@@ -55,8 +55,8 @@ public static class SingleCallScenario
         await w.WriteLineAsync($"  [WebSocket] GetCustomerById({newId}) -> {customer2?.Name} <{customer2?.Email}>");
 
         // --- Raw-Form (ohne Fluent Builder) — gelegentlich nützlich ----------------
-        // StringData = JSON-serialisiertes SleipnirParameter[]; Data ist jeweils der
-        // JSON-token des Werts (Zahl 42 → "42", String "A" → "\"A\"").
+        // Params = nativer JSON-Wert: JsonArray aus { parameterName, data }-Einträgen,
+        // data ist der JSON-Token selbst (Zahl 42 → 42, String "A" → "A").
         var raw = new SleipnirRequest
         {
             Controller = "Customer",

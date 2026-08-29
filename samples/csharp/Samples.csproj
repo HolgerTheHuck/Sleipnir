@@ -13,7 +13,7 @@
   <!-- Sleipnir.Client zieht transitiv Sleipnir.Core + Sleipnir.Common (REST, WebSocket,
        SignalR). Ein Paket genügt für alle Client-Szenarien. -->
   <ItemGroup>
-    <PackageReference Include="Sleipnir.Client" Version="1.0.0" />
+    <PackageReference Include="Sleipnir.Client" Version="1.4.2" />
   </ItemGroup>
 
 </Project>

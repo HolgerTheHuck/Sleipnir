@@ -251,9 +251,11 @@ collisions, no locked files). The target only translates the tool's exit code in
 The tool itself: loads the built assembly (`Assembly.LoadFrom`, scoped to the server output dir —
 not an AppDomain-wide scan), reflects the `[SleipnirController]` types, builds a `SleipnirInvoker`
 with a stub `IServiceScopeFactory` + `NullLogger`, calls `GetDiscoveryInfo()`, serializes with
-`DiscoverySerialization.Options`, sorts controllers by name for determinism, and drift-checks
-against the committed file (normalize-sort + `JsonNode.DeepEquals`). `--regen` (or
-`SLEIPNIR_REGEN_GOLDEN=1`) overwrites the committed contract.
+`DiscoverySerialization.Options`, sorts every order-incidental collection by name for
+determinism (controllers, methods, contract-type properties, enum members; parameters keep
+signature order for positional `num` binding), and drift-checks against the committed file
+(normalize-sort of those same arrays + `JsonNode.DeepEquals` — so an order-only difference is
+never drift). `--regen` (or `SLEIPNIR_REGEN_GOLDEN=1`) overwrites the committed contract.
 
 ### 3.2 Client: the Roslyn source generator (`Sleipnir.Generator`)
 

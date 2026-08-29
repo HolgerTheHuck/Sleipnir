@@ -26,8 +26,10 @@ namespace SleipnirTests.Integration;
 /// <para>
 /// <b>Comparison is content-based, not byte-identical:</b> the server's <c>controllers</c> array
 /// order follows <c>ConcurrentDictionary</c> enumeration (incidental), so both sides are
-/// normalized by sorting <c>controllers</c> by name before comparing. Method/property order is
-/// metadata-stable per assembly (identical across processes), so it is not normalized.
+/// normalized by sorting <c>controllers</c> by name before comparing. Method and contract-type
+/// property order are reflection order — metadata-stable per assembly but not normalized by the
+/// framework, so they are normalized here too: a moved C# member must never fire this gate (the
+/// export tool sorts these same arrays for file determinism).
 /// </para>
 /// <para>
 /// <b>Regenerating the golden</b> is server-driven, not test-driven (so the real wire order is
@@ -171,18 +173,44 @@ public class DiscoveryContractTests : IAsyncLifetime
         _server?.Dispose();
     }
 
-    /// <summary>Normalize a discovery payload by sorting the incidental <c>controllers</c> order.</summary>
+    /// <summary>Normalize a discovery payload by sorting the order-incidental arrays —
+    /// <c>controllers</c> by name, each controller's <c>methods</c> by method name, and each
+    /// contract type's <c>properties</c> by property name — so reflection-order changes never
+    /// fire the gate. Mirrors Sleipnir.Server.Codegen's NormalizeDiscovery.</summary>
     private static JsonNode NormalizeDiscovery(JsonNode root)
     {
-        if (root is not JsonObject obj || !obj.TryGetPropertyValue("controllers", out var controllers))
+        if (root is not JsonObject obj)
             return root;
-        if (controllers is not JsonArray arr) return root;
-        var sorted = arr.OrderBy(c => c?["name"]?.GetValue<string>() ?? "");
-        var newArr = new JsonArray();
-        foreach (var c in sorted) newArr.Add(c!.DeepClone());
-        obj.Remove("controllers");
-        obj["controllers"] = newArr;
+
+        if (obj["controllers"] is JsonArray controllers)
+        {
+            SortArrayBy(controllers, c => c?["name"]?.GetValue<string>() ?? "");
+            foreach (var controller in controllers)
+            {
+                if (controller is JsonObject co && co["methods"] is JsonArray methods)
+                    SortArrayBy(methods, m => m?["methodName"]?.GetValue<string>() ?? "");
+            }
+        }
+
+        if (obj["types"] is JsonObject types)
+        {
+            foreach (var type in types)
+            {
+                if (type.Value is JsonObject to && to["properties"] is JsonArray properties)
+                    SortArrayBy(properties, p => p?["propertyName"]?.GetValue<string>() ?? "");
+            }
+        }
+
         return obj;
+    }
+
+    /// <summary>Sort a JSON array of objects by a string key, in place. Nodes without the key
+    /// sort as <c>""</c> (first), matching the export tool's normalization.</summary>
+    private static void SortArrayBy(JsonArray array, Func<JsonNode?, string> key)
+    {
+        var sorted = array.OrderBy(key, StringComparer.Ordinal).ToArray();
+        array.Clear();
+        foreach (var node in sorted) array.Add(node!);
     }
 
     private async Task<string> FetchDiscoveryAsync()

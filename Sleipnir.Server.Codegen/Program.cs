@@ -66,13 +66,15 @@ internal static class Program
 
         var committedJson = File.ReadAllText(opts.ContractPath).Trim();
 
-        // Content comparison normalizes the incidental controllers-array order on both sides
-        // (the live wire follows ConcurrentDictionary enumeration; the export sorts for
-        // determinism — see below). Method/property order is metadata-stable, not normalized.
+        // Content comparison normalizes every order-incidental array on both sides: controllers
+        // (live wire follows ConcurrentDictionary enumeration), methods, and contract-type
+        // properties (reflection order is metadata-stable only per toolchain). The export sorts
+        // these for determinism too — see RegenerateContract. Parameter order is signature order
+        // and is NOT normalized (positional `num` binding resolves by index).
         var regenNode = NormalizeDiscovery(JsonNode.Parse(regeneratedJson)!);
         var committedNode = NormalizeDiscovery(JsonNode.Parse(committedJson)!);
 
-        if (JsonNode.DeepEquals(regenNode, committedNode))
+        if (JsonNode.DeepEquals(regenNode, committedNode) && !opts.Regen)
         {
             Console.WriteLine($"[sleipnir-export] drift-check passed: '{opts.ContractPath}' matches runtime discovery.");
             return ExitOk;
@@ -80,6 +82,9 @@ internal static class Program
 
         if (opts.Regen)
         {
+            // --regen always rewrites — even when the comparison passes, e.g. an order-only
+            // difference between an older (unsorted) committed file and the current sorted
+            // canonical form. Content-equal is not shape-equal: regen migrates the file.
             File.WriteAllText(opts.ContractPath, regeneratedJson);
             Console.WriteLine($"[sleipnir-export] regenerated committed contract at '{opts.ContractPath}'.");
             return ExitOk;
@@ -91,8 +96,8 @@ internal static class Program
 
     /// <summary>Load the server assembly, reflect all [SleipnirController] types, build a SleipnirInvoker
     /// with a stub DI scope + null logger, register every controller, and serialize its discovery.
-    /// Controllers are sorted by name for deterministic output (ConcurrentDictionary order is
-    /// incidental and would make the committed file churn run-to-run).</summary>
+    /// All order-incidental collections (controllers, methods, contract-type properties, enum
+    /// members) are sorted by name for deterministic output — see the comment in the method body.</summary>
     private static string RegenerateContract(string serverAssemblyPath)
     {
         var serverDir = Path.GetDirectoryName(serverAssemblyPath)
@@ -115,7 +120,28 @@ internal static class Program
             invoker.Register(t);
 
         var discovery = invoker.GetDiscoveryInfo();
+
+        // Deterministic file output. Arrays whose order carries no meaning are sorted by name so
+        // the committed contract.sleipnir.json only ever churns on REAL contract changes — a moved
+        // C# member (or a reflection-order shift across toolchain upgrades) must not produce an
+        // unreadable "everything moved, nothing changed" git diff. Exception: parameters keep
+        // SIGNATURE order — positional binding (JSON-RPC `num`) resolves by index, so their
+        // sequence is contract-relevant and must not be sorted.
+        //   - controllers: by name (ConcurrentDictionary enumeration is incidental).
+        //   - methods: by method name (reflection order is metadata-stable only per toolchain).
+        //   - types / properties / enum members: keys and arrays sorted by name.
         discovery.Controllers = discovery.Controllers.OrderBy(c => c.Name, StringComparer.Ordinal).ToList();
+        foreach (var controller in discovery.Controllers)
+            controller.Methods.Sort((a, b) => string.CompareOrdinal(a.MethodName, b.MethodName));
+        discovery.Types = new Dictionary<string, TypeMeta>(
+            discovery.Types.OrderBy(kvp => kvp.Key, StringComparer.Ordinal),
+            discovery.Types.Comparer);
+        foreach (var type in discovery.Types.Values)
+        {
+            type.Properties.Sort((a, b) => string.CompareOrdinal(a.PropertyName, b.PropertyName));
+            if (type.Members is not null)
+                type.Members.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+        }
 
         // Vacuous-green guard: a server that ships a contract.sleipnir.json is expected to expose
         // controllers. An EMPTY discovery is almost always a tool/load failure (e.g. the export tool
@@ -196,20 +222,46 @@ internal static class Program
         catch { return null; }
     }
 
-    /// <summary>Normalize a discovery payload by sorting the incidental controllers-array order,
-    /// mirroring DiscoveryContractTests.NormalizeDiscovery so the export and the live-wire gate
+    /// <summary>Normalize a discovery payload by sorting the order-incidental arrays —
+    /// <c>controllers</c> by name, each controller's <c>methods</c> by method name, and each
+    /// contract type's <c>properties</c> by property name — mirroring
+    /// DiscoveryContractTests.NormalizeDiscovery so the export and the live-wire gate
     /// compare on equal footing.</summary>
     private static JsonNode NormalizeDiscovery(JsonNode root)
     {
-        if (root is not JsonObject obj || !obj.TryGetPropertyValue("controllers", out var controllers))
+        if (root is not JsonObject obj)
             return root;
-        if (controllers is not JsonArray arr) return root;
-        var sorted = arr.OrderBy(c => c?["name"]?.GetValue<string>() ?? "", StringComparer.Ordinal);
-        var newArr = new JsonArray();
-        foreach (var c in sorted) newArr.Add(c!.DeepClone());
-        obj.Remove("controllers");
-        obj["controllers"] = newArr;
+
+        if (obj["controllers"] is JsonArray controllers)
+        {
+            SortArrayBy(controllers, c => c?["name"]?.GetValue<string>() ?? "");
+            foreach (var controller in controllers)
+            {
+                if (controller is JsonObject co && co["methods"] is JsonArray methods)
+                    SortArrayBy(methods, m => m?["methodName"]?.GetValue<string>() ?? "");
+            }
+        }
+
+        if (obj["types"] is JsonObject types)
+        {
+            foreach (var type in types)
+            {
+                if (type.Value is JsonObject to && to["properties"] is JsonArray properties)
+                    SortArrayBy(properties, p => p?["propertyName"]?.GetValue<string>() ?? "");
+            }
+        }
+
         return obj;
+    }
+
+    /// <summary>Sort a JSON array of objects by a string key, in place. The sort key extraction
+    /// never throws: nodes without the key sort as <c>""</c> (first), matching the pre-existing
+    /// normalization behavior.</summary>
+    private static void SortArrayBy(JsonArray array, Func<JsonNode?, string> key)
+    {
+        var sorted = array.OrderBy(key, StringComparer.Ordinal).ToArray();
+        array.Clear();
+        foreach (var node in sorted) array.Add(node!);
     }
 
     private static void ReportDrift(JsonNode regenNode, JsonNode committedNode, Options opts)

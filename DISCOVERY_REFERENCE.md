@@ -63,9 +63,11 @@ The payload is **deterministic**: the REST endpoint and the JSON-RPC
 `sleipnir.discover` capability serialize with the same
 `DiscoverySerialization.Options`, independent of host JSON config (§8). The
 build-integrated codegen tool writes `contract.sleipnir.json` from the same
-payload, sorted by controller name — so a committed golden contract is
-byte-stable across builds and machines (`CLIENT_GENERATION.md` §"Phased plan",
-`Sleipnir.Server.Codegen/Program.cs` "Controllers.OrderBy(c => c.Name").
+payload, with every order-incidental collection sorted by name (controllers, methods,
+contract-type properties, enum members; parameters keep signature order for positional `num`
+binding) — so a committed golden contract is byte-stable across builds and machines, and a git
+diff against it only ever shows real contract changes, never moved members
+(`CLIENT_GENERATION.md` §"Phased plan", `Sleipnir.Server.Codegen/Program.cs` RegenerateContract).
 
 ---
 

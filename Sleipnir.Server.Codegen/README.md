@@ -12,9 +12,12 @@ from the committed one. Part of the [.NET-native codegen trio](../CODEGEN_ONBOAR
   dir — not an AppDomain-wide scan), reflects the `[SleipnirController]` types, builds a
   `SleipnirInvoker` with a stub `IServiceScopeFactory` + `NullLogger`, and calls
   `GetDiscoveryInfo()`.
-- Serializes the result with `DiscoverySerialization.Options`, sorts controllers by
-  name for determinism, and drift-checks against the committed
-  `contract.sleipnir.json` (normalize-sort + `JsonNode.DeepEquals`).
+- Serializes the result with `DiscoverySerialization.Options`, sorts every order-incidental
+  collection by name for determinism (controllers, methods, contract-type properties, enum
+  members — parameters keep signature order for positional `num` binding), and drift-checks
+  against the committed `contract.sleipnir.json` (normalize-sort of those same arrays +
+  `JsonNode.DeepEquals`). Consequence: the committed file only ever churns on real contract
+  changes — a moved C# member or a reflection-order shift never produces a git diff.
 - Exit codes: `0` = in sync, `1` = drift detected, `2` = tool error.
   `--regen` (or `SLEIPNIR_REGEN_GOLDEN=1`) overwrites the committed contract.
 

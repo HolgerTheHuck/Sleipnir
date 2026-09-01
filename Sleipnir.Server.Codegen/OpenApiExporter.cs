@@ -55,12 +55,14 @@ internal static class OpenApiExporter
                 {
                     ["method"] = "post",
                     ["path"] = opts.BasePath,
+                    // The REAL wire shape (SleipnirRequest/SleipnirParameter, camelCase): params
+                    // entries are { num, parameterName, data } — not "parameters"/"name".
                     ["body"] = new JsonObject
                     {
                         ["controller"] = "{Controller}",
                         ["method"] = "{Method}",
-                        ["parameters"] = new JsonArray(
-                            new JsonObject { ["name"] = "{paramName}", ["data"] = "{value}" }),
+                        ["params"] = new JsonArray(
+                            new JsonObject { ["num"] = 0, ["parameterName"] = "{paramName}", ["data"] = "{value}" }),
                     },
                 },
                 ["note"] = "Each path below is a pseudo-operation for tooling (typed editing, collection " +

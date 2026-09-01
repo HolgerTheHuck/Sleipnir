@@ -71,16 +71,24 @@ graduation decision open. Work item: `product-direction-work-items.md` §3.1. Br
 
 ## Not yet done (graduation checklist)
 
-- **Postman import round-trip** (the work item's acceptance criterion): import
-  `obj/openapi-spike/story-api.openapi.json`, assert typed parameter editors + a successful
-  call. *Sending still requires work item 3.3 (flat path convention) — until then the doc
-  structures requests, but a sent request must target the canonical endpoint.* Postman's
-  pre-request scripts could shim this (rewrite URL + wrap body into the envelope); a Postman
-  collection export with such a shim is the pragmatic acceptance vehicle worth trying first.
+- ~~**Postman import round-trip**~~ **VALIDATED 2026-09-01** (manual, the work item's
+  acceptance criterion): OpenAPI doc imports (typed parameter editors per method); a
+  generated Postman collection with a pre-request-script shim — flat typed body in the
+  editor, wrapped into the canonical envelope at send time — **executes successfully**
+  (Account/Login → 200 + JWT). Key finding: the collection must target the canonical
+  endpoint with the REAL wire shape `params: [{ num, parameterName, data }]`; the spike's
+  first draft used a `parameters: [{name, data}]` envelope that bound every parameter to
+  null — fixed in `OpenApiExporter` (commit `5d2f999`) and the shim. The shim generator
+  (`postman-shim.js`) is a ~100-line node script, uncommitted (`obj/`), regenerates all
+  three sample collections from the `.openapi.json` docs. **No 3.3 needed for the
+  Postman path** — the shim covers execution; 3.3 remains only for generated foreign
+  clients (openapi-generator).
 - Unit tests pinning the mapper decisions (the exporter is pure — an in-process test project
   needs no assembly-isolation machinery, unlike the drift tests).
 - Decide: runtime endpoint (`GET /api/sleipnir/openapi`) behind an option, or build-time only.
 - `x-sleipnir` naming/format review if this becomes a documented public surface.
+- If graduating the Postman export: promote the shim generator into the tool as
+  `--postman <path>` (node script → could stay plain string templating, node-free).
 
 ## Recommendation
 

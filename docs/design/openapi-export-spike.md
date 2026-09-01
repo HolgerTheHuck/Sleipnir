@@ -90,6 +90,32 @@ graduation decision open. Work item: `product-direction-work-items.md` §3.1. Br
 - If graduating the Postman export: promote the shim generator into the tool as
   `--postman <path>` (node script → could stay plain string templating, node-free).
 
+## Deeper-testing notes (parking 2026-09-01 — Holger: strong feature, revisit)
+
+The Postman round-trip validated the happy path (one REST server, Login flow). Before a
+merge, these need real coverage:
+
+- **Mapper unit tests** — first priority; the exporter is pure, so an in-process test
+  project needs no assembly-isolation machinery. Pin every mapping decision from the table
+  above (scalar formats, stream→array, set→uniqueItems, map→additionalProperties, opaque→
+  empty schema, nullable type-array vs anyOf-ref, enum numeric + names, camelCase props,
+  example casing via DiscoverySerialization.Options).
+- **Shim collections vs. WS/SignalR servers** — the spike exercised REST only; the shim's
+  envelope assumption should hold (same invoker), but it is untested.
+- **Postman edge cases:** empty controllers (a path-item with no requestBody), `bytes`
+  parameters (base64 in a JSON string vs SleipnirRequest.BinaryData — the OpenAPI says
+  `contentEncoding: base64`, but the canonical wire carries binary OUT of band — likely a
+  mis-edit risk to document), `[SleipnirAuthorise]` flows (Bearer header handling per
+  request vs collection variable), dependency-chaining (`@alias` — response
+  `exposedDependencies` must be hand-copied into the dependent call's body in Postman;
+  consider a shim post-response variable that auto-extracts).
+- **Real contract breadth:** the three sample servers have no enums and thin nullability —
+  run the export against a consumer project with rich enums/nullable/collections before
+  trusting the component schemas.
+- **Postman 3.1 maturity matrix:** which of `type:[x,"null"]` / `anyOf` / `contentEncoding`
+  actually render correctly in the imported editor — a 3.0 fallback flag (`nullable: true`)
+  is the prepared escape hatch if 3.1 rendering degrades.
+
 ## Recommendation
 
 The mapping is mechanical and the discovery registry carries everything needed — no gaps were

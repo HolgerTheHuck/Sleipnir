@@ -53,8 +53,18 @@ internal static class Program
         var opts = ParseArgs(args);
         if (opts is null) return ExitError;
 
-        var regenerated = RegenerateContract(opts.AssemblyPath);
-        var regeneratedJson = regenerated.Trim();
+        var discovery = BuildDiscovery(opts.AssemblyPath);
+
+        // Spike (P3.1): optional OpenAPI 3.1 side-export. Emitted whenever --openapi is passed,
+        // independent of the drift verdict — tooling interop must not depend on contract state.
+        if (opts.OpenApiPath is not null)
+        {
+            var openApiJson = OpenApiExporter.Export(discovery, opts.OpenApi);
+            File.WriteAllText(opts.OpenApiPath, openApiJson);
+            Console.WriteLine($"[sleipnir-export] wrote OpenAPI 3.1 document to '{opts.OpenApiPath}'.");
+        }
+
+        var regeneratedJson = JsonSerializer.Serialize(discovery, DiscoverySerialization.Options).Trim();
 
         // No committed contract yet: write it and succeed (first-time wiring).
         if (!File.Exists(opts.ContractPath))
@@ -95,10 +105,10 @@ internal static class Program
     }
 
     /// <summary>Load the server assembly, reflect all [SleipnirController] types, build a SleipnirInvoker
-    /// with a stub DI scope + null logger, register every controller, and serialize its discovery.
+    /// with a stub DI scope + null logger, register every controller, and return the discovery.
     /// All order-incidental collections (controllers, methods, contract-type properties, enum
     /// members) are sorted by name for deterministic output — see the comment in the method body.</summary>
-    private static string RegenerateContract(string serverAssemblyPath)
+    private static DiscoveryInfo BuildDiscovery(string serverAssemblyPath)
     {
         var serverDir = Path.GetDirectoryName(serverAssemblyPath)
             ?? throw new DirectoryNotFoundException("Could not resolve server assembly directory.");
@@ -160,7 +170,7 @@ internal static class Program
                 "Aborting so the drift-check fails loudly instead of passing vacuously (empty == empty).");
         }
 
-        return JsonSerializer.Serialize(discovery, DiscoverySerialization.Options);
+        return discovery;
     }
 
     private static List<Type> DiscoverControllers(Assembly serverAsm, string serverDir)
@@ -281,12 +291,20 @@ internal static class Program
         Console.WriteLine(committedNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    private sealed record Options(string AssemblyPath, string ContractPath, bool Regen);
+    private sealed record Options(string AssemblyPath, string ContractPath, bool Regen)
+    {
+        /// <summary>When set, an OpenAPI 3.1 document is exported alongside the drift-check (P3.1 spike).</summary>
+        public string? OpenApiPath { get; init; }
+        public OpenApiExporter.Options OpenApi { get; init; } = new();
+    }
 
     private static Options? ParseArgs(string[] args)
     {
         string? assembly = null;
         string? contract = null;
+        string? openApi = null;
+        string? openApiTitle = null;
+        string? openApiServer = null;
         var regen = false;
         for (var i = 0; i < args.Length; i++)
         {
@@ -295,6 +313,9 @@ internal static class Program
                 case "--assembly": assembly = Next(args, ref i); break;
                 case "--contract": contract = Next(args, ref i); break;
                 case "--regen": regen = true; break;
+                case "--openapi": openApi = Next(args, ref i); break;
+                case "--openapi-title": openApiTitle = Next(args, ref i); break;
+                case "--openapi-server": openApiServer = Next(args, ref i); break;
                 case var h when h == "-h" || h == "--help" || h == "/?":
                     PrintHelp();
                     return null;
@@ -306,7 +327,15 @@ internal static class Program
             PrintHelp();
             return null;
         }
-        return new Options(assembly!, contract!, regen);
+        return new Options(assembly!, contract!, regen)
+        {
+            OpenApiPath = openApi,
+            OpenApi = new OpenApiExporter.Options
+            {
+                Title = openApiTitle ?? "Sleipnir API",
+                ServerUrl = openApiServer,
+            },
+        };
     }
 
     private static string? Next(string[] args, ref int i)
@@ -319,6 +348,9 @@ internal static class Program
         Console.Error.WriteLine("  --assembly  Path to the built server assembly (its output dir supplies deps).");
         Console.Error.WriteLine("  --contract  Path to the committed contract.sleipnir.json to drift-check / regenerate.");
         Console.Error.WriteLine("  --regen     Overwrite the committed contract instead of failing on drift.");
+        Console.Error.WriteLine("  --openapi <path>         Also export an OpenAPI 3.1 document (P3.1 spike).");
+        Console.Error.WriteLine("  --openapi-title <text>   Info title for the OpenAPI document (default: Sleipnir API).");
+        Console.Error.WriteLine("  --openapi-server <url>   Server base URL recorded in the OpenAPI document.");
         Console.Error.WriteLine("Exit codes: 0 = ok / regenerated, 1 = drift detected, 2 = tool error.");
     }
 }

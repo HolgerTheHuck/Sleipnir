@@ -175,6 +175,7 @@ Sleipnir provides the infrastructure around command-oriented APIs:
 * **Events** — server-to-client communication
 * **Developer UI** — explore and execute the API
 * **OpenTelemetry** — tracing and metrics across command execution
+* **Built-in observability backend** — opt-in [Heimdall](https://github.com/HolgerTheHuck/Heimdall) package: embedded dashboard + PromQL API, no collector required ([reference](HEIMDALL_REFERENCE.md))
 
 ---
 
@@ -225,6 +226,12 @@ Already have an ASP.NET Core project? Add the packages directly.
 
 ```bash
 npm i sleipnir-client
+```
+
+**Telemetry with built-in dashboard** — optional, replaces the Prometheus scrape with an embedded Heimdall backend (dashboard + PromQL API under `/otel`, no collector):
+
+```xml
+<PackageReference Include="Sleipnir.Telemetry.Heimdall" Version="1.4.2" />
 ```
 
 **Typed client generation:**
@@ -327,6 +334,7 @@ Single-file references that put all knobs, parameters, failure modes, and diagno
 | [`DISCOVERY_REFERENCE.md`](DISCOVERY_REFERENCE.md) | Runtime discovery, `DiscoveryInfo`/`TypeRef` schema, contract inference (Weg C), `[SleipnirDataContract]` override, `discoveryVersion` no-drift gate |
 | [`TRACING_TELEMETRY_REFERENCE.md`](TRACING_TELEMETRY_REFERENCE.md) | `SleipnirTracing` ActivitySource, instrumentation sites, `Sleipnir.Telemetry` opt-in, OTel exporter wiring |
 | [`OBSERVABILITY_REFERENCE.md`](OBSERVABILITY_REFERENCE.md) | `/observability` JSON + `/metrics` Prometheus two-surface model, `SleipnirConnectionRegistry`, double-bookkeeping, gauge semantics |
+| [`HEIMDALL_REFERENCE.md`](HEIMDALL_REFERENCE.md) | `Sleipnir.Telemetry.Heimdall` backend, `SleipnirHeimdallOptions`, `/otel` surface (dashboard + PromQL), alert semantics, Heimdall/OTel version lockstep, backend choice vs `Sleipnir.Telemetry` |
 
 ---
 

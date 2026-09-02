@@ -246,8 +246,9 @@ thrown exception records the exception tags
 csproj comment states this grants access to the public `ActivitySourceName`;
 the instrumentation lives in the engine, always-on without an SDK dependency;
 this package only brings the OTel SDK and subscribes the source name. OTel
-packages locked at 1.16.0, plus `OpenTelemetry.Exporter.Prometheus.AspNetCore`
-1.16.0-beta.1.
+packages locked at 1.18.0 (lockstep with `Sleipnir.Telemetry.Heimdall` — see
+[`HEIMDALL_REFERENCE.md`](HEIMDALL_REFERENCE.md) §7), plus
+`OpenTelemetry.Exporter.Prometheus.AspNetCore` 1.18.0-beta.1.
 
 **Extension:** `SleipnirTelemetry/SleipnirTelemetryServiceExtensions.cs` →
 `SleipnirTelemetryServiceExtensions`.
@@ -268,6 +269,13 @@ Sleipnir source). Optional instrumentation gates:
 It also wires the **metrics column**: `services.AddOpenTelemetry().WithMetrics(
 builder => { builder.AddMeter(SleipnirMetrics.MeterName)... })`, with the same
 Console/Otlp exporter scheme. Metrics are covered in `OBSERVABILITY_REFERENCE.md`.
+
+**Sibling backend:** `Sleipnir.Telemetry.Heimdall`
+(`SleipnirTelemetryHeimdall/`) subscribes the same source/meter to an embedded
+Heimdall SQLite sink and maps the Heimdall dashboard + PromQL API under
+`/otel` — it is a turn-key *replacement* for this package's Prometheus scrape,
+not an addition. Covered in full in
+[`HEIMDALL_REFERENCE.md`](HEIMDALL_REFERENCE.md).
 
 ### `SleipnirTelemetryOptions` — `SleipnirTelemetry/SleipnirTelemetryOptions.cs`
 

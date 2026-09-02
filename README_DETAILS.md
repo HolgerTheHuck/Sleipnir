@@ -848,6 +848,9 @@ Sleipnir v1 is intentionally focused. The following are deliberate scope decisio
 <!-- Optional: OpenTelemetry SDK bootstrap -->
 <PackageReference Include="Sleipnir.Telemetry" Version="1.4.2" />
 
+<!-- Optional: embedded Heimdall telemetry backend (dashboard + PromQL API under /otel) -->
+<PackageReference Include="Sleipnir.Telemetry.Heimdall" Version="1.4.2" />
+
 <!-- Or individual transports -->
 <PackageReference Include="Sleipnir.Core" Version="1.4.2" />
 <PackageReference Include="Sleipnir.Hub" Version="1.4.2" />
@@ -868,6 +871,8 @@ Spans emitted (OTel RPC semantic conventions):
 - **`SleipnirBatch`** — one per batch, started in `InvokeDi(IEnumerable<SleipnirRequest>)`. Tags: `rpc.system=sleipnir`, `sleipnir.batch.mode` (`Parallel`/`Serial`, or `DependencyBatches` when auto-detect routes to topological execution), `sleipnir.batch.count`. The per-request `SleipnirCall` spans are children via `Activity.Current` parenting — a single batch yields one parent + N children.
 
 `Sleipnir.Telemetry` is the optional package that boots the OTel SDK: `AddSleipnirTelemetry` calls `AddOpenTelemetry().WithTracing(b => b.AddSource("Sleipnir") …)` with configurable service name, OTLP/Console exporter, and AspNetCore/HttpClient instrumentation gates. `SleipnirServer` does **not** reference it, keeping the OTel SDK dependencies out of the all-in-one bundle. Consumers who need custom samplers/resources/exporters skip `AddSleipnirTelemetry` and call `AddOpenTelemetry().WithTracing(b => b.AddSource("Sleipnir"))` directly — the source name is the only integration point.
+
+**Alternative backend:** `Sleipnir.Telemetry.Heimdall` subscribes the same source/meter to an embedded [Heimdall](https://github.com/HolgerTheHuck/Heimdall) SQLite sink and maps the Heimdall dashboard + PromQL HTTP API under `/otel` — no collector, no external database. It **replaces** the `/api/sleipnir/metrics` scrape as the single Prometheus surface. Full reference: [`HEIMDALL_REFERENCE.md`](HEIMDALL_REFERENCE.md).
 
 ### Metrics & observability endpoints (experimental, opt-in)
 

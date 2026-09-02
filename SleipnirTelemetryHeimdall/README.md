@@ -54,6 +54,11 @@ connection/subscription counts, not OTel signals.
 | `IncludeAspNetCore` | `true` | ASP.NET Core inbound HTTP instrumentation on traces. |
 | `IncludeHttpClient` | `true` | HttpClient outbound instrumentation on traces. |
 | `IncludeLogs` | `true` | Bridge `ILogger` → OTel → Heimdall (Sleipnir's logging interceptor included). |
+| `EnableAlerting` | `false` | Start the periodic alert evaluator (rules → channels). The alert stores and UI are always available; this only gates evaluation. |
+| `AlertingRulesDir` | derived | Directory for alert rule JSONs. Empty = `<DataPath-dir>/alerts/rules`. |
+| `AlertingStateDir` | derived | Directory for the alert state store. Empty = `<DataPath-dir>/alerts`. |
+
+Consolidated reference: [`HEIMDALL_REFERENCE.md`](../HEIMDALL_REFERENCE.md) (options, `/otel` surface, alert semantics, troubleshooting).
 
 For custom resource attributes, sampling, runtime instrumentation, or a different Heimdall storage backend,
 skip this package and wire `AddOpenTelemetry().WithTracing(b => b.AddSource("Sleipnir"))` + Heimdall's

@@ -70,6 +70,12 @@ grep of `SleipnirRest/**/*.cs` for `MapGet`/`Prometheus`/`/metrics` returns only
 dependencies stay out of the all-in-one bundle (`README_DETAILS.md` §"Metrics &
 observability endpoints (experimental, opt-in)").
 
+**Alternative:** the optional `Sleipnir.Telemetry.Heimdall` package replaces
+this scrape with an embedded Heimdall PromQL HTTP API under `/otel`
+(dashboard + Grafana-compatible `api/v1/*`). When Heimdall is in use, do not
+also wire the `/metrics` scrape — one Prometheus surface, not two. See
+[`HEIMDALL_REFERENCE.md`](HEIMDALL_REFERENCE.md) §2.
+
 The double-bookkeeping (§6) exists precisely so `/observability` can be read
 **without** an OTel `MetricReader` subscribed — the registry's parallel
 `Interlocked` accumulators back the JSON snapshot. `/metrics` still needs the

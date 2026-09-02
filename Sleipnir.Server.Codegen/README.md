@@ -31,7 +31,7 @@ the tool never collide on versions. The tool and its runtime deps ship in
 ## Install
 
 ```xml
-<PackageReference Include="Sleipnir.Server.Codegen" Version="1.4.2" />
+<PackageReference Include="Sleipnir.Server.Codegen" Version="1.4.3" />
 ```
 
 Targets `net8.0`. Depends on `Sleipnir.Core` + `Sleipnir.Common` (for the discovery +

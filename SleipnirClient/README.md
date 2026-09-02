@@ -26,7 +26,7 @@ live in [`samples/csharp/`](../samples/csharp).
 ## Install
 
 ```xml
-<PackageReference Include="Sleipnir.Client" Version="1.4.2" />
+<PackageReference Include="Sleipnir.Client" Version="1.4.3" />
 ```
 
 The package targets `net8.0` (runs on .NET 8+). It brings `MessagePack` and the

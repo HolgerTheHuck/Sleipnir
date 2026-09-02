@@ -189,7 +189,7 @@ var response = await client.Call(new SleipnirRequest
 ## Install
 
 ```xml
-<PackageReference Include="Sleipnir.WebSocket" Version="1.4.2" />
+<PackageReference Include="Sleipnir.WebSocket" Version="1.4.3" />
 ```
 
 Targets `net8.0`. Depends on `Sleipnir.Core` (→ `Sleipnir.Common`). The full field-by-field

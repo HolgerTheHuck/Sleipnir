@@ -1,5 +1,10 @@
 # Sleipnir
 
+[![Build, Test & Pack](https://github.com/HolgerTheHuck/Sleipnir/actions/workflows/build.yml/badge.svg)](https://github.com/HolgerTheHuck/Sleipnir/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![NuGet](https://img.shields.io/nuget/v/Sleipnir.Server.svg)](https://www.nuget.org/packages/Sleipnir.Server/)
+[![npm](https://img.shields.io/npm/v/sleipnir-client.svg)](https://www.npmjs.com/package/sleipnir-client)
+
 **A command-oriented API framework for .NET.**
 
 > **Resources have REST. Operations have Sleipnir. Good applications can have both.**

@@ -166,6 +166,8 @@ jobs:
           dotnet pack SleipnirDeveloperUi/SleipnirDeveloperUi.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
           dotnet pack SleipnirServer/SleipnirServer.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
           dotnet pack SleipnirTelemetry/SleipnirTelemetry.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          # Optional built-in Heimdall telemetry backend (embedded SQLite sink + Blazor dashboard + PromQL engine); replaces Sleipnir.Telemetry's Prometheus scrape producer.
+          dotnet pack SleipnirTelemetryHeimdall/SleipnirTelemetryHeimdall.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
           # .NET-native codegen trio (discovery JSON = standard contract): Roslyn source generator + server-side export/drift-check.
           dotnet pack Sleipnir.SourceGenerator/Sleipnir.SourceGenerator.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
           dotnet pack Sleipnir.Server.Codegen/Sleipnir.Server.Codegen.csproj --configuration Release -p:PackageVersion=${{ steps.ver.outputs.VERSION }}

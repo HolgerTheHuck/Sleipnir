@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>Sleipnir.Telemetry.Heimdall</PackageId>
+    <Description>Optional built-in Heimdall telemetry backend for Sleipnir — wires the Sleipnir ActivitySource + Meter (and optionally ILogger) to an embedded Heimdall SQLite sink, with the Blazor dashboard and Prometheus HTTP API under /otel. Heimdall replaces the Prometheus scrape producer from Sleipnir.Telemetry.</Description>
+    <IsPackable>true</IsPackable>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <!-- Package README as the NuGet README (PackageReadmeFile is set centrally in
+       Directory.Build.props; this explicit Pack entry matches SleipnirTelemetry.csproj). -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+  <!-- Access to the public ActivitySource/Meter names exposed by the engine
+       (SleipnirCore.Tracing.SleipnirTracing.ActivitySourceName / SleipnirCore.Tracing.SleipnirMetrics.MeterName).
+       The instrumentation itself lives always-on in the motor (SleipnirCore) with no SDK
+       dependency; this package only subscribes those source/meter names to an embedded
+       Heimdall backend. Mirrors the Sleipnir.Telemetry doctrine: the server/engine stay
+       backend-agnostic; this opt-in package brings the backend. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SleipnirCore\SleipnirCore.csproj" />
+  </ItemGroup>
+
+  <!-- The package maps endpoints (IEndpointRouteBuilder) and configures the logging
+       builder (ILoggingBuilder); it is inherently web-bound (Heimdall's Blazor SSR
+       dashboard + endpoint routing require a web host), so the ASP.NET Core shared
+       framework is the clean way to reach those types. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Heimdall 1.0.1: the embedded backend (in-process SDK exporter, SQLite storage,
+       PromQL engine, Blazor dashboard). Heimdall.Sdk pins OpenTelemetry 1.16.0 — the
+       same lockstep as Sleipnir.Telemetry, so the two never conflict (and this package
+       is a replacement for Sleipnir.Telemetry, not an add-on). The OTel hosting +
+       instrumentation packages are referenced explicitly to mirror SleipnirTelemetry.csproj. -->
+  <ItemGroup>
+    <PackageReference Include="Heimdall.Sdk" Version="1.0.1" />
+    <PackageReference Include="Heimdall.Storage.SQLite" Version="1.0.1" />
+    <PackageReference Include="Heimdall.Prometheus" Version="1.0.1" />
+    <PackageReference Include="Heimdall.Blazor" Version="1.0.1" />
+    <PackageReference Include="OpenTelemetry" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.16.0" />
+  </ItemGroup>
+
+</Project>

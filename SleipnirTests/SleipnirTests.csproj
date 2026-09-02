@@ -44,6 +44,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SleipnirCore\SleipnirCore.csproj" />
     <ProjectReference Include="..\SleipnirTelemetry\SleipnirTelemetry.csproj" />
+    <ProjectReference Include="..\SleipnirTelemetryHeimdall\SleipnirTelemetryHeimdall.csproj" />
     <ProjectReference Include="..\SleipnirClient\SleipnirClient.csproj" />
     <ProjectReference Include="..\SleipnirCommon\SleipnirCommon.csproj" />
     <ProjectReference Include="..\SleipnirHub\SleipnirHub.csproj" />

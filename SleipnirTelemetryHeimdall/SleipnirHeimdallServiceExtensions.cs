@@ -121,12 +121,13 @@ public static class SleipnirHeimdallServiceExtensions
         // as IHeimdallMetricSource and the query enables RED-metric derivation.
         services.AddHeimdallDashboard(sink).AddHeimdallPrometheus(sink, sink);
 
-        // Alert subsystem: MapHeimdallDashboard maps the /otel/alerts UI and its endpoints
-        // unconditionally, and those endpoints take IAlertRuleStore/IAlertStateStore from DI.
-        // Without registration ASP.NET cannot infer the `stateStore` endpoint parameter
-        // ("UNKNOWN" source), which breaks the routing table as a whole — every request fails
-        // with 500 "Failure to infer one or more parameters". The stores must therefore ALWAYS
-        // be registered; the evaluator itself (rules → channels) runs only on opt-in.
+        // Alert subsystem: Heimdall's AddHeimdallDashboard registers default file-based stores
+        // (TryAddSingleton, Heimdall's own Options dirs) since 1.3.1, so registration is no
+        // longer mandatory to keep routing alive. We still register explicitly because an
+        // explicit AddHeimdallAlerting wins over the TryAdd defaults — this keeps the rule/state
+        // files co-located with the SQLite db instead of Heimdall's default working-directory
+        // paths, pins the notification language to English, and gates the evaluator on
+        // EnableAlerting (the evaluator itself — rules → channels — stays opt-in).
         var dataDir = Path.GetDirectoryName(Path.GetFullPath(options.DataPath)) ?? ".";
         services.AddHeimdallAlerting(sink, new HeimdallAlertingOptions
         {

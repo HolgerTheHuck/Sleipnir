@@ -78,5 +78,5 @@ gate, mirroring `Sleipnir.Telemetry`'s scrape auth, is a planned follow-up.)
 
 ## Versions
 
-Heimdall `1.3.0` and OpenTelemetry `1.18.0` (the same lockstep as `Sleipnir.Telemetry`, so the two never conflict).
+Heimdall `1.3.1` and OpenTelemetry `1.18.0` (the same lockstep as `Sleipnir.Telemetry`, so the two never conflict).
 Targets `net8.0`; Heimdall's `net8.0`/`net9.0`/`net10.0` assets are consumed at the net8.0 TFM.

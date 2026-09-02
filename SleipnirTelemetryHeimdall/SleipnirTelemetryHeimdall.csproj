@@ -34,20 +34,20 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
-  <!-- Heimdall 1.2.0: the embedded backend (in-process SDK exporter, SQLite storage,
-       PromQL engine, Blazor dashboard). Heimdall.Sdk pins OpenTelemetry 1.16.0 — the
+  <!-- Heimdall 1.3.0: the embedded backend (in-process SDK exporter, SQLite storage,
+       PromQL engine, Blazor dashboard). Heimdall.Sdk pins OpenTelemetry 1.18.0 — the
        same lockstep as Sleipnir.Telemetry, so the two never conflict (and this package
        is a replacement for Sleipnir.Telemetry, not an add-on). The OTel hosting +
        instrumentation packages are referenced explicitly to mirror SleipnirTelemetry.csproj. -->
   <ItemGroup>
-    <PackageReference Include="Heimdall.Sdk" Version="1.2.0" />
-    <PackageReference Include="Heimdall.Storage.SQLite" Version="1.2.0" />
-    <PackageReference Include="Heimdall.Prometheus" Version="1.2.0" />
-    <PackageReference Include="Heimdall.Blazor" Version="1.2.0" />
-    <PackageReference Include="OpenTelemetry" Version="1.16.0" />
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.16.0" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.16.0" />
+    <PackageReference Include="Heimdall.Sdk" Version="1.3.0" />
+    <PackageReference Include="Heimdall.Storage.SQLite" Version="1.3.0" />
+    <PackageReference Include="Heimdall.Prometheus" Version="1.3.0" />
+    <PackageReference Include="Heimdall.Blazor" Version="1.3.0" />
+    <PackageReference Include="OpenTelemetry" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
   </ItemGroup>
 
 </Project>

@@ -22,19 +22,20 @@
     <ProjectReference Include="..\SleipnirCore\SleipnirCore.csproj" />
   </ItemGroup>
 
-  <!-- OTel-SDK + Instrumentierungen + Exporter, alle im gleichen 1.16.0-Lockstep. -->
+  <!-- OTel-SDK + Instrumentierungen + Exporter, alle im gleichen 1.18.0-Lockstep
+       (Heimdall.Sdk 1.3.0 pinnt dieselbe Version, siehe SleipnirTelemetryHeimdall). -->
   <ItemGroup>
-    <PackageReference Include="OpenTelemetry" Version="1.16.0" />
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.16.0" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.16.0" />
-    <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.16.0" />
-    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
     <!-- Prometheus scrape endpoint (pull model) for /metrics. The Prometheus exporter
-         ships only betas; 1.16.0-beta.1 tracks the 1.16.0 lockstep. Interim producer —
+         ships only betas; 1.18.0-beta.1 tracks the 1.18.0 lockstep. Interim producer —
          the durable contract is the Prometheus-text interface; Heimdall (Holger's
-         upcoming embedded OTel stack) can later replace this producer. -->
-    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.16.0-beta.1" />
+         embedded OTel stack) can later replace this producer. -->
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.18.0-beta.1" />
   </ItemGroup>
 
 </Project>

@@ -14,7 +14,7 @@ OTel pipeline.
 - OTLP + Console exporters.
 - `AspNetCore` + `HttpClient` instrumentation, so incoming HTTP and outbound calls
   nest inside the Sleipnir spans.
-- All OTel packages pinned to the same `1.16.0` lockstep.
+- All OTel packages pinned to the same `1.18.0` lockstep.
 
 ## Install
 

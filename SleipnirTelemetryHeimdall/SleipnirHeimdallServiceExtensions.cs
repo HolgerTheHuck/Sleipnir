@@ -133,6 +133,7 @@ public static class SleipnirHeimdallServiceExtensions
             Enabled = options.EnableAlerting,
             RulesDir = options.AlertingRulesDir ?? Path.Combine(dataDir, "alerts", "rules"),
             StateDir = options.AlertingStateDir ?? Path.Combine(dataDir, "alerts"),
+            Language = "en",
         });
 
         return services;

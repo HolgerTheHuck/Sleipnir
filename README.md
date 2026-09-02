@@ -242,6 +242,8 @@ npm i -D sleipnir-codegen
 
 > `Sleipnir.Server` is the all-in-one meta-package. Reference a single transport package directly (e.g. `Sleipnir.Rest`) to skip the rest — full package matrix in [`README_DETAILS.md`](README_DETAILS.md).
 
+All `Sleipnir.*` packages ship to **nuget.org**: [`nuget.org/packages?q=Sleipnir`](https://www.nuget.org/packages?q=Sleipnir) — the TypeScript/JavaScript packages are on **npm**: [`npmjs.com/package/sleipnir-client`](https://www.npmjs.com/package/sleipnir-client).
+
 Requires .NET 8.0+.
 
 ---

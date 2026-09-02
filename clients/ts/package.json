@@ -1,6 +1,6 @@
 {
   "name": "sleipnir-client",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Isomorphic JavaScript/TypeScript client for the Sleipnir multi-transport RPC framework (REST + WebSocket + SSE events). Browser + Node.",
   "type": "module",
   "main": "./dist/index.js",

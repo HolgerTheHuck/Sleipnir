@@ -37,9 +37,10 @@ jobs:
     # ts-compile) and WebApplicationFactory integration tests; on a slow/overloaded
     # shared runner these can push the test step well past 10 min. 15 min was too
     # tight (observed timeout-during-Test on an overloaded runner — the suite itself
-    # finishes in ~3 min on a warm/healthy runner). 30 min gives headroom for a bad
-    # runner day without masking a genuine hang indefinitely.
-    timeout-minutes: 30
+    # finishes in ~3 min on a warm/healthy runner). 30 min was hit twice on 2026-09-02
+    # (both times in the coverage step on an overloaded runner — which also cancelled a
+    # workflow_dispatch npm publish). 40 min gives the next runner-day headroom.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 

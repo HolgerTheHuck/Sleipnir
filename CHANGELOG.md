@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added — Built-in Heimdall telemetry backend
+
+- **New package `Sleipnir.Telemetry.Heimdall`** (`SleipnirTelemetryHeimdall`): an opt-in,
+  embedded Heimdall telemetry backend. `AddSleipnirHeimdallTelemetry(...)` boots the OTel SDK
+  with an in-process Heimdall exporter pointed at an embedded SQLite sink and subscribes the
+  Sleipnir `ActivitySource` + `Meter` (and optionally `ILogger`); `MapSleipnirHeimdall("/otel")`
+  maps the Blazor dashboard and the PromQL HTTP API (Grafana-compatible) under a shared prefix.
+  Heimdall **replaces** `Sleipnir.Telemetry`'s Prometheus scrape producer (do not wire both) —
+  the server/engine stay backend-agnostic, same opt-in doctrine. Alert rule/state stores are
+  registered explicitly (co-located with the SQLite db, notification language `en`); the
+  alert evaluator itself is opt-in via `EnableAlerting`. Requires Heimdall ≥ 1.3.1 (which
+  registers alert-store defaults and fail-fasts when they are missing).
+- Covered by `HeimdallTelemetryEndpointTests` (Prometheus buildinfo, PromQL instant query,
+  dashboard under `/otel`).
+
+### Changed — Telemetry
+
+- Both telemetry packages (`Sleipnir.Telemetry`, `Sleipnir.Telemetry.Heimdall`) pin the
+  OpenTelemetry lockstep at `1.18.0` (up from `1.16.0`; Heimdall.Sdk 1.3.x pins the same
+  version, so the two packages never conflict). `OpenTelemetry.Exporter.Prometheus.AspNetCore`
+  moves to `1.18.0-beta.1`. No API changes — the engine (`SleipnirCore`) stays OTel-SDK-free.
+
+### Docs
+
+- README repositioned from feature-reference style into narrative positioning
+  ("Resources have REST. Operations have Sleipnir."), with the argument expanded in the
+  new [`docs/WHY_SLEIPNIR.md`](docs/WHY_SLEIPNIR.md).
+
 ## [1.4.2] — 2026-08-22
 
 ### Fixed — Dependency-chaining hardening (audit 2026-08-22, D1–D7)

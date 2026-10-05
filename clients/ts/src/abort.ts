@@ -1,19 +1,19 @@
-// Isomorphe Helper zur Verknüpfung von Caller-AbortSignal und Call-Timeout.
-// (Node 18 hat noch kein AbortSignal.any; daher manuelle Verkettung.)
+// Isomorphic helpers for combining a caller abort signal with a call timeout.
+// (Node 18 has no AbortSignal.any yet; hence the manual linking.)
 
 export interface LinkedSignal {
-  /** Signal, das feuert, wenn Caller-Signal oder Timeout auslöst. */
+  /** Signal that fires when the caller signal or the timeout trips. */
   signal: AbortSignal;
-  /** Hebt den Timeout-Timer auf (aufrufen im finally des Callers). */
+  /** Cancels the timeout timer (call in the caller's finally). */
   clear: () => void;
-  /** True, wenn das Signal wegen eines Timeouts (nicht Caller-Abbruch) feuerte. */
+  /** True when the signal fired because of a timeout (not a caller abort). */
   isTimeout: () => boolean;
 }
 
 /**
- * Verknüpft ein optionales Caller-Signal mit einem optionalen Call-Timeout.
- * Löst der Caller ab → Signal aborted. Läuft der Timer ab → Signal aborted.
- * `clear()` muss im finally aufgerufen werden, um den Timer zu stoppen.
+ * Links an optional caller signal with an optional call timeout.
+ * If the caller aborts → the signal aborts. If the timer expires → the signal aborts.
+ * `clear()` must be called in a finally so the timer is stopped.
  */
 export function linkAbortSignal(
   callerSignal?: AbortSignal,

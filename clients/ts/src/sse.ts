@@ -37,25 +37,25 @@ export type {
   SleipnirSubscription,
 };
 
-/** Injizierbares fetch — permissiv, damit Test-Mocks und Node-Lib.fetch passen. */
+/** Injectable fetch — permissive, so test mocks and Node lib.fetch both fit. */
 export type SseFetchLike = (
   input: string | URL | Request,
   init?: RequestInit,
 ) => Promise<Response>;
 
-/** Optionen für den SSE-Client. */
+/** Options for the SSE client. */
 export interface SleipnirSseClientOptions {
-  /** REST-Basispfad (Default "api/sleipnir"); Slashes werden abgeschnitten. */
+  /** REST base path (default "api/sleipnir"); slashes are trimmed. */
   apiPath?: string;
-  /** Bearer-Token (Authorization-Header) — String oder Provider-Funktion (rotierende JWTs). */
+  /** Bearer token (Authorization header) — string or provider function (rotating JWTs). */
   bearer?: BearerProvider;
-  /** Injizierbares fetch (Tests / älteres Node). Default: globales fetch. */
+  /** Injectable fetch (tests / older Node). Default: global fetch. */
   fetch?: SseFetchLike;
-  /** Standard-Header für jeden Request. */
+  /** Default headers for every request. */
   headers?: Record<string, string>;
-  /** Auto-Reconnect bei unerwartetem Disconnect (Default true). */
+  /** Auto-reconnect on unexpected disconnect (default true). */
   reconnect?: boolean;
-  /** Backoff-Intervalle in ms (Default SignalR-Spiegel). Leeres Array schaltet Reconnect aus. */
+  /** Backoff intervals in ms (default mirrors SignalR). An empty array disables reconnect. */
   reconnectDelays?: number[];
   /**
    * Client-wide resume policy (Phase R): consulted per subscription on reconnect before
@@ -73,16 +73,16 @@ export interface SleipnirSseClientOptions {
   onStateChanged?: (state: SleipnirConnectionState) => void;
 }
 
-/** Pro-Subscription-Optionen (Spiegel der WS `SubscribeOptions`). */
+/** Per-subscription options (mirror of the WS `SubscribeOptions`). */
 export interface SseSubscribeOptions {
   /**
-   * Abbruch-Signal (Browser/Node). Before the ack the subscribe rejects with `CancelledError`;
+   * Abort signal (browser/Node). Before the ack the subscribe rejects with `CancelledError`;
    * afterwards aborting ends the subscription (like `unsubscribe()`), without reconnect.
    */
   signal?: AbortSignal;
-  /** Per-subscription resume policy (überschreibt clientweiten `onResume`). */
+  /** Per-subscription resume policy (overrides the client-wide `onResume`). */
   resumePolicy?: ResumePolicy;
-  /** Zusätzliche Header für diesen Subscribe-Request. */
+  /** Extra headers for this subscribe request. */
   headers?: Record<string, string>;
   /**
    * Subscribe timeout in ms: how long to wait for the server's ack (first stream block). On
@@ -93,21 +93,21 @@ export interface SseSubscribeOptions {
 }
 
 /**
- * Optionen für {@link SleipnirSseClient.resume} (Cross-Transport-Resume einer durable
- * Subscription anhand ihrer `subscriptionId`). Im Gegensatz zu {@link SseSubscribeOptions}
- * gibt es keinen Fresh-Modus — ein Drop verbindet immer im Resume-Modus neu (selbe
- * Resume-URL mit aktualisiertem Cursor), bis `complete`/`error`/`410`/Abbruch.
+ * Options for {@link SleipnirSseClient.resume} (cross-transport resume of a durable
+ * subscription via its `subscriptionId`). Unlike {@link SseSubscribeOptions} there is
+ * no fresh mode — after a drop the client always reconnects in resume mode (same
+ * resume URL with an updated cursor), until `complete`/`error`/`410`/abort.
  */
 export interface SseResumeOptions {
-  /** Abbruch-Signal; vor dem Ack → `CancelledError`, danach beendet es die Resume-Subscription. */
+  /** Abort signal; before the ack → `CancelledError`, afterwards it ends the resume subscription. */
   signal?: AbortSignal;
-  /** Zusätzliche Header für jeden Resume-Request. */
+  /** Extra headers for every resume request. */
   headers?: Record<string, string>;
-  /** Auto-Reconnect bei Drop (Default: clientweiter `reconnect`). */
+  /** Auto-reconnect after a drop (default: the client-wide `reconnect`). */
   reconnect?: boolean;
-  /** Backoff-Intervalle in ms (Default: clientweite `reconnectDelays`). */
+  /** Backoff intervals in ms (default: the client-wide `reconnectDelays`). */
   reconnectDelays?: number[];
-  /** Per-subscription resume policy — `"drop"` beendet, sonst wird fortgesetzt (Default: resume). */
+  /** Per-subscription resume policy — `"drop"` ends it, otherwise it continues (default: resume). */
   resumePolicy?: ResumePolicy;
   /** Ack timeout in ms (see {@link SseSubscribeOptions.timeout}). Default: none. */
   timeout?: number;
@@ -132,10 +132,10 @@ interface StreamLife {
 }
 
 /**
- * SSE-Client für Sleipnir-Events (`[SleipnirEvent]` + `IObservable<T>`) über REST
- * (`text/event-stream`). Isomorph via globalem `fetch`. Eine `subscribe`-Aktivierung öffnet
- * genau einen SSE-Stream (ein GET = eine Subscription); auf Disconnect greift der Resume-
- * Mechanismus (sofern `reconnect` an). Siehe `PROTOCOL.md` → "REST Events (SSE)".
+ * SSE client for Sleipnir events (`[SleipnirEvent]` + `IObservable<T>`) over REST
+ * (`text/event-stream`). Isomorphic via the global `fetch`. One `subscribe` activation
+ * opens exactly one SSE stream (one GET = one subscription); on disconnect the resume
+ * mechanism kicks in (if `reconnect` is on). See `PROTOCOL.md` → "REST Events (SSE)".
  */
 export class SleipnirSseClient {
   private readonly _baseUrl: string;
@@ -153,11 +153,11 @@ export class SleipnirSseClient {
 
   constructor(baseUrl: string, options: SleipnirSseClientOptions = {}) {
     if (!baseUrl || baseUrl.trim().length === 0) {
-      throw new Error("SleipnirSseClient: baseUrl darf nicht leer sein.");
+      throw new Error("SleipnirSseClient: baseUrl must not be empty.");
     }
     this._baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
     this._apiPath = (options.apiPath ?? "api/sleipnir").replace(/^\/+|\/+$/g, "");
-    // Browser-fetch verlangt `globalThis` als Receiver (siehe SleipnirRestClient).
+    // Browser fetch requires `globalThis` as the receiver (see SleipnirRestClient).
     this._fetch = options.fetch ?? fetch.bind(globalThis);
     this._headers = { ...(options.headers ?? {}) };
     this._bearer = options.bearer;
@@ -175,16 +175,17 @@ export class SleipnirSseClient {
     return this._state;
   }
 
-  /** Tauscht den Bearer (String oder Provider-Funktion) für künftige Requests aus. */
+  /** Swaps the bearer (string or provider function) for future requests. */
   setBearer(bearer: BearerProvider): void {
     this._bearer = bearer;
   }
 
   /**
-   * Öffnet eine SSE-Subscription auf `{controller}.{method}`. Method-Argumente reisen als
-   * Query-Parameter (GET hat keinen Body); jeder Wert wird JSON-kodiert gesendet, damit der
-   * Server ihn typengetreu zurück-parsed (ein String `"hi"` als `?msg=%22hi%22`). Löst mit dem
-   * `SleipnirSubscription`-Handle auf, sobald der Server-Ack eintrifft (erste SSE-Event-Block).
+   * Opens an SSE subscription on `{controller}.{method}`. Method arguments travel as
+   * query parameters (GET has no body); every value is sent JSON-encoded so the
+   * server parses it back type-faithfully (a string `"hi"` as `?msg=%22hi%22`). Resolves
+   * with the `SleipnirSubscription` handle as soon as the server ack arrives (the first
+   * SSE event block).
    */
   async subscribe<T>(
     controller: string,
@@ -198,11 +199,11 @@ export class SleipnirSseClient {
 
     let unsubscribed = false;
     let subscriptionId = "";
-    let lastEventId = 0;                 // Phase R dedup cursor (0 = noch kein Event)
-    let attempt = 0;                     // Backoff-Index
-    let forceFresh = false;               // Einmal-Override nach 410 (Server degradiert Resume→Fresh)
+    let lastEventId = 0;                 // Phase R dedup cursor (0 = no event yet)
+    let attempt = 0;                     // backoff index
+    let forceFresh = false;              // one-shot override after a 410 (server degrades resume → fresh)
 
-    // Der Subscribe-Promise löst auf, sobald der erste Ack-Block gelesen wurde.
+    // The subscribe promise resolves as soon as the first ack block was read.
     return new Promise<SleipnirSubscription>((resolve, reject) => {
       // One lifecycle per subscription: unsubscribe(), the caller signal and the ack timeout abort
       // both the running fetch and the reconnect loop (ctrl), and end the subscription (finish).
@@ -218,7 +219,7 @@ export class SleipnirSseClient {
         life.finish();
       };
 
-      // Erste Verbindung ist Fresh; jede Reconnect-Verbindung ist Fresh ODER Resume (Policy).
+      // The first connection is fresh; every reconnect connection is fresh OR resume (policy).
       let mode: "fresh" | "resume" = "fresh";
 
       const connectOnce = async (): Promise<void> => {
@@ -247,11 +248,11 @@ export class SleipnirSseClient {
 
         try {
           await readStream(resp.body);
-          // Sauberes Stream-Ende OHNE Terminal-Frame (complete/error gesetzt unsubscribed)
-          // ist ein Drop: die Verbindung wurde ohne sauberes Ende geschlossen → Reconnect.
+          // A clean stream end WITHOUT a terminal frame (complete/error set `unsubscribed`)
+          // counts as a drop: the connection was closed without a clean end → reconnect.
           if (!unsubscribed && !ctrl.signal.aborted) handleDrop(new Error("SSE stream ended"));
         } catch (e) {
-          // Abort durch unsubscribe → Schleife beenden; sonst Reconnect.
+          // Abort from unsubscribe → exit the loop; otherwise reconnect.
           if (unsubscribed || ctrl.signal.aborted) return;
           handleDrop(e);
         }
@@ -266,7 +267,7 @@ export class SleipnirSseClient {
           const { value, done } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
-          // SSE-Blöcke sind durch eine Leerzeile getrennt; verarbeite alle vollständigen.
+          // SSE blocks are separated by a blank line; process all complete ones.
           let sep: number;
           while ((sep = buffer.indexOf("\n\n")) !== -1) {
             const blockText = buffer.slice(0, sep);
@@ -277,8 +278,8 @@ export class SleipnirSseClient {
               ackSeen = true;
               const ack = JSON.parse(block.data) as { subscriptionId: string; replayedFrom?: number };
               subscriptionId = ack.subscriptionId;
-              // Eine Resume, die eine neue id liefert, bedeutet Server-Degraded-to-Fresh
-              // (TTL expired / non-resumable) → der eventId-Zähler startet neu bei 1 → Cursor reset.
+              // A resume that returns a new id means server degraded-to-fresh
+              // (TTL expired / non-resumable) → the eventId counter restarts at 1 → cursor reset.
               if (mode === "resume" && ack.replayedFrom == null) lastEventId = 0;
               attempt = 0;
               life.acked();
@@ -300,35 +301,35 @@ export class SleipnirSseClient {
           const frame = JSON.parse(block.data) as { eventId?: number; data: T };
           const evId = typeof frame.eventId === "number" ? frame.eventId : null;
           if (evId !== null) {
-            if (evId <= lastEventId) return;    // Reconnect-Replay-Duplikat verwerfen
+            if (evId <= lastEventId) return;    // drop a reconnect replay duplicate
             lastEventId = evId;
           }
-          try { handlers.onNext(frame.data); } catch { /* Handler-Fehler nicht fatal */ }
+          try { handlers.onNext(frame.data); } catch { /* handler errors are not fatal */ }
         } else if (block.event === "complete") {
-          unsubscribed = true;                  // Terminal → kein Reconnect
+          unsubscribed = true;                  // terminal → no reconnect
           life.finish();
-          try { handlers.onComplete?.(); } catch { /* Handler-Fehler nicht fatal */ }
+          try { handlers.onComplete?.(); } catch { /* handler errors are not fatal */ }
         } else if (block.event === "error") {
           unsubscribed = true;
           life.finish();
           const msg = (JSON.parse(block.data) as { message?: string }).message ?? "Subscription error";
-          try { handlers.onError?.(new Error(msg)); } catch { /* Handler-Fehler nicht fatal */ }
+          try { handlers.onError?.(new Error(msg)); } catch { /* handler errors are not fatal */ }
         }
       };
 
       const handleNonOk = (resp: Response, wasMode: "fresh" | "resume"): void => {
-        // Erste Fresh-Subscribe: non-2xx → Subscribe scheitert (Auth/Routing/Binding).
+        // First fresh subscribe: non-2xx → the subscribe fails (auth/routing/binding).
         if (subscriptionId === "") {
           unsubscribed = true;
           life.finish();
           reject(new SleipnirError(resp.status, `SSE subscribe failed (HTTP ${resp.status}).`));
           return;
         }
-        // Reconnect-Phase: 410 Gone → Resume-Ziel weggefallen → zu Fresh degradieren und neu
-        // versuchen. Andere non-2xx → als Drop behandeln (Policy entscheidet über Reconnect).
+        // Reconnect phase: 410 Gone → the resume target is gone → degrade to fresh and retry.
+        // Any other non-2xx → treat as a drop (the policy decides about reconnecting).
         if (wasMode === "resume" && resp.status === 410) {
-          // Server hat die durable Subscription weggeräumt → Resume-Ziel weg → einmalig zu Fresh
-          // degradieren (Policy-Befragung überspringen, sonst würde sie "resume" wieder setzen).
+          // The server removed the durable subscription → the resume target is gone → one-shot
+          // degrade to fresh (skip the policy consultation, otherwise it would return "resume").
           mode = "fresh";
           forceFresh = true;
           scheduleReconnect();
@@ -339,7 +340,7 @@ export class SleipnirSseClient {
 
       const handleDrop = (e: unknown): void => {
         if (unsubscribed || !this._reconnect || this._reconnectDelays.length === 0) {
-          // Kein Reconnect: ein Drop vor dem ersten Ack → Subscribe scheitert; danach → onError.
+          // No reconnect: a drop before the first ack → the subscribe fails; after it → onError.
           const wasLive = !unsubscribed;
           unsubscribed = true;
           life.finish();
@@ -355,9 +356,9 @@ export class SleipnirSseClient {
 
       const scheduleReconnect = (): void => {
         if (unsubscribed) return;
-        // Policy befragen (nur wenn schon eine subscriptionId vorliegt; vor dem ersten Ack
-        // gibt es nichts zu resumen → frisch neu versuchen). forceFresh (nach 410) überspringt
-        // die Policy für genau diesen Reconnect — sie würde sonst "resume" zurückgeben.
+        // Consult the policy (only when a subscriptionId already exists; before the first ack
+        // there is nothing to resume → retry fresh). forceFresh (after a 410) skips the policy
+        // for exactly this reconnect — otherwise it would return "resume".
         let decision: ResumeDecision = "fresh";
         if (forceFresh) {
           forceFresh = false;
@@ -388,24 +389,24 @@ export class SleipnirSseClient {
         }
       };
 
-      // Start: erste Fresh-Verbindung.
+      // Start: the first fresh connection.
       void connectOnce();
     });
   }
 
   /**
-   * Setzt eine durable Subscription anhand ihrer server-seitigen `subscriptionId` fort: der
-   * Server replayt die Gap ab `lastEventId` und liefert dann live weiter — über einen neuen
-   * SSE-Stream. Cross-Transport: der serverseitige `SleipnirSubscriptionStore` ist prozessweit,
-   * daher ist eine über WebSocket (oder einen anderen SSE-Stream) erzeugte `subscriptionId`
-   * hier resumable. Das ist der Einstiegspunkt, den der Transport-Router beim Auto-Fallback
-   * (WS → REST+SSE) nutzt, um eine Event-Subscription an SSE zu übergeben.
+   * Resumes a durable subscription by its server-side `subscriptionId`: the server replays
+   * the gap from `lastEventId` and then keeps streaming live — over a new SSE stream.
+   * Cross-transport: the server-side `SleipnirSubscriptionStore` is process-wide, so a
+   * `subscriptionId` created over WebSocket (or another SSE stream) is resumable here.
+   * This is the entry point the transport router uses on the auto fallback
+   * (WS → REST+SSE) to hand an event subscription over to SSE.
    *
-   * Im Gegensatz zu {@link subscribe} werden keine Controller/Method/Params benötigt — die
-   * Resume-URL ist selbstbeziehend (`GET /events/{subscriptionId}?lastEventId=…`). Bei einem
-   * Drop verbindet der Client im Resume-Modus neu (selbe URL, aktualisierter Cursor);
-   * `410 Gone` (durable Subscription abgelaufen/geräumt) terminiert mit `onError` — es gibt
-   * keinen Fresh-Fallback, da keine Fresh-Params vorliegen.
+   * Unlike {@link subscribe}, no controller/method/params are needed — the resume URL is
+   * self-referential (`GET /events/{subscriptionId}?lastEventId=…`). On a drop the client
+   * reconnects in resume mode (same URL, updated cursor); `410 Gone` (durable subscription
+   * expired/removed) terminates with `onError` — there is no fresh fallback, since no
+   * fresh params exist.
    */
   async resume<T>(
     subscriptionId: string,
@@ -455,7 +456,7 @@ export class SleipnirSseClient {
           return handleDrop(e);
         }
         if (!resp.ok || !resp.body) {
-          // Pre-ack: die durable Subscription ist weg/verweigert → Subscribe scheitert.
+          // Pre-ack: the durable subscription is gone/refused → the subscribe fails.
           if (!ackSeen) {
             unsubscribed = true;
             life.finish();
@@ -463,7 +464,7 @@ export class SleipnirSseClient {
             return;
           }
           if (resp.status === 410) {
-            // Durable Subscription abgelaufen/geräumt → terminal (kein Fresh-Fallback: keine Params).
+            // Durable subscription expired/removed → terminal (no fresh fallback: no params).
             unsubscribed = true;
             life.finish();
             try { handlers.onError?.(new Error("SSE resume target gone (410): subscription expired.")); } catch { /* non-fatal */ }
@@ -499,7 +500,7 @@ export class SleipnirSseClient {
               streamAcked = true;
               const ack = JSON.parse(block.data) as { subscriptionId?: string; replayedFrom?: number };
               if (ack.subscriptionId) activeId = ack.subscriptionId;
-              // Degraded-to-fresh (TTL expired / non-resumable): eventId-Zähler startet neu → Cursor reset.
+              // Degraded-to-fresh (TTL expired / non-resumable): the eventId counter restarts → cursor reset.
               if (ack.replayedFrom == null) cursor = 0;
               attempt = 0;
               life.acked();
@@ -518,10 +519,10 @@ export class SleipnirSseClient {
               const frame = JSON.parse(block.data) as { eventId?: number; data: T };
               const evId = typeof frame.eventId === "number" ? frame.eventId : null;
               if (evId !== null) {
-                if (evId <= cursor) continue;       // Replay-Duplikat verwerfen
+                if (evId <= cursor) continue;       // drop a replay duplicate
                 cursor = evId;
               }
-              try { handlers.onNext(frame.data); } catch { /* Handler-Fehler nicht fatal */ }
+              try { handlers.onNext(frame.data); } catch { /* handler errors are not fatal */ }
             } else if (block.event === "complete") {
               unsubscribed = true;
               life.finish();
@@ -550,8 +551,8 @@ export class SleipnirSseClient {
 
       const scheduleReconnect = (): void => {
         if (unsubscribed) return;
-        // Resume-only: die Policy darf ein Reconnect zu "drop" herabstufen; "fresh" ist hier
-        // bedeutungslos (keine Fresh-Params) und wird als "resume" behandelt.
+        // Resume-only: the policy may downgrade a reconnect to "drop"; "fresh" is meaningless
+        // here (no fresh params) and is treated as "resume".
         let decision: ResumeDecision = "resume";
         if (policy && cursor > 0) {
           const ctx: SubscriptionResumeContext = {
@@ -576,12 +577,12 @@ export class SleipnirSseClient {
         else void connectOnce();
       };
 
-      // Start: erste Resume-Verbindung.
+      // Start: the first resume connection.
       void connectOnce();
     });
   }
 
-  // --- Interna ---
+  // --- Internals ---
 
   /**
    * Creates the lifecycle of one stream (see {@link StreamLife}) and registers it for the
@@ -679,27 +680,28 @@ export class SleipnirSseClient {
   }
 
   private buildResumeUrl(subscriptionId: string, lastEventId: number): string {
-    // lastEventId reist primär im Last-Event-Id-Header; der Query-Param ist Fallback für
-    // Umgebungen, die Header-Setzen erschweren (native EventSource kann gar keine Header).
+    // lastEventId travels primarily in the Last-Event-Id header; the query parameter is the
+    // fallback for environments where setting headers is awkward (native EventSource can set
+    // none at all).
     return `${this._baseUrl}${this._apiPath}/events/${encodeURIComponent(subscriptionId)}?lastEventId=${lastEventId}`;
   }
 }
 
-// --- SSE-Block-Parser ---
+// --- SSE block parser ---
 
 interface SseBlock {
-  /** Der `event:`-Feldwert (Default "message"). */
+  /** The `event:` field value (default "message"). */
   event: string;
-  /** Der `id:`-Feldwert (Last-Event-Id) oder null. */
+  /** The `id:` field value (Last-Event-Id) or null. */
   id: number | null;
-  /** Die `data:`-Zeilen, mit "\n" verkettet. */
+  /** The `data:` lines, joined with "\n". */
   data: string;
 }
 
 /**
- * Parst einen SSE-Block (die Zeilen zwischen zwei Leerzeilen) in `{event,id,data}`. Felder
- * unbekannter Bedeutung (z. B. `retry:`) und Kommentare (`:`) werden ignoriert. Ein Block ohne
- * `event:`-Feld liefert `event = "message"` (SSE-Default) — Sleipnir sendet immer `event:`.
+ * Parses one SSE block (the lines between two blank lines) into `{event,id,data}`. Fields of
+ * unknown meaning (e.g. `retry:`) and comments (`:`) are ignored. A block without an
+ * `event:` field yields `event = "message"` (SSE default) — Sleipnir always sends `event:`.
  */
 function parseSseBlock(block: string): SseBlock | null {
   let event = "message";
@@ -707,12 +709,12 @@ function parseSseBlock(block: string): SseBlock | null {
   let data = "";
   let hasData = false;
   for (const rawLine of block.split("\n")) {
-    // CR am Zeilenende (CRLF-Transporte) abschneiden.
+    // Trim a trailing CR (CRLF transports).
     const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-    if (line === "" || line.startsWith(":")) continue;     // Leer-/Kommentarzeile
+    if (line === "" || line.startsWith(":")) continue;      // blank/comment line
     const colon = line.indexOf(":");
     const field = colon === -1 ? line : line.slice(0, colon);
-    // Ein einzelnes führendes Leerzeichen nach dem Colon ist SSE-Konvention → streifen.
+    // A single leading space after the colon is SSE convention → strip it.
     let value = colon === -1 ? "" : line.slice(colon + 1);
     if (value.startsWith(" ")) value = value.slice(1);
     if (field === "event") event = value;
@@ -722,7 +724,7 @@ function parseSseBlock(block: string): SseBlock | null {
       data += value;
       hasData = true;
     }
-    // retry: und unbekannte Felder ignorieren.
+    // Ignore retry: and unknown fields.
   }
   return hasData ? { event, id, data } : null;
 }

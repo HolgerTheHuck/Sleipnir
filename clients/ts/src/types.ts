@@ -1,32 +1,32 @@
-// Kanonische Wire-Typen des Sleipnir-Protokolls (camelCase, siehe PROTOCOL.md).
-// Port aus SleipnirDeveloperUi/src/lib/types/discovery.ts; Binary-Felder sind hier
-// korrekt als base64-String getypt (System.Text.Json serialisiert byte[] als
-// base64), nicht als number[].
+// Canonical wire types of the Sleipnir protocol (camelCase, see PROTOCOL.md).
+// Ported from SleipnirDeveloperUi/src/lib/types/discovery.ts; binary fields are typed
+// as base64 strings here (System.Text.Json serializes byte[] as base64), not as
+// number[].
 
-/** Ausführungsmodus für Batch-Requests (SleipnirMultiRequest.mode). */
+/** Execution mode for batch requests (SleipnirMultiRequest.mode). */
 export enum ExecutionMode {
-  /** 0 — alle Requests parallel (Dependencies werden ignoriert). */
+  /** 0 — all requests in parallel (dependencies are ignored). */
   Parallel = 0,
-  /** 1 — seriell, mit @alias-Abhängigkeitsauflösung (topologisch). */
+  /** 1 — serial, with @alias dependency resolution (topological). */
   Serial = 1,
 }
 
 /**
- * Bearer-Token-Quelle: ein fester String oder eine Provider-Funktion, die pro
- * Call (REST) bzw. pro Connect/Reconnect (WS) frisch aufgelöst wird — für
- * rotierende JWTs ohne Client-Neubau. Zur Laufzeit tauschbar via `setBearer`.
+ * Bearer token source: a fixed string or a provider function that is resolved fresh
+ * per call (REST) or per connect/reconnect (WS) — for rotating JWTs without rebuilding
+ * the client. Swappable at runtime via `setBearer`.
  */
 export type BearerProvider = string | (() => string);
 
-/** Lebenszyklus-Zustand des WebSocket-Clients (Spiegel von C# SleipnirConnectionState). */
+/** Lifecycle state of the WebSocket client (mirror of C# SleipnirConnectionState). */
 export enum SleipnirConnectionState {
-  /** 0 — keine aktive Verbindung (vor dem ersten Connect oder nach erschöpftem Reconnect). */
+  /** 0 — no active connection (before the first connect, or after reconnect exhaustion). */
   Disconnected = 0,
-  /** 1 — Verbindungsaufbau läuft. */
+  /** 1 — connection attempt in progress. */
   Connecting = 1,
-  /** 2 — Verbindung steht; Calls können gesendet werden. */
+  /** 2 — connection is up; calls can be sent. */
   Connected = 2,
-  /** 3 — unerwarteter Disconnect; Hintergrund-Reconnect mit Backoff läuft. */
+  /** 3 — unexpected disconnect; background auto-reconnect with backoff is running. */
   Reconnecting = 3,
 }
 
@@ -77,7 +77,7 @@ export const SLEIPNIR_ERROR_CATEGORIES: readonly SleipnirErrorCategory[] = [
   "Cancelled",
 ];
 
-/** Strukturierter Fehler im SleipnirResponse.error-Feld (code != 2xx). */
+/** Structured error in the SleipnirResponse.error field (code != 2xx). */
 export interface SleipnirErrorBody {
   code: number;
   message: string;
@@ -90,55 +90,55 @@ export interface SleipnirErrorBody {
   category?: SleipnirErrorCategory;
 }
 
-/** Ein einzelner Parameter innerhalb von SleipnirRequest.params. */
+/** A single parameter within SleipnirRequest.params. */
 export interface SleipnirParameter {
-  /** Parametername (Server bindet danach). Bei Positionalen leer/ein Platzhalter. */
+  /** Parameter name (the server binds by it). Empty/a placeholder for positional. */
   parameterName: string;
-  /** Nativer JSON-Wert (Zahl, String, Bool, Objekt, Array), kein JSON-String mehr.
-   *  Ein @alias-Platzhalter ist ein String-Wert mit @-Präfix (z. B. "@newId"). */
+  /** Native JSON value (number, string, bool, object, array), no JSON string anymore.
+   *  An @alias placeholder is a string value with an @ prefix (e.g. "@newId"). */
   data: unknown;
-  /** Positionaler Index (Fallback, wenn parameterName nicht bindet). */
+  /** Positional index (fallback when parameterName does not bind). */
   num?: number;
 }
 
-/** Einzelner RPC-Request. */
+/** A single RPC request. */
 export interface SleipnirRequest {
   controller: string;
   method: string;
-  /** Parameter als natives Array von SleipnirParameter (data ist nativer JSON-Wert). */
+  /** Parameters as a native array of SleipnirParameter (data is a native JSON value). */
   params?: SleipnirParameter[] | null;
   id?: string;
-  /** alias → JsonPath; Werte aus dieser Response werden für Folgerequests exposed. */
+  /** alias → JsonPath; values from this response are exposed for follow-up requests. */
   dependencyMapping?: Record<string, string> | null;
-  /** base64-kodiertes Binary (für byte[]-Parameter der Zielmethode). */
+  /** base64-encoded binary (for byte[] parameters of the target method). */
   binaryData?: string | null;
 }
 
-/** Batch-Request (mehrere Calls in einem Roundtrip). */
+/** Batch request (multiple calls in one roundtrip). */
 export interface SleipnirMultiRequest {
   requests: SleipnirRequest[];
   mode: ExecutionMode;
 }
 
-/** Antwort eines RPC-Calls. */
+/** The response of an RPC call. */
 export interface SleipnirResponse {
-  /** Logischer Status-Code (im Body, nicht HTTP-Status). 200–299 = Erfolg. */
+  /** Logical status code (in the body, not the HTTP status). 200–299 = success. */
   code: number;
-  /** Strukturierter Ergebniswert (roh, null bei 204/void/Fehler). Seit dem
-   *  Single-Pass-Fix kein JSON-String mehr, sondern der geparste Wert. */
+  /** Structured result value (raw, null on 204/void/error). Since the
+   *  single-pass fix no JSON string but the parsed value. */
   data?: unknown | null;
-  /** base64-kodiertes Binary-Result (für byte[]-Rückgaben). */
+  /** base64-encoded binary result (for byte[] returns). */
   content?: string | null;
-  /** Korrelations-Id (spiegelt request.id). */
+  /** Correlation id (mirrors request.id). */
   id?: string | null;
-  /** Aufgelöste alias → Wert-Map für Dependency-Chaining. */
+  /** Resolved alias → value map for dependency chaining. */
   exposedDependencies?: Record<string, string> | null;
-  /** Strukturierter Fehler bei non-2xx. */
+  /** Structured error on non-2xx. */
   error?: SleipnirErrorBody | null;
   /**
-   * true, wenn code 200–299. Server-seitig `[JsonIgnore]` und aus `code`
-   * abgeleitet — das Wire-Frame enthält dieses Feld NICHT. Der Client füllt
-   * es beim Parsen auf (siehe `normalizeResponse`); es ist daher optional.
+   * true when code is 200–299. Server-side `[JsonIgnore]` and derived from `code`
+   * — the wire frame does NOT contain this field. The client fills it in while
+   * parsing (see `normalizeResponse`); it is therefore optional.
    */
   isSuccess?: boolean;
 }

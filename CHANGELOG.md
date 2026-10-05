@@ -128,6 +128,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (requests always run sequentially in order) and `@alias` placeholders are not resolved —
   batch semantics diverge from every real transport, now stated on the class.
 
+### Fixed — npm `sleipnir-client`: German comments gone (audit F3)
+
+- All TSDoc/JSDoc comments in `clients/ts/src` are English now — 133 comment blocks across the
+  nine client source files. That removes the German residue from the published `.d.ts` files the
+  user sees on hover. Three German runtime error strings (`baseUrl darf nicht leer sein.`) are
+  translated as well. Verified by grep over `dist/*.d.ts`: empty.
+
 ## [1.4.3] — 2026-09-02
 
 ### Added — Built-in Heimdall telemetry backend

@@ -1,15 +1,15 @@
 import type { SleipnirErrorBody, SleipnirErrorCategory, SleipnirResponse } from "./types.js";
 
 /**
- * Fehler bei einem Sleipnir-Aufruf. Spiegelt das C#-Äquivalent (SleipnirException).
+ * Error from a Sleipnir call. Mirrors the C# equivalent (SleipnirException).
  *
- * - **Logischer Fehler** (non-2xx `code` im Response-Body): `code`/`message`/
- *   `details`/`requestId` aus SleipnirResponse.error (oder aus Response abgeleitet).
- * - **Transportfehler** (Netzwerk, non-200 HTTP, malformed JSON): `code` = 0,
- *   `message` beschreibt den Transportfehler, ursprüngliche Exception in `cause`.
+ * - **Logical error** (non-2xx `code` in the response body): `code`/`message`/
+ *   `details`/`requestId` from SleipnirResponse.error (or derived from the response).
+ * - **Transport error** (network, non-200 HTTP, malformed JSON): `code` = 0,
+ *   `message` describes the transport failure, the original exception in `cause`.
  *
- * Cancellation (AbortSignal) wird **nicht** als SleipnirError geworfen, sondern als
- * {@link CancelledError} — konsistent mit der C#-Konvention (OCE unverpackt).
+ * Cancellation (AbortSignal) is **not** thrown as a SleipnirError but as a
+ * {@link CancelledError} — consistent with the C# convention (OCE unwrapped).
  */
 export class SleipnirError extends Error {
   readonly code: number;
@@ -36,7 +36,7 @@ export class SleipnirError extends Error {
     this.category = options?.category;
   }
 
-  /** Baut einen SleipnirError aus einem SleipnirErrorBody (z. B. response.error). */
+  /** Builds a SleipnirError from a SleipnirErrorBody (e.g. response.error). */
   static fromBody(body: SleipnirErrorBody): SleipnirError {
     return new SleipnirError(body.code, body.message, {
       details: body.details,
@@ -46,10 +46,10 @@ export class SleipnirError extends Error {
   }
 
   /**
-   * Baut einen SleipnirError aus einer nicht-erfolgreichen Response. Ist ein
-   * strukturiertes `error` vorhanden, wird es genutzt; sonst generischer Text
-   * aus `code` (Spiegel von C# SleipnirError.FromResponse — Data trägt seit dem
-   * Single-Pass-Fix keine Fehlertexte mehr, die wohnen in error.message).
+   * Builds a SleipnirError from a non-successful response. If a structured `error`
+   * is present it is used; otherwise generic text derived from `code`
+   * (mirror of C# SleipnirError.FromResponse — since the single-pass fix Data carries
+   * no error text anymore; that lives in error.message).
    */
   static fromResponse(response: SleipnirResponse): SleipnirError {
     if (response.error) return SleipnirError.fromBody(response.error);
@@ -60,9 +60,9 @@ export class SleipnirError extends Error {
 }
 
 /**
- * Signalisiert Abbruch eines Aufrufs (AbortSignal/Timeout). Wird — anders als
- * SleipnirError — unverpackt propagiert, damit Aufrufer Cancellation von echten
- * Fehlern unterscheiden können (Spiegel der C# OperationCanceledException).
+ * Signals cancellation of a call (AbortSignal/timeout). Unlike SleipnirError it is
+ * propagated unwrapped, so callers can distinguish cancellation from real errors
+ * (mirror of the C# OperationCanceledException).
  */
 export class CancelledError extends Error {
   readonly timedOut: boolean;
@@ -74,7 +74,7 @@ export class CancelledError extends Error {
   }
 }
 
-/** True, wenn x ein Abbruch ist (CancelledError oder fetch-AbortError/DOMException). */
+/** True when x is a cancellation (CancelledError or fetch AbortError/DOMException). */
 export function isCancelled(x: unknown): boolean {
   return (
     x instanceof CancelledError ||

@@ -1,5 +1,5 @@
-// Sleipnir JavaScript/TypeScript Client — öffentliche API.
-// Siehe PROTOCOL.md für das Wire-Format und clients/ts/README.md für Nutzung.
+// Sleipnir JavaScript/TypeScript client — public API.
+// See PROTOCOL.md for the wire format and clients/ts/README.md for usage.
 
 export * from "./types.js";
 export { SleipnirError, CancelledError, isCancelled } from "./errors.js";
@@ -59,7 +59,7 @@ import {
 } from "./websocket.js";
 import type { BearerProvider } from "./types.js";
 
-/** Gemeinsame Bearer/Timeout-Optionen für createClient. */
+/** Shared bearer/timeout options for createClient. */
 export interface CreateClientOptions {
   bearer?: BearerProvider;
   callTimeout?: number;
@@ -70,13 +70,13 @@ export interface CreateClientOptions {
 export interface SleipnirClient {
   rest: SleipnirRestClient;
   ws: SleipnirWebSocketClient;
-  /** Tauscht den Bearer auf beiden Clients (REST pro Call, WS ab nächstem Connect). */
+  /** Swaps the bearer on both clients (REST per call, WS from the next connect on). */
   setBearer: (bearer: BearerProvider) => void;
 }
 
 /**
- * Convenience-Factory: erzeugt ein REST- und ein WebSocket-Client-Paar mit
- * gemeinsamen Bearer/Timeout-Optionen.
+ * Convenience factory: creates a REST and a WebSocket client pair with shared
+ * bearer/timeout options.
  *
  * ```ts
  * const { rest, ws } = createClient("https://localhost:5001", { bearer: token });

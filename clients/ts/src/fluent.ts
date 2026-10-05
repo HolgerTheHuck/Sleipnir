@@ -3,18 +3,18 @@ import type { SleipnirMultiRequest, SleipnirParameter, SleipnirRequest } from ".
 import { toBase64 } from "./request.js";
 
 /**
- * Fluent Builder für einen SleipnirRequest — Spiegel des C#-SleipnirCall.
- * Transport-agnostisch: liefert einen {@link SleipnirRequest}, den jeder Client
- * (REST/WebSocket) senden kann.
+ * Fluent builder for a SleipnirRequest — mirror of the C# SleipnirCall.
+ * Transport-agnostic: yields a {@link SleipnirRequest} that any client
+ * (REST/WebSocket) can send.
  *
  * ```ts
  * SleipnirCall.init("Customer", "Add")
- *   .with({ name: "Alice" })        // benannt
- *   .with([42, "x"])                // oder positional
+ *   .with({ name: "Alice" })        // named
+ *   .with([42, "x"])                // or positional
  *   .withBinary(blob)               // -> binaryData (base64)
  *   .named("step1")                 // -> id
- *   .exposes("$", "newId")         // -> dependencyMapping (ergebnisrelativer Pfad)
- *   .withAlias("@newId")            // Platzhalter, Server löst @newId auf
+ *   .exposes("$", "newId")         // -> dependencyMapping (result-relative path)
+ *   .withAlias("@newId")            // placeholder — the server resolves @newId
  *   .toRequest();
  * ```
  */
@@ -32,21 +32,21 @@ export class SleipnirCall {
     this._method = method;
   }
 
-  /** Startet einen Builder für `controller.method`. */
+  /** Starts a builder for `controller.method`. */
   static init(controller: string, method: string): SleipnirCall {
     return new SleipnirCall(controller, method);
   }
 
-  /** Setzt die Request-Id (Korrelation). Default: `${controller}.${method}`. */
+  /** Sets the request id (correlation). Default: `${controller}.${method}`. */
   named(id: string): this {
     this._id = id;
     return this;
   }
 
   /**
-   * Fügt benannte (Object) oder positionale (Array) Parameter hinzu.
-   * - Object → `{parameterName: key, data: value}` (sichere Bindung).
-   * - Array  → `{parameterName: "param{i}", num: i, data: value}` (Positional via `num`).
+   * Adds named (Object) or positional (Array) parameters.
+   * - Object → `{parameterName: key, data: value}` (safe binding).
+   * - Array  → `{parameterName: "param{i}", num: i, data: value}` (positional via `num`).
    */
   with(params: Record<string, unknown> | unknown[]): this {
     if (Array.isArray(params)) {
@@ -57,23 +57,22 @@ export class SleipnirCall {
     return this;
   }
 
-  /** Fügt einen benannten Parameter hinzu (Name muss server-seitig passen). */
+  /** Adds a named parameter (the name must match server-side). */
   param(name: string, value: unknown): this {
     this.pushNamed(name, value);
     return this;
   }
 
   /**
-   * Deklariert, dass diese Response den Wert unter `jsonPath` als `alias`
-   * exposed (für Dependency-Chaining). Server-seitig aufgelöst; Folgerequests
-   * nutzen `@alias` in ihrem `data`.
+   * Declares that this response exposes the value under `jsonPath` as `alias`
+   * (for dependency chaining). Resolved server-side; follow-up requests use
+   * `@alias` in their `data`.
    *
-   * `jsonPath` ist **ergebnisrelativ** — die Wurzel `$` ist das serialisierte
-   * Resultat (z. B. ein `int` oder ein `Customer`-Objekt), nicht der
-   * Response-Umschlag. Es gibt also keine `data`-Knoten-Ebene: nutze `$` für das
-   * ganze Resultat, `$.Id`/`$.Name` für Eigenschaften, `$[0].Id` für ein
-   * Listenelement. Ein Pfad wie `$.data` trifft nie (außer das Resultat hat
-   * selbst eine `data`-Eigenschaft).
+   * `jsonPath` is **result-relative** — the root `$` is the serialized result
+   * (e.g. an `int` or a `Customer` object), not the response envelope. There is
+   * therefore no `data` node level: use `$` for the whole result, `$.Id`/`$.Name`
+   * for properties, `$[0].Id` for a list element. A path like `$.data` never
+   * matches (unless the result itself has a `data` property).
    */
   exposes(jsonPath: string, alias: string): this {
     this._exposed.set(alias, jsonPath);
@@ -81,10 +80,9 @@ export class SleipnirCall {
   }
 
   /**
-   * Fügt einen Parameter mit einem Dependency-Platzhalter hinzu, z. B.
-   * `withAlias("@newId")`. Der Server ersetzt `@newId` anhand einer zuvor
-   * exposed Dependency. Ist der Alias nicht auflösbar, schlägt der Aufruf fehl
-   * (kein impliziter Fallback in v1).
+   * Adds a parameter carrying a dependency placeholder, e.g. `withAlias("@newId")`.
+   * The server replaces `@newId` from a previously exposed dependency. If the alias
+   * is unresolvable, the call fails — there is no implicit fallback in v1.
    */
   withAlias(dependencyPlaceholder: string): this {
     const alias = dependencyPlaceholder.startsWith("@")
@@ -99,13 +97,13 @@ export class SleipnirCall {
     return this;
   }
 
-  /** Setzt das Binary-Payload (für byte[]-Parameter der Zielmethode). */
+  /** Sets the binary payload (for byte[] parameters of the target method). */
   withBinary(bytes: Uint8Array): this {
     this._binary = bytes;
     return this;
   }
 
-  /** Wandelt den Builder in einen versandfertigen SleipnirRequest um. */
+  /** Turns the builder into a ready-to-send SleipnirRequest. */
   toRequest(): SleipnirRequest {
     const id = this._id ?? `${this._controller}.${this._method}`;
     return {
@@ -119,8 +117,8 @@ export class SleipnirCall {
   }
 
   /**
-   * Batch-Factory: baut einen SleipnirMultiRequest aus mehreren (vorab gebauten)
-   * SleipnirRequests. `mode` Serial aktiviert @alias-Abhängigkeitsauflösung.
+   * Batch factory: builds a SleipnirMultiRequest from several (pre-built)
+   * SleipnirRequests. `mode` Serial enables @alias dependency resolution.
    */
   static batch(requests: SleipnirRequest[], mode: ExecutionMode = ExecutionMode.Serial): SleipnirMultiRequest {
     return { requests, mode };

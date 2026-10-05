@@ -8,7 +8,7 @@ const READY_OPEN = 1;
 const READY_CLOSING = 2;
 const READY_CLOSED = 3;
 
-/** Standard-Backoff-Intervalle in ms (Spiegel von SignalR): 2,2,5,5,10,10,30,30s,1,1,5min. */
+/** Default backoff intervals in ms (mirror of SignalR): 2,2,5,5,10,10,30,30s,1,1,5min. */
 const DEFAULT_RECONNECT_DELAYS = [
   2_000, 2_000, 5_000, 5_000, 10_000, 10_000, 30_000, 30_000, 60_000, 60_000, 300_000,
 ];
@@ -32,7 +32,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Minimale, browser-kompatible WebSocket-Schnittstelle (auch Node `ws`). */
+/** Minimal, browser-compatible WebSocket interface (also Node `ws`). */
 export interface IWebSocket {
   readonly readyState: number;
   send(data: string): void;
@@ -43,13 +43,13 @@ export interface IWebSocket {
   onerror: ((ev: unknown) => void) | null;
 }
 
-/** Fabrik für einen WebSocket (Browser global, Node `ws`, oder Injektion für Tests). */
+/** Factory for a WebSocket (browser global, Node `ws`, or injection for tests). */
 export type WsFactory = (
   url: string,
   options: { headers?: Record<string, string>; protocols?: string | string[] },
 ) => IWebSocket;
 
-/** Per-Call-Optionen für einen WebSocket-Aufruf. */
+/** Per-call options for a WebSocket call. */
 export interface WsCallOptions {
   signal?: AbortSignal;
   timeout?: number;
@@ -100,10 +100,10 @@ export interface SubscriptionResumeContext {
 export type ResumePolicy = (ctx: SubscriptionResumeContext) => ResumeDecision | null;
 
 /**
- * Event-Handler für eine Server-Push-Subscription (Phase 3). `onNext` wird pro
- * empfangenem Event-Frame mit dem deserialisierten Payload gerufen; `onComplete`/
- * `onError` beim Terminal-Frame. Ein Terminal-Frame beendet die Subscription
- * server-seitig — danach kommen keine weiteren Events für diese `subscriptionId`.
+ * Event handlers for a server-push subscription (Phase 3). `onNext` is called per
+ * received event frame with the deserialized payload; `onComplete`/`onError` on the
+ * terminal frame. A terminal frame ends the subscription server-side — after that, no
+ * further events arrive for this `subscriptionId`.
  */
 export interface SubscribeHandlers<T> {
   onNext: (value: T) => void;
@@ -112,17 +112,17 @@ export interface SubscribeHandlers<T> {
 }
 
 /**
- * Handle auf eine aktive Server-Push-Subscription (Phase 3). `subscriptionId` ist
- * die server-seitig zugewiesene Correlation-Id der Event-Frames; `unsubscribe()`
- * sendet `kind:"unsubscribe"` und beendet die Lieferung (idempotent).
+ * Handle to an active server-push subscription (Phase 3). `subscriptionId` is the
+ * server-assigned correlation id of the event frames; `unsubscribe()` sends
+ * `kind:"unsubscribe"` and ends delivery (idempotent).
  *
- * Bei Auto-Reconnect re-subscribed der Client automatisch mit denselben
- * Parametern (neue `subscriptionId`); Gap-Events während des Disconnects gehen
- * verloren (at-most-once-while-disconnected). Ein terminaler `close()` ruft
- * `onError` aller aktiven Subscriptions.
+ * On auto-reconnect the client automatically re-subscribes with the same
+ * parameters (a new `subscriptionId`); gap events during the disconnect are lost
+ * (at-most-once-while-disconnected). A terminal `close()` calls `onError` on
+ * every active subscription.
  */
 export interface SleipnirSubscription {
-  /** Server-seitig zugewiesene Correlation-Id der Event-Frames. */
+  /** Server-assigned correlation id of the event frames. */
   readonly subscriptionId: string;
   /**
    * The highest `eventId` processed so far (0 until the first event carrying an `eventId`).
@@ -130,7 +130,7 @@ export interface SleipnirSubscription {
    * resume (`SleipnirTransportRouter.resume`) after a transport switch.
    */
   readonly lastEventId: number;
-  /** Stoppt die Event-Lieferung; sendet `kind:"unsubscribe"`. Idempotent. */
+  /** Stops event delivery; sends `kind:"unsubscribe"`. Idempotent. */
   unsubscribe(): Promise<void>;
   /**
    * Resolves once the subscription has ended for good — by `unsubscribe()`, the caller's
@@ -159,23 +159,23 @@ export function createEnded(): { ended: Promise<void>; end: () => void } {
   };
 }
 
-/** Optionen für den WebSocket-Client. */
+/** Options for the WebSocket client. */
 export interface SleipnirWebSocketClientOptions {
-  /** WS-Pfad (Default "sleipnirws"). */
+  /** WS path (default "sleipnirws"). */
   wsPath?: string;
-  /** Bearer-Token (Node: als Authorization-Header; Browser: als ?access_token=) — String oder Provider-Funktion (rotierende JWTs). */
+  /** Bearer token (Node: as the Authorization header; browser: as ?access_token=) — string or provider function (rotating JWTs). */
   bearer?: BearerProvider;
-  /** Call-Timeout in ms. */
+  /** Call timeout in ms. */
   callTimeout?: number;
-  /** Connect-Timeout in ms (Default 15000). */
+  /** Connect timeout in ms (default 15000). */
   connectTimeout?: number;
-  /** Injizierbare WebSocket-Fabrik (Tests). */
+  /** Injectable WebSocket factory (tests). */
   WebSocketCtor?: WsFactory;
-  /** Auto-Reconnect bei unerwartetem Disconnect (Default true). */
+  /** Auto-reconnect on unexpected disconnect (default true). */
   reconnect?: boolean;
-  /** Backoff-Intervalle in ms (Default SignalR-Spiegel). Leeres Array schaltet Reconnect aus. */
+  /** Backoff intervals in ms (default mirrors SignalR). An empty array disables reconnect. */
   reconnectDelays?: number[];
-  /** Observer für Zustandswechsel (UI/Logs). */
+  /** Observer for state changes (UI/logs). */
   onStateChanged?: (state: SleipnirConnectionState) => void;
   /**
    * Client-wide resume policy (Phase R): consulted per subscription on auto-reconnect before
@@ -246,7 +246,7 @@ let _unsubscribeIdSeq = 0;
 
 let _defaultFactoryPromise: Promise<WsFactory> | undefined;
 
-/** Löst die Standard-WebSocket-Fabrik (Browser global bzw. Node `ws`) lazily auf. */
+/** Resolves the default WebSocket factory (browser global or Node `ws`) lazily. */
 async function resolveDefaultFactory(): Promise<WsFactory> {
   if (_defaultFactoryPromise) return _defaultFactoryPromise;
   _defaultFactoryPromise = (async () => {
@@ -254,7 +254,7 @@ async function resolveDefaultFactory(): Promise<WsFactory> {
       return (url, opts) =>
         new (globalThis as any).WebSocket(url, opts?.protocols) as IWebSocket;
     }
-    // Node: `ws` als optionalDependency; lazy geladen.
+    // Node: `ws` as an optionalDependency; loaded lazily.
     const mod: any = await import("ws");
     const WS = mod.WebSocket ?? mod.default?.WebSocket ?? mod.default;
     if (typeof WS !== "function") {
@@ -269,15 +269,15 @@ async function resolveDefaultFactory(): Promise<WsFactory> {
 }
 
 /**
- * WebSocket-Client für Sleipnir (RFC 6455 + JSON-Text-Frames), isomorph.
+ * WebSocket client for Sleipnir (RFC 6455 + JSON text frames), isomorphic.
  *
- * Connect-Race (B1): konkurrierende `call()` erwarten denselben in-flight
- * Connect-Promise statt abgewiesen zu werden. Correlation (B3): jede Antwort
- * wird per `id` (Single) bzw. `requests[0].id` (Batch) zugeordnet; bei keinem
- * Match wird verworfen (kein Last-Resort-Fehl-Zuweisen).
+ * Connect race (B1): concurrent `call()`s await the same in-flight connect promise
+ * instead of being rejected. Correlation (B3): every response is matched by `id`
+ * (single) or `requests[0].id` (batch); with no match it is discarded (no
+ * last-resort mis-assignment).
  *
- * `call`/`callBatch` liefern die rohe Response (werfen nur bei Transport/Abbruch);
- * `callJson`/`callBinary` werfen bei logischem Nicht-2xx (Spiegel C#).
+ * `call`/`callBatch` return the raw response (they throw only on
+ * transport/cancellation); `callJson`/`callBinary` throw on logical non-2xx (mirror of C#).
  *
  * **Browser auth:** a browser WebSocket cannot set headers, so the bearer travels as
  * `?access_token=`. The server honors it only with `SleipnirOptions.AcceptAccessTokenQuery`
@@ -310,7 +310,7 @@ export class SleipnirWebSocketClient {
 
   constructor(baseUrl: string, options: SleipnirWebSocketClientOptions = {}) {
     if (!baseUrl || baseUrl.trim().length === 0) {
-      throw new Error("SleipnirWebSocketClient: baseUrl darf nicht leer sein.");
+      throw new Error("SleipnirWebSocketClient: baseUrl must not be empty.");
     }
     this._baseUrl = baseUrl.replace(/\/+$/, "");
     this._wsPath = (options.wsPath ?? "sleipnirws").replace(/^\/+|\/+$/g, "");
@@ -324,23 +324,22 @@ export class SleipnirWebSocketClient {
     this._onResume = options.onResume;
   }
 
-  /** Aktueller Verbindungs-Zustand (Observer-Oberfläche für UI/Logs). */
+  /** Current connection state (observer surface for UI/logs). */
   get state(): SleipnirConnectionState {
     return this._state;
   }
 
   /**
-   * Tauscht den Bearer zur Laufzeit (rotierende JWTs), ohne den Client neu zu
-   * bauen. Akzeptiert einen String oder eine Provider-Funktion. **WS:** der neue
-   * Token greift ab dem nächsten Connect/Reconnect — eine bereits offene
-   * Verbindung behält ihr Upgrade-Token (HTTP-Header sind nur beim Handshake
-   * gesetzt).
+   * Swaps the bearer at runtime (rotating JWTs) without rebuilding the client.
+   * Accepts a string or a provider function. **WS:** the new token takes effect
+   * from the next connect/reconnect on — an already-open connection keeps its
+   * upgrade token (HTTP headers are only sent at the handshake).
    */
   setBearer(bearer: BearerProvider): void {
     this._bearer = bearer;
   }
 
-  /** Löst den Bearer auf (Funktion → rufen, sonst Wert). */
+  /** Resolves the bearer (function → invoke, otherwise the value). */
   private resolveBearer(): string | undefined {
     const b = this._bearer;
     return typeof b === "function" ? b() : b;
@@ -351,22 +350,22 @@ export class SleipnirWebSocketClient {
     try {
       this._onStateChanged?.(s);
     } catch {
-      /* Observer-Fehler nicht fatal */
+      /* observer errors are not fatal */
     }
   }
 
-  /** Stellt eine offene Verbindung sicher (B1: concurrent-safe). */
+  /** Ensures an open connection (B1: concurrent-safe). */
   async connect(): Promise<void> {
     if (this._disposed) throw new Error("SleipnirWebSocketClient: disposed.");
     if (this._ws && this._ws.readyState === READY_OPEN) return;
 
-    // Läuft ein Hintergrund-Reconnect? Darauf warten (nicht selbst verbinden),
-    // damit parallele Calls denselben in-flight Reconnect teilen.
+    // Is a background reconnect running? Wait for it (do not connect ourselves),
+    // so that parallel calls share the same in-flight reconnect.
     if (this._reconnectPromise && this._state === SleipnirConnectionState.Reconnecting) {
       try {
         await this._reconnectPromise;
       } catch {
-        /* reconnect-Fehler unten neu bewerten */
+        /* re-evaluate the reconnect failure below */
       }
       if (this._ws && this._ws.readyState === READY_OPEN) return;
     }
@@ -381,14 +380,14 @@ export class SleipnirWebSocketClient {
     return this._connectPromise;
   }
 
-  /** Sendet einen einzelnen Request. */
+  /** Sends a single request. */
   async call(req: SleipnirRequest, opts?: WsCallOptions): Promise<SleipnirResponse> {
     if (!req.id) req.id = `${req.controller}.${req.method}`;
     await this.connect();
     return this.sendAndAwait(req, false, opts) as Promise<SleipnirResponse>;
   }
 
-  /** Sendet einen Batch (Multi-Request). Auto-Setzt leere Ids. */
+  /** Sends a batch (multi-request). Auto-fills empty ids. */
   async callBatch(
     requests: SleipnirRequest[],
     mode: ExecutionMode = ExecutionMode.Parallel,
@@ -406,13 +405,13 @@ export class SleipnirWebSocketClient {
     >;
   }
 
-  /** Ruft auf und deserialisiert `response.data` als T. Wirft bei Nicht-2xx. */
+  /** Calls a method and deserializes `response.data` as T. Throws on non-2xx. */
   async callJson<T>(req: SleipnirRequest, opts?: WsCallOptions): Promise<T | null> {
     const response = await this.call(req, opts);
     return parseData<T>(response);
   }
 
-  /** Ruft eine byte[]-Methode auf; liefert `response.content` als Uint8Array. Wirft bei Nicht-2xx. */
+  /** Calls a byte[] method; returns `response.content` as a Uint8Array. Throws on non-2xx. */
   async callBinary(req: SleipnirRequest, opts?: WsCallOptions): Promise<Uint8Array | null> {
     const response = await this.call(req, opts);
     if (!response.isSuccess) throw SleipnirError.fromResponse(response);
@@ -420,16 +419,16 @@ export class SleipnirWebSocketClient {
   }
 
   /**
-   * Abonniert ein Server-Push-Event (Phase 3). Sendet `kind:"subscribe"` mit dem
-   * übergebenen Request (Controller/Method/Params), wartet auf die Subscribe-
-   * Response mit der `subscriptionId` und liefert ein
-   * {@link SleipnirSubscription}-Handle. Eingehende Event-/Complete-/Error-Frames
-   * werden per `subscriptionId` an `handlers` geroutet.
+   * Subscribes to a server-push event (Phase 3). Sends `kind:"subscribe"` with the
+   * given request (controller/method/params), waits for the subscribe response with
+   * the `subscriptionId`, and returns a {@link SleipnirSubscription} handle.
+   * Incoming event/complete/error frames are routed to `handlers` by
+   * `subscriptionId`.
    *
-   * Der Request wird via {@link SleipnirCall} gebaut (`SleipnirCall.init(c,m).with({...})`);
-   * `subscribe` setzt `kind:"subscribe"` und (falls fehlt) eine `id`. Auf
-   * Auto-Reconnect re-subscribed der Client automatisch mit demselben Request
-   * (neue `subscriptionId`, gleiche `handlers`).
+   * The request is built via {@link SleipnirCall} (`SleipnirCall.init(c,m).with({...})`);
+   * `subscribe` sets `kind:"subscribe"` and (if missing) an `id`. On auto-reconnect the
+   * client automatically re-subscribes with the same request (a new `subscriptionId`,
+   * the same `handlers`).
    *
    * `opts.signal`: aborting it before the subscribe response rejects with `CancelledError`;
    * aborting it afterwards **unsubscribes** (same as `handle.unsubscribe()`), also across
@@ -463,8 +462,8 @@ export class SleipnirWebSocketClient {
         this.disposePendingSubscribe(id);
         throw new SleipnirError(0, "WebSocket is not open.");
       }
-      // kind:"subscribe" routet serverseitig nach SubscribeAsync; der Rest ist ein
-      // normaler SleipnirRequest (Controller/Method/Params/id).
+      // kind:"subscribe" routes server-side to SubscribeAsync; the rest is a
+      // normal SleipnirRequest (controller/method/params/id).
       ws.send(JSON.stringify({ ...req, kind: "subscribe" }));
       return promise;
     } catch (err) {
@@ -480,7 +479,7 @@ export class SleipnirWebSocketClient {
     }
   }
 
-  /** Schließt die Verbindung terminal; alle pending Calls werden abgelehnt. Kein Reconnect. */
+  /** Closes the connection terminally; every pending call is rejected. No reconnect. */
   close(): void {
     this._closedByClient = true;
     this._disposed = true;
@@ -499,7 +498,7 @@ export class SleipnirWebSocketClient {
     this.setState(SleipnirConnectionState.Disconnected);
   }
 
-  /** Alias für {@link close} (Symmetrie zum REST-Client). */
+  /** Alias for {@link close} (symmetry with the REST client). */
   dispose(): void {
     this.close();
   }
@@ -550,15 +549,15 @@ export class SleipnirWebSocketClient {
     await this.resubscribeAll();
   }
 
-  // --- Interna ---
+  // --- Internals ---
 
   /**
-   * Rawer Connect ohne Zustandsverwaltung — der Aufrufer setzt Connecting/Connected.
-   * Wichtig für den Reconnect-Loop: dieser hält den Zustand `Reconnecting` bei, bis
-   * ein Versuch gelingt (Connected) oder der Backoff erschöpft ist (Disconnected).
-   * Würde connectSlow selbst auf Connecting wechseln, würde ein fehlgeschlagener
-   * Versuch den Zustand auf Connecting belassen und nebenläufige Calls würden den
-   * Reconnect-Await-Pfad (state === Reconnecting) verpassen.
+   * Raw connect without state management — the caller sets Connecting/Connected.
+   * Important for the reconnect loop: it holds the state at `Reconnecting` until
+   * an attempt succeeds (Connected) or the backoff is exhausted (Disconnected).
+   * If connectSlow itself switched to Connecting, a failed attempt would leave the
+   * state at Connecting and concurrent calls would miss the reconnect-await path
+   * (state === Reconnecting).
    */
   private async connectSlow(): Promise<void> {
     const factory = this._wsCtor ?? (await resolveDefaultFactory());
@@ -598,7 +597,7 @@ export class SleipnirWebSocketClient {
       };
       ws.onerror = () => {
         if (!opened) fail(new SleipnirError(0, "WebSocket connection failed."));
-        // nach open folgt onclose, das alle pending ablehnt.
+        // after open, onclose follows, which rejects every pending call.
       };
     });
   }
@@ -664,7 +663,7 @@ export class SleipnirWebSocketClient {
 
     if (opts?.signal) {
       if (opts.signal.aborted) {
-        // Sofort abgelehnt (unverpackt).
+        // Rejected immediately (unwrapped).
         queueMicrotask(() => this.rejectPending(key, new CancelledError("Sleipnir call was cancelled.")));
       } else {
         pending.callerSignal = opts.signal;
@@ -689,7 +688,7 @@ export class SleipnirWebSocketClient {
     pending.reject(err);
   }
 
-  /** Räumt einen pending Call auf, ohne ihn abzulehnen (Sendefehler-Pfad). */
+  /** Cleans up a pending call without rejecting it (send-error path). */
   private disposePending(key: string): void {
     const pending = this._pending.get(key);
     if (!pending) return;
@@ -716,9 +715,9 @@ export class SleipnirWebSocketClient {
     for (const key of [...this._pending.keys()]) this.rejectPending(key, err);
   }
 
-  // --- Phase 3: Subscribe / Unsubscribe / Event-Dispatch (Interna) ---
+  // --- Phase 3: Subscribe / Unsubscribe / Event dispatch (internals) ---
 
-  /** Trägt einen pending Subscribe ein (Timeout/Abort analog registerPending). */
+  /** Registers a pending subscribe (timeout/abort analogous to registerPending). */
   private registerPendingSubscribe(
     id: string,
     request: SleipnirRequest,
@@ -762,7 +761,7 @@ export class SleipnirWebSocketClient {
     return promise;
   }
 
-  /** Lehnt einen pending Subscribe ab (Timeout/Abort/Sendefehler/Disconnect). */
+  /** Rejects a pending subscribe (timeout/abort/send error/disconnect). */
   private rejectPendingSubscribe(id: string, err: Error): void {
     const pending = this._pendingSubscribes.get(id);
     if (!pending) return;
@@ -770,7 +769,7 @@ export class SleipnirWebSocketClient {
     pending.reject(err);
   }
 
-  /** Räumt Timer/Abort-Listener + Map-Eintrag eines pending Subscribe (ohne reject). */
+  /** Cleans up the timer/abort listener + map entry of a pending subscribe (without reject). */
   private disposePendingSubscribe(id: string): void {
     const pending = this._pendingSubscribes.get(id);
     if (!pending) return;
@@ -785,20 +784,20 @@ export class SleipnirWebSocketClient {
     for (const id of [...this._pendingSubscribes.keys()]) this.rejectPendingSubscribe(id, err);
   }
 
-  /** Terminal: alle aktiven Subscriptions auf onError setzen und verwerfen. */
+  /** Terminal: moves every active subscription to onError and discards them. */
   private cancelAllSubscriptions(err: Error): void {
     for (const [, entry] of this._subscriptions) {
       releaseRef(entry.ref);
-      try { entry.handlers.onError?.(err); } catch { /* Handler-Fehler nicht fatal */ }
+      try { entry.handlers.onError?.(err); } catch { /* handler errors are not fatal */ }
     }
     this._subscriptions.clear();
   }
 
   /**
-   * Sendet `kind:"unsubscribe"` für `subscriptionId` und entfernt die Subscription.
-   * Idempotent: ein zweiter Aufruf für dieselbe Id ist ein No-op. Best-effort —
-   * ein Sendefehler nach Disconnect wird still ignoriert (die Subscription ist
-   * serverseitig ohnehin mit der Connection gestorben).
+   * Sends `kind:"unsubscribe"` for `subscriptionId` and removes the subscription.
+   * Idempotent: a second call for the same id is a no-op. Best-effort — a send
+   * error after a disconnect is silently ignored (the subscription has already
+   * died server-side with the connection).
    */
   private async unsubscribe(subscriptionId: string): Promise<void> {
     const entry = this._subscriptions.get(subscriptionId);
@@ -910,12 +909,12 @@ export class SleipnirWebSocketClient {
     try {
       parsed = JSON.parse(text);
     } catch {
-      // Server-Fehlerframes ohne id können nicht korreliert werden -> verwerfen.
+      // Server error frames without an id cannot be correlated -> discard.
       return;
     }
 
-    // Phase 3: Event-/Complete-/Error-Frames — Objekt mit `type` + `subscriptionId`,
-    // ohne `code`/`id`. Werden per subscriptionId an die aktive Subscription geroutet.
+    // Phase 3: event/complete/error frames — an object with `type` + `subscriptionId`,
+    // without `code`/`id`. Routed to the active subscription by subscriptionId.
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const obj = parsed as Record<string, unknown>;
       if (typeof obj.type === "string" && typeof obj.subscriptionId === "string") {
@@ -925,7 +924,7 @@ export class SleipnirWebSocketClient {
     }
 
     if (Array.isArray(parsed)) {
-      // Batch-Response: Korrelation über das erste Element.
+      // Batch response: correlation via the first element.
       const arr = normalizeResponses(parsed as SleipnirResponse[]);
       const key = arr[0]?.id ?? undefined;
       if (key && this.resolvePending(key, arr)) return;
@@ -935,8 +934,8 @@ export class SleipnirWebSocketClient {
 
     const resp = normalizeResponse(parsed as SleipnirResponse);
     const key = resp?.id ?? undefined;
-    // Subscribe-Response (normale SleipnirResponse, correlated by id) — vor den
-    // Call-Pending prüfen, da subscribe einen eigenen Pending-Map führt.
+    // Subscribe response (a normal SleipnirResponse, correlated by id) — check it
+    // before the call-pending, since subscribe keeps its own pending map.
     if (key && this._pendingSubscribes.has(key)) {
       this.handleSubscribeResponse(key, resp);
       return;
@@ -948,7 +947,7 @@ export class SleipnirWebSocketClient {
   /** Routes an event/complete/error frame to the active subscription. */
   private dispatchEventFrame(type: string, subscriptionId: string, obj: Record<string, unknown>): void {
     const entry = this._subscriptions.get(subscriptionId);
-    if (!entry) return; // unsubscribe schon gelaufen / unbekannt -> verwerfen.
+    if (!entry) return; // unsubscribe already ran / unknown -> discard.
     if (type === "event") {
       // Phase R: at-least-once dedup. The server replays the disconnect gap from its buffer; drop
       // any frame whose eventId we have already processed (eventId <= last seen). Frames without
@@ -962,12 +961,12 @@ export class SleipnirWebSocketClient {
     } else if (type === "complete") {
       this._subscriptions.delete(subscriptionId);
       releaseRef(entry.ref);
-      try { entry.handlers.onComplete?.(); } catch { /* Handler-Fehler nicht fatal */ }
+      try { entry.handlers.onComplete?.(); } catch { /* handler errors are not fatal */ }
     } else if (type === "error") {
       this._subscriptions.delete(subscriptionId);
       releaseRef(entry.ref);
       const msg = typeof obj.message === "string" ? obj.message : "Subscription error";
-      try { entry.handlers.onError?.(new Error(msg)); } catch { /* Handler-Fehler nicht fatal */ }
+      try { entry.handlers.onError?.(new Error(msg)); } catch { /* handler errors are not fatal */ }
     }
   }
 
@@ -1052,8 +1051,8 @@ export class SleipnirWebSocketClient {
   }
 
   private dropUnmatched(text: string, key: string | undefined): void {
-    // B3: kein Last-Resort — nicht zuordnen, verwerfen. Der pending Caller läuft
-    // über seinen Timeout/sein Signal ab.
+    // B3: no last resort — do not assign, discard. The pending caller expires
+    // through its timeout/its signal.
     console.warn(
       `[sleipnir-client] Received WebSocket response with no matching pending request (id=${key ?? "n/a"}). Dropping.`,
     );
@@ -1063,12 +1062,12 @@ export class SleipnirWebSocketClient {
   private onClosed(): void {
     this._ws = undefined;
     this.rejectAllPending(new SleipnirError(0, "WebSocket connection closed."));
-    // Pending subscribes haben noch keine subscriptionId -> die Response kommt nie.
-    // Aktive Subscriptions (_subscriptions) bleiben bestehen und werden nach dem
-    // Reconnect re-subscribed (at-most-once-while-disconnected: Gap-Events verloren).
+    // Pending subscribes have no subscriptionId yet -> the response will never arrive.
+    // Active subscriptions (_subscriptions) survive and are re-subscribed after the
+    // reconnect (at-most-once-while-disconnected: gap events lost).
     this.rejectAllPendingSubscribes(new SleipnirError(0, "WebSocket connection closed."));
 
-    // Unerwarteter Disconnect (nicht durch close()/dispose() ausgelöst) -> Reconnect.
+    // Unexpected disconnect (not triggered by close()/dispose()) -> reconnect.
     if (!this._closedByClient && !this._disposed && this._reconnect) {
       this.startReconnect();
     } else {
@@ -1079,7 +1078,7 @@ export class SleipnirWebSocketClient {
     }
   }
 
-  /** Startet den Hintergrund-Reconnect mit Backoff (idempotent). */
+  /** Starts the background auto-reconnect with backoff (idempotent). */
   private startReconnect(): void {
     if (this._disposed) return;
     if (this._reconnectPromise && this._state === SleipnirConnectionState.Reconnecting) return;
@@ -1095,13 +1094,13 @@ export class SleipnirWebSocketClient {
         try {
           await sleep(this._reconnectDelays[i], signal);
         } catch {
-          return; // abgebrochen (dispose / neuer Reconnect)
+          return; // aborted (dispose / a newer reconnect)
         }
         if (this._disposed) return;
-        // connectSlow direkt (NICHT connect()): der öffentliche connect() würde bei
-        // state === Reconnectings den in-flight Reconnect awaiten — also sich selbst
-        // (Self-Deadlock). connectSlow teilt den Versuch über _connectPromise mit
-        // nebenläufigen connect()-Calls, hält aber den Zustand auf Reconnecting.
+        // connectSlow directly (NOT connect()): the public connect() would, at
+        // state === Reconnecting, await the in-flight reconnect — i.e. itself
+        // (self-deadlock). connectSlow shares the attempt with concurrent connect()
+        // calls via _connectPromise but keeps the state at Reconnecting.
         this._connectPromise = this.connectSlow().finally(() => {
           this._connectPromise = undefined;
         });
@@ -1109,17 +1108,17 @@ export class SleipnirWebSocketClient {
           await this._connectPromise;
           if (this._ws && this._ws.readyState === READY_OPEN) {
             this.setState(SleipnirConnectionState.Connected);
-            // Phase 3: aktive Subscriptions mit dem neuen Socket re-abonnieren
-            // (neue subscriptionIds; gleiche Parameter + Handler). Best-effort,
-            // fire-and-forget — ein Fehlschlag pro Subscription -> onError.
+            // Phase 3: re-subscribe active subscriptions on the new socket
+            // (new subscriptionIds; same parameters + handlers). Best-effort,
+            // fire-and-forget — one failure per subscription -> onError.
             void this.resubscribeAll();
-            return; // Erfolg
+            return; // success
           }
         } catch {
-          // weiter zum nächsten Backoff-Intervall (Zustand bleibt Reconnecting)
+          // continue with the next backoff interval (state stays Reconnecting)
         }
       }
-      // Backoff erschöpft -> aufgeben. Subscriptions can no longer be re-subscribed -> end them.
+      // Backoff exhausted -> give up. Subscriptions can no longer be re-subscribed -> end them.
       if (!this._disposed) {
         this.cancelAllSubscriptions(new SleipnirError(0, "WebSocket reconnect gave up."));
         this.setState(SleipnirConnectionState.Disconnected);
@@ -1127,7 +1126,7 @@ export class SleipnirWebSocketClient {
     })();
   }
 
-  /** Bricht einen laufenden Hintergrund-Reconnect ab (terminal bei dispose). */
+  /** Cancels a running background reconnect (terminal on dispose). */
   private stopReconnect(): void {
     this._reconnectAbort?.abort();
     this._reconnectPromise = undefined;
@@ -1142,10 +1141,10 @@ function releaseRef(ref: SubscriptionRef): void {
   ref.end();
 }
 
-// --- Shared (gleichlautend mit rest.ts) ---
+// --- Shared (same as rest.ts) ---
 
 function parseData<T>(response: SleipnirResponse): T | null {
-  // Seit dem Single-Pass-Fix ist data bereits ein strukturierter Wert (kein JSON-String).
+  // Since the single-pass fix, data is already a structured value (no JSON string).
   if (response.isSuccess && response.data != null) {
     return response.data as T;
   }
@@ -1154,9 +1153,9 @@ function parseData<T>(response: SleipnirResponse): T | null {
 }
 
 /**
- * Extrahiert die `subscriptionId` aus einer Subscribe-Response. Der Server sendet
- * `data: { subscriptionId: "…" }` (object) — als Fallback wird ein skalarer
- * `data`-String akzeptiert (Spiegel des C# `ExtractSubscriptionId`).
+ * Extracts the `subscriptionId` from a subscribe response. The server sends
+ * `data: { subscriptionId: "…" }` (object) — as a fallback, a scalar `data` string
+ * is accepted (mirror of the C# `ExtractSubscriptionId`).
  */
 function extractSubscriptionId(response: SleipnirResponse): string | undefined {
   const data = response.data;

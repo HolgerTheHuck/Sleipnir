@@ -34,8 +34,8 @@ public sealed class SleipnirInMemoryClient : ISleipnirClient
     private readonly ConcurrentDictionary<string, Func<SleipnirRequest, CancellationToken, SleipnirResponse?>> _handlers = new();
 
     /// <summary>
-    /// Registriert einen Handler für <c>Controller.Method</c>. Der Handler bekommt den Request
-    /// und das CancellationToken und gibt eine <see cref="SleipnirResponse"/> zurück.
+    /// Registers a handler for <c>Controller.Method</c>. The handler receives the request and the
+    /// cancellation token and returns a <see cref="SleipnirResponse"/>.
     /// </summary>
     public SleipnirInMemoryClient On(string controller, string method,
         Func<SleipnirRequest, CancellationToken, SleipnirResponse?> handler)
@@ -44,7 +44,7 @@ public sealed class SleipnirInMemoryClient : ISleipnirClient
         return this;
     }
 
-    /// <summary>Convenience: Handler, der ein Ergebnis-Objekt zurückgibt (200 OK).</summary>
+    /// <summary>Convenience: a handler that returns a result object (200 OK).</summary>
     public SleipnirInMemoryClient On<T>(string controller, string method, Func<SleipnirRequest, CancellationToken, T> handler)
     {
         _handlers[$"{controller}.{method}"] = (req, ct) =>
@@ -60,7 +60,7 @@ public sealed class SleipnirInMemoryClient : ISleipnirClient
         return this;
     }
 
-    /// <summary>Convenience: Handler, der einen Fehler zurückgibt.</summary>
+    /// <summary>Convenience: a handler that returns an error.</summary>
     public SleipnirInMemoryClient OnError(string controller, string method, int code, string message)
     {
         _handlers[$"{controller}.{method}"] = (req, ct) => new SleipnirResponse

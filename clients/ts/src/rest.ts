@@ -10,44 +10,44 @@ import type {
   SleipnirResponse,
 } from "./types.js";
 
-/** Pro-Call-Optionen für einen REST-Aufruf. */
+/** Per-call options for a REST call. */
 export interface CallOptions {
-  /** Abbruch-Signal (Browser/Node); wirft CancelledError, nicht SleipnirError. */
+  /** Abort signal (browser/Node); throws CancelledError, not SleipnirError. */
   signal?: AbortSignal;
-  /** Zusätzliche Header (z. B. Trace-Ids). */
+  /** Extra headers (e.g. trace ids). */
   headers?: Record<string, string>;
-  /** Call-Timeout in ms ( überschreibt clientweiten callTimeout). */
+  /** Call timeout in ms ( overrides the client-wide callTimeout). */
   timeout?: number;
 }
 
-/** Injizierbares fetch — permissiv, damit Test-Mocks und Node-Lib.fetch passen. */
+/** Injectable fetch — permissive, so test mocks and Node lib.fetch both fit. */
 export type FetchLike = (
   input: string | URL | Request,
   init?: RequestInit,
 ) => Promise<Response>;
 
-/** Optionen für den REST-Client. */
+/** Options for the REST client. */
 export interface SleipnirRestClientOptions {
-  /** Injizierbares fetch (Tests / älteres Node). Default: globales fetch. */
+  /** Injectable fetch (tests / older Node). Default: global fetch. */
   fetch?: FetchLike;
-  /** Standard-Header für jeden Request. */
+  /** Default headers for every request. */
   headers?: Record<string, string>;
-  /** Bearer-Token (Authorization-Header) — String oder Provider-Funktion (rotierende JWTs). */
+  /** Bearer token (Authorization header) — string or provider function (rotating JWTs). */
   bearer?: BearerProvider;
-  /** Call-Timeout in ms. */
+  /** Call timeout in ms. */
   callTimeout?: number;
-  /** REST-Basispfad (Default "api/sleipnir"); Slashes werden abgeschnitten. */
+  /** REST base path (default "api/sleipnir"); slashes are trimmed. */
   apiPath?: string;
 }
 
 /**
- * REST-Client für Sleipnir (HTTP/1.1 + JSON), isomorph via globalem `fetch`.
+ * REST client for Sleipnir (HTTP/1.1 + JSON), isomorphic via the global `fetch`.
  *
- * `call`/`callBatch`/`discover` liefern die rohe {@link SleipnirResponse} bzw. das
- * Array und werfen nur bei **Transportfehlern** (Netzwerk, non-2xx HTTP) bzw.
- * Abbruch. Logische Nicht-2xx-Codes (im 200-Body) werden zurückgegeben — prüfe
- * `response.isSuccess`/`response.error`. `callJson`/`callBinary` werfen bei
- * logischem Nicht-2xx (Spiegel der C#-Methoden Call<T>/CallBinary).
+ * `call`/`callBatch`/`discover` return the raw {@link SleipnirResponse} or the
+ * array and throw only on **transport errors** (network, non-2xx HTTP) or
+ * cancellation. Logical non-2xx codes (carried in the 200 body) are returned —
+ * check `response.isSuccess`/`response.error`. `callJson`/`callBinary` throw on
+ * logical non-2xx (mirror of the C# methods Call<T>/CallBinary).
  */
 export class SleipnirRestClient {
   private readonly _baseUrl: string;
@@ -59,22 +59,22 @@ export class SleipnirRestClient {
 
   constructor(baseUrl: string, options: SleipnirRestClientOptions = {}) {
     if (!baseUrl || baseUrl.trim().length === 0) {
-      throw new Error("SleipnirRestClient: baseUrl darf nicht leer sein.");
+      throw new Error("SleipnirRestClient: baseUrl must not be empty.");
     }
     this._baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
     this._apiPath = (options.apiPath ?? "api/sleipnir").replace(/^\/+|\/+$/g, "");
-    // Globales `fetch` unbinded speichern und später als `this._fetch(...)` rufen
-    // würde im Browser "Illegal invocation" werfen — Browser-fetch verlangt
-    // `window`/`globalThis` als Receiver. An `globalThis` binden macht den Default
-    // in Browser und Node (undici prüft den Receiver nicht) gleichermaßen sicher.
-    // Injiziertes `options.fetch` (Tests) bleibt unangetastet.
+    // Storing the global `fetch` unbound and later calling it as `this._fetch(...)`
+    // would throw "Illegal invocation" in the browser — browser fetch requires
+    // `window`/`globalThis` as the receiver. Binding to `globalThis` makes the default
+    // safe in browsers and Node alike (undici does not check the receiver).
+    // Injected `options.fetch` (tests) is left untouched.
     this._fetch = options.fetch ?? fetch.bind(globalThis);
     this._headers = { ...(options.headers ?? {}) };
     this._bearer = options.bearer;
     this._callTimeout = options.callTimeout;
   }
 
-  /** Sendet einen einzelnen Request (überlädt: pre-built oder (controller,method,params)). */
+  /** Sends a single request (overload: pre-built or (controller, method, params)). */
   async call(req: SleipnirRequest, opts?: CallOptions): Promise<SleipnirResponse>;
   async call(
     controller: string,
@@ -104,7 +104,7 @@ export class SleipnirRestClient {
     return this.postJson(`${this._baseUrl}${this._apiPath}/json`, request, callOpts);
   }
 
-  /** Ruft eine Methode auf und deserialisiert `response.data` als T. Wirft bei Nicht-2xx. */
+  /** Calls a method and deserializes `response.data` as T. Throws on non-2xx. */
   async callJson<T>(
     controller: string,
     method: string,
@@ -125,7 +125,7 @@ export class SleipnirRestClient {
     return parseData<T>(response);
   }
 
-  /** Ruft eine byte[]-Methode auf und liefert `response.content` als Uint8Array. Wirft bei Nicht-2xx. */
+  /** Calls a byte[] method and returns `response.content` as a Uint8Array. Throws on non-2xx. */
   async callBinary(
     controller: string,
     method: string,
@@ -147,7 +147,7 @@ export class SleipnirRestClient {
     return response.content ? fromBase64(response.content) : null;
   }
 
-  /** Sendet einen Batch (Multi-Request). Auto-Setzt leere Ids auf `controller.method`. */
+  /** Sends a batch (multi-request). Auto-fills empty ids with `controller.method`. */
   async callBatch(
     requests: SleipnirRequest[],
     mode: ExecutionMode = ExecutionMode.Parallel,
@@ -166,7 +166,7 @@ export class SleipnirRestClient {
     return result;
   }
 
-  /** Ruft die Discovery-Metadaten ab (GET /api/sleipnir/discovery). */
+  /** Fetches the discovery metadata (GET /api/sleipnir/discovery). */
   async discover(opts?: CallOptions): Promise<DiscoveryInfo> {
     const url = `${this._baseUrl}${this._apiPath}/discovery`;
     const { signal, clear, isTimeout } = linkAbortSignal(
@@ -193,21 +193,21 @@ export class SleipnirRestClient {
     }
   }
 
-  /** Freiressourcen (noop für stateless fetch; vorhanden für Symmetrie). */
+  /** Releases resources (a no-op for stateless fetch; present for symmetry). */
   dispose(): void {
-    // nichts zu disposen
+    // nothing to dispose
   }
 
   /**
-   * Tauscht den Bearer zur Laufzeit (rotierende JWTs), ohne den Client neu zu
-   * bauen. Akzeptiert einen String oder eine Provider-Funktion; der Wert wird
-   * pro Call frisch aufgelöst.
+   * Swaps the bearer at runtime (rotating JWTs) without rebuilding the client.
+   * Accepts a string or a provider function; the value is resolved fresh
+   * per call.
    */
   setBearer(bearer: BearerProvider): void {
     this._bearer = bearer;
   }
 
-  // --- Interna ---
+  // --- Internals ---
 
   private async postJson(
     url: string,
@@ -227,8 +227,8 @@ export class SleipnirRestClient {
       });
       const text = await safeReadText(response);
       if (!response.ok) {
-        // Transport-Level-Fehler (400/429/499 …) -> synthetische Response
-        // (Spiegel C# SleipnirRestJsonClient non-2xx-Pfad).
+        // Transport-level error (400/429/499 …) -> synthetic response
+        // (mirror of the C# SleipnirRestJsonClient non-2xx path).
         return {
           code: response.status,
           id: (body as SleipnirRequest)?.id ?? null,
@@ -295,7 +295,7 @@ export class SleipnirRestClient {
     }
   }
 
-  /** Löst den Bearer auf (Funktion → rufen, sonst Wert). */
+  /** Resolves the bearer (function → invoke, otherwise the value). */
   private resolveBearer(): string | undefined {
     const b = this._bearer;
     return typeof b === "function" ? b() : b;
@@ -312,9 +312,9 @@ export class SleipnirRestClient {
 
 // --- Shared Helpers ---
 
-/** Gibt response.data als T zurück; wirft bei Nicht-2xx SleipnirError (Spiegel Call<T>).
- *  Seit dem Single-Pass-Fix ist data bereits ein strukturierter Wert (kein JSON-String
- *  mehr) — kein client-seitiges JSON.parse nötig. */
+/** Returns response.data as T; throws SleipnirError on non-2xx (mirror of Call<T>).
+ *  Since the single-pass fix, data is already a structured value (no JSON string
+ *  anymore) — no client-side JSON.parse needed. */
 function parseData<T>(response: SleipnirResponse): T | null {
   if (response.isSuccess && response.data != null) {
     return response.data as T;
@@ -332,9 +332,9 @@ async function safeReadText(response: Response): Promise<string> {
 }
 
 /**
- * Mapt einen fetch-Fehler auf die richtige Client-Exception:
- * - Abbruch (AbortError/aborted) → CancelledError (unverpackt; timedOut, wenn Timeout).
- * - sonst → SleipnirError(0, "Transport error", cause).
+ * Maps a fetch error to the right client exception:
+ * - Cancellation (AbortError/aborted) → CancelledError (unwrapped; timedOut on a timeout).
+ * - otherwise → SleipnirError(0, "Transport error", cause).
  */
 function toTransportError(err: unknown, isTimeout: () => boolean): Error {
   if (err instanceof SleipnirError || err instanceof CancelledError) return err;

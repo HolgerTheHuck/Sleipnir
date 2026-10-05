@@ -8,16 +8,16 @@ import type {
 } from "./types.js";
 
 /**
- * Baut das `params`-Feld (Array von SleipnirParameter mit nativen `data`-Werten) aus
- * Aufrufargumenten. Spiegelt den C#-SleipnirCall-Builder.
+ * Builds the `params` field (array of SleipnirParameter with native `data` values)
+ * from call arguments. Mirrors the C# SleipnirCall builder.
  *
  * - **Named** (Object): `{parameterName: key, data: value}`.
- *   Sichere, positionsunabhängige Bindung (Server bindet nach Parametername).
+ *   Safe, position-independent binding (the server binds by parameter name).
  * - **Positional** (Array): `{parameterName: "param{i}", num: i, data: value}`.
- *   Server bindet nach Name ("param{i" passt nie) und fällt dann auf `num` zurück
+ *   The server binds by name ("param{i}" never matches) and then falls back to `num`
  *   (PROTOCOL.md:60-66).
  *
- * `data` ist der **native JSON-Wert** (kein JSON-String mehr); `undefined` → `null`.
+ * `data` is the **native JSON value** (no JSON string anymore); `undefined` → `null`.
  */
 export function buildParams(
   params: Record<string, unknown> | unknown[] | undefined,
@@ -40,13 +40,13 @@ export function buildParams(
   }));
 }
 
-/** Normiert einen Parameterwert: undefined → null (Wire-konsistent), sonst nativ. */
+/** Normalizes a parameter value: undefined → null (wire-consistent), otherwise native. */
 function normalizeValue(value: unknown): unknown {
   if (value === undefined) return null;
   return value;
 }
 
-/** Baut einen einzelnen SleipnirRequest. */
+/** Builds a single SleipnirRequest. */
 export function buildSingle(opts: {
   controller: string;
   method: string;
@@ -72,7 +72,7 @@ export function buildSingle(opts: {
   return request;
 }
 
-/** Baut einen SleipnirMultiRequest (Batch). */
+/** Builds a SleipnirMultiRequest (batch). */
 export function buildMulti(
   requests: SleipnirRequest[],
   mode: ExecutionMode = ExecutionMode.Parallel,
@@ -81,10 +81,10 @@ export function buildMulti(
 }
 
 /**
- * Füllt das `isSuccess`-Feld auf, falls der Server es nicht gesendet hat.
- * Server-seitig ist `IsSuccess` `[JsonIgnore]` und wird aus `code` abgeleitet
- * (`Code is >= 200 and <= 299`) — das Wire-Frame enthält es also nie. Der
- * Client spiegelt diese Ableitung, sodass `response.isSuccess` verlässlich ist.
+ * Fills in the `isSuccess` field if the server did not send it.
+ * Server-side, `IsSuccess` is `[JsonIgnore]` and derived from `code`
+ * (`Code is >= 200 and <= 299`) — the wire frame therefore never contains it. The
+ * client mirrors this derivation so that `response.isSuccess` is reliable.
  */
 export function normalizeResponse<T extends SleipnirResponse>(resp: T): T {
   const normalized = normalizeErrorCategory(resp);
@@ -115,14 +115,14 @@ function normalizeErrorCategory<T extends SleipnirResponse>(resp: T): T {
   return { ...resp, error: { ...error, category: canonical } };
 }
 
-/** `normalizeResponse` für jedes Element eines Batch-Arrays. */
+/** `normalizeResponse` for each element of a batch array. */
 export function normalizeResponses(arr: SleipnirResponse[]): SleipnirResponse[] {
   return arr.map(normalizeResponse);
 }
 
-// --- Isomorphe base64-Helper (Browser + Node) ---
+// --- Isomorphic base64 helpers (browser + Node) ---
 
-/** true, wenn die Node-Buffer-API zur Verfügung steht. */
+/** true when the Node Buffer API is available. */
 function hasNodeBuffer(): boolean {
   return (
     typeof (globalThis as any).Buffer !== "undefined" &&
@@ -130,12 +130,12 @@ function hasNodeBuffer(): boolean {
   );
 }
 
-/** Kodiert ein Uint8Array als base64-String (isomorph). */
+/** Encodes a Uint8Array as a base64 string (isomorphic). */
 export function toBase64(bytes: Uint8Array): string {
   if (hasNodeBuffer()) {
     return (globalThis as any).Buffer.from(bytes).toString("base64");
   }
-  // Browser-Pfad: bytes (0..255) → Latin1-String → btoa.
+  // Browser path: bytes (0..255) → Latin1 string → btoa.
   const chunk = 0x8000;
   let binary = "";
   for (let i = 0; i < bytes.length; i += chunk) {
@@ -147,7 +147,7 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** Dekodiert einen base64-String als Uint8Array (isomorph). */
+/** Decodes a base64 string as a Uint8Array (isomorphic). */
 export function fromBase64(b64: string): Uint8Array {
   if (hasNodeBuffer()) {
     const buf = (globalThis as any).Buffer.from(b64, "base64");

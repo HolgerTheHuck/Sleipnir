@@ -10,9 +10,8 @@ using Xunit;
 namespace SleipnirTests.Integration;
 
 /// <summary>
-/// End-to-End-Tests für den SignalR-Transport (MessagePack) gegen einen realen
-/// Kestrel-Host. Deckt Echo/204/Binary, parallele Korrelation, Cancellation
-/// und den Bearer/JWT-Nachweis (A4) ab.
+/// End-to-end tests for the SignalR transport (MessagePack) against a real Kestrel host.
+/// Covers Echo/204/binary, parallel correlation, cancellation and the Bearer/JWT proof (A4).
 /// </summary>
 public class SignalRTransportTests : IClassFixture<TransportTestFixture>
 {
@@ -143,8 +142,8 @@ public class SignalRTransportTests : IClassFixture<TransportTestFixture>
     [Fact]
     public async Task Secured_WithValidBearer_Returns200()
     {
-        // Beweist A4: der Bearer-Ctor setzt den Token; SignalR übermittelt ihn;
-        // Test-Auth validiert -> [SleipnirAuthorise] -> 200.
+        // Proves A4: the Bearer ctor sets the token; SignalR transmits it; the test auth
+        // handler validates -> [SleipnirAuthorise] -> 200.
         var client = _fixture.CreateSignalrClient(TestAuthHandler.ValidToken);
         var request = SleipnirCall.Init("TestInvoker", "Secured").With("secret").ToRequest();
 
@@ -168,7 +167,7 @@ public class SignalRTransportTests : IClassFixture<TransportTestFixture>
     [Fact]
     public async Task Echo_OverJsonProtocol_RoundTrips()
     {
-        // Beweist P2.3: optionales JSON-Protokoll statt MessagePack.
+        // Proves P2.3: optional JSON protocol instead of MessagePack.
         var client = _fixture.CreateSignalrClient(useMessagePack: false);
         var request = SleipnirCall.Init("TestInvoker", "Echo").With("json-hello").ToRequest();
 

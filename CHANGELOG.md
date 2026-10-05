@@ -52,6 +52,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JwtBearer) validates it unchanged; an existing `Authorization` header wins. The parameter is
   removed from the query string, so downstream logs never contain it. Cookie auth stays the
   recommended browser path. Tests: `AccessTokenQueryTests`.
+### Changed — `sleipnir-codegen` TypeScript emitter (codegen correctness)
+
+- **Enum identity.** Contract enums are emitted into `api/types.ts` as an `as const` object
+  plus a same-named literal-union type —
+  `export const OrderState = { Open: 0, Shipped: 1 } as const;` and
+  `export type OrderState = (typeof OrderState)[keyof typeof OrderState];` — instead of
+  collapsing to `number`. DTO properties, parameters, return types, event payloads and path
+  records (`OrderStatePaths` / `OrderStateArrayPaths`) reference the type. The wire value stays
+  the number. No TS `enum` (tree-shakable, `isolatedModules`/`verbatimModuleSyntax`-safe).
+  An enum with a non-numeric member value falls back to `number`. **Source-compatible for
+  readers; stricter for writers:** code that passed an arbitrary `number` where an enum is
+  expected now fails to compile — use `OrderState.Shipped` (or a member value).
+  The JS, C# and Python emitters are unchanged (still the numeric scalar).
+- **Event subscribe options.** Every generated event method takes an optional trailing
+  `options?: SleipnirSubscribeOptions` (`signal`, `resumePolicy`, `timeout`, SSE `headers`),
+  passed through to `SleipnirTransportRouter.subscribe`. Aborting `signal` **ends the
+  subscription** on every backend — the generated client bridges the abort to the idempotent
+  `unsubscribe()`, because the WebSocket backend honors the signal only until the subscribe is
+  acknowledged.
+- **Requiredness vs. nullability.** The `api/types.ts` header no longer claims "discovery
+  carries no nullability": nullability is honored (`T | null`); what discovery lacks is
+  per-property requiredness, so properties stay optional (`name?: T`) for now.
+
+### Fixed — `sleipnir-codegen` TypeScript emitter
+
+- A method returning the `any` scalar referenced an undeclared `_AnyPaths` path record and the
+  generated client failed to compile; scalars without their own path record now map to
+  `_UnknownPaths` / `_UnknownArrayPaths`.
 
 ## [1.4.3] — 2026-09-02
 

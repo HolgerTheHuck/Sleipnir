@@ -54,13 +54,13 @@ describe("emitTsClient story03 (events, golden)", () => {
     const ctrl = tree["api/controllers.ts"];
     // Event method → typed subscribe returning Promise<SleipnirSubscription>.
     expect(ctrl).toContain(
-      "messageReceived(chatId: number, handlers: SubscribeHandlers<Message>): Promise<SleipnirSubscription>",
+      "messageReceived(chatId: number, handlers: SubscribeHandlers<Message>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription>",
     );
-    expect(ctrl).toContain('this._subscribe<Message>(this._build("Chat", "MessageReceived").with({ chatId: chatId }).toRequest(), handlers)');
+    expect(ctrl).toContain('this._subscribe<Message>(this._build("Chat", "MessageReceived").with({ chatId: chatId }).toRequest(), handlers, options)');
     // A sibling call method on the same (mixed) controller stays a TypedCall.
     expect(ctrl).toContain("getHistory(chatId: number): TypedCall<Message[], MessageArrayPaths>");
     // Scalar-payload event → SubscribeHandlers<number>.
-    expect(ctrl).toContain("ticks(handlers: SubscribeHandlers<number>): Promise<SleipnirSubscription>");
+    expect(ctrl).toContain("ticks(handlers: SubscribeHandlers<number>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription>");
     // Pure-call controller keeps the 1-arg ctor (no _subscribe field).
     expect(ctrl).toContain("export class UserClient {\n  /** @internal */ _build");
     expect(ctrl).not.toMatch(/UserClient[\s\S]*_subscribe/);
@@ -70,7 +70,7 @@ describe("emitTsClient story03 (events, golden)", () => {
     const tree = emitTsClient(buildEmitterInput(readFixture("story03"), new NamingResolver()));
     const client = tree["api/client.ts"];
     // The _subscribe adapter delegates to the router (which routes to WS or SSE per profile).
-    expect(client).toContain("this._router.subscribe<T>(req, handlers)");
+    expect(client).toContain("this._router.subscribe<T>(req, handlers, options)");
     // Event controllers constructed with (build, this._subscribe); call controllers with (build).
     expect(client).toContain("this.chat = new ChatClient(build, this._subscribe);");
     expect(client).toContain("this.user = new UserClient(build);");

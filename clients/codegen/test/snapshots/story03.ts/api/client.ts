@@ -3,7 +3,7 @@
 // and falls back to REST+SSE on failure; useTransport() switches explicitly. The public surface
 // is identical across all capabilities — only the bundled backends differ.
 import { SleipnirCall, SleipnirTransportRouter } from "sleipnir-client";
-import type { SleipnirResponse, SleipnirRequest, SubscribeHandlers, SleipnirSubscription, SleipnirTransport, SleipnirRestClient, SleipnirWebSocketClient, SleipnirSseClient, SleipnirSignalrClient, SleipnirRestClientOptions, SleipnirWebSocketClientOptions, SleipnirSseClientOptions, SleipnirSignalrClientOptions } from "sleipnir-client";
+import type { SleipnirResponse, SleipnirRequest, SubscribeHandlers, SleipnirSubscription, SleipnirSubscribeOptions, SleipnirTransport, SleipnirRestClient, SleipnirWebSocketClient, SleipnirSseClient, SleipnirSignalrClient, SleipnirRestClientOptions, SleipnirWebSocketClientOptions, SleipnirSseClientOptions, SleipnirSignalrClientOptions } from "sleipnir-client";
 import { Batch, TypedCall } from "./typed-call.js";
 import { ChatClient } from "./controllers.js";
 import { TickerClient } from "./controllers.js";
@@ -36,7 +36,17 @@ export interface SleipnirClientOptions {
 
 export class SleipnirClient {
   private readonly _router: SleipnirTransportRouter;
-  private readonly _subscribe = <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>): Promise<SleipnirSubscription> => this._router.subscribe<T>(req, handlers);
+  private readonly _subscribe = async <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription> => {
+    const sub = await this._router.subscribe<T>(req, handlers, options);
+    const signal = options?.signal;
+    if (signal) {
+      // Aborting the signal ends the subscription (unsubscribe() is idempotent).
+      const end = (): void => { sub.unsubscribe().catch(() => undefined); };
+      if (signal.aborted) end();
+      else signal.addEventListener("abort", end, { once: true });
+    }
+    return sub;
+  };
   readonly chat: ChatClient;
   readonly ticker: TickerClient;
   readonly user: UserClient;

@@ -99,6 +99,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`Optional[Optional[T]] = None`) — the emitters wrapped again although the model's
   `pyTypeOfRef` already does; now the wrap happens exactly once.
 
+### Fixed — Server: binary in the batch path (audit F1)
+
+- A batch request's `BinaryData` was silently dropped: the single-call path
+  (`InvokeDi(SleipnirRequest)`) injects raw binary into `byte[]` parameters, the batch path
+  did not — the `byte[]` parameter arrived `null`. Fixed in `ExecuteAuthorized` (shared by
+  Parallel, Serial and the topological batches), including the alias-rebuilt request replicas,
+  which dropped `BinaryData` on the copy.
+
 ## [1.4.3] — 2026-09-02
 
 ### Added — Built-in Heimdall telemetry backend

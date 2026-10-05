@@ -902,6 +902,74 @@ public class SleipnirInvokerTests
         response.Data.Value.GetRawText().Should().Be("8");
     }
 
+    // Audit F1 — the batch path used to drop BinaryData silently (the single-call path
+    // injects it, the batch path didn't). All batch modes route through ExecuteAuthorized.
+
+    [Theory]
+    [InlineData(ExecutionMode.Parallel)]
+    [InlineData(ExecutionMode.Serial)]
+    public async Task InvokeDi_Batch_UploadBlob_BinaryDataInjected(ExecutionMode mode)
+    {
+        var binaryData = new byte[] { 1, 2, 3, 4, 5 };
+        var binaryRequest = new SleipnirRequest
+        {
+            Controller = "TestInvoker",
+            Method = "UploadBlob",
+            Params = JsonNode.Parse("[{\"ParameterName\":\"filename\",\"Data\":\"batch.bin\"}]"),
+            BinaryData = binaryData,
+            Id = "batch-upload"
+        };
+        var plainRequest = new SleipnirRequest
+        {
+            Controller = "TestInvoker",
+            Method = "Echo",
+            Params = JsonNode.Parse("[{\"ParameterName\":\"message\",\"Data\":\"plain\"}]"),
+            Id = "batch-plain"
+        };
+
+        // Act
+        var responses = await _invoker.InvokeDi(
+            new[] { plainRequest, binaryRequest }, null, mode);
+
+        // Assert — both complete (batch failure is per-request); the binary request
+        // actually saw the bytes, not a null byte[] parameter.
+        var list = responses.ToList();
+        list.Should().HaveCount(2);
+        list.Should().Contain(r => r!.Id == "batch-plain" && r.Code == (int)HttpStatusCode.OK);
+        var upload = list.First(r => r!.Id == "batch-upload");
+        upload!.Code.Should().Be((int)HttpStatusCode.OK);
+        upload.Data.Value.GetRawText().Should().Contain("5 bytes for batch.bin");
+    }
+
+    [Fact]
+    public async Task InvokeDi_TopologicalBatch_PreservesBinaryDataThroughAliasResolution()
+    {
+        // Auto-detect topological path (any request with DependencyMapping): every request
+        // goes through ExecuteDependentRequestAsync, which rebuilds the request as
+        // `effective` for alias resolution — that rebuild used to drop BinaryData even
+        // though ExecuteAuthorized injects now.
+        var binaryData = new byte[] { 7, 8, 9 };
+        var providerRequest = ChainRequest("provider", "TestInvoker", "Add",
+            new Dictionary<string, string> { { "id", "$" } }, ("a", "1"), ("b", "2"));
+        var uploadRequest = new SleipnirRequest
+        {
+            Controller = "TestInvoker",
+            Method = "UploadBlob",
+            Params = JsonNode.Parse("[{\"ParameterName\":\"filename\",\"Data\":\"topo.bin\"}]"),
+            BinaryData = binaryData,
+            Id = "topo-upload"
+        };
+
+        // Act
+        var responses = (await _invoker.InvokeDi(
+            new[] { providerRequest, uploadRequest }, null, ExecutionMode.Parallel)).ToList();
+
+        // Assert — the upload ran through the alias rebuild and still received the bytes.
+        var upload = responses.First(r => r!.Id == "topo-upload");
+        upload.Code.Should().Be((int)HttpStatusCode.OK);
+        upload.Data.Value.GetRawText().Should().Contain("3 bytes for topo.bin");
+    }
+
     #endregion
 
     #region Streaming (IAsyncEnumerable)

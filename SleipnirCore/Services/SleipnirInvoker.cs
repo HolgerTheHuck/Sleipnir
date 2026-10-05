@@ -666,7 +666,10 @@ namespace SleipnirCore.Services
                     Controller = current.Controller,
                     Method = current.Method,
                     Params = resolution.ResolvedParams,
-                    DependencyMapping = current.DependencyMapping
+                    DependencyMapping = current.DependencyMapping,
+                    // Keep the raw binary for ExecuteAuthorized's byte[] injection (audit F1),
+                    // symmetric to the topological path's `effective`.
+                    BinaryData = current.BinaryData
                 };
 
                 // Ausführung mit dem bereits autorisierten Decision (Auth lief oben).
@@ -941,6 +944,10 @@ namespace SleipnirCore.Services
                     Method = request.Method,
                     Params = resolution.ResolvedParams,
                     DependencyMapping = request.DependencyMapping,
+                    // Keep the raw binary so ExecuteAuthorized can still inject it into a
+                    // byte[] parameter after the alias resolution (audit F1 — without this
+                    // copy the topological path lost BinaryData and the param stayed null).
+                    BinaryData = request.BinaryData,
                 };
             }
 
@@ -1611,8 +1618,9 @@ namespace SleipnirCore.Services
         /// aus parallel-safe. Der per-Request <c>SleipnirCall</c>-Span wird hier geöffnet und
         /// <c>Activity.Current</c> darauf gesetzt, damit User-Code-Spans während ExecuteMethod
         /// korrekt unter dem Call-Span schachteln (wie beim ehemaligen ExecuteSingleInvocation).
-        /// Kein <see cref="InjectBinaryParameters"/> — die Binary-Asymmetrie zum Single-Call-Pfad
-        /// bleibt unverändert.
+        /// Binary-Parameter (<c>byte[]</c>) werden — symmetrisch zum Single-Call-Pfad — aus
+        /// <see cref="SleipnirRequest.BinaryData"/> injiziert (audit F1): previously a batch
+        /// request's raw binary was silently dropped and the byte[] parameter stayed null.
         /// </summary>
         private async Task<SleipnirResponse?> ExecuteAuthorized(
             SleipnirRequest request,
@@ -1635,6 +1643,13 @@ namespace SleipnirCore.Services
                 // die saubere 400 (z. B. „überschreitet MaxParameterArrayLength") ging
                 // verloren. Auf Items==null prüfen (wie der Single-Call-Pfad).
                 if (parameters.Items == null) return Status(parameters.Response);
+
+                // Binary params, symmetric to the single-call path (audit F1): a batch request
+                // can carry raw binary for a byte[] parameter. Every batch mode (Parallel /
+                // Serial / topological) routes through ExecuteAuthorized, so this one call
+                // closes the binary asymmetry — before, the batch request's BinaryData was
+                // silently dropped and the byte[] parameter stayed null.
+                InjectBinaryParameters(parameters.Items!, invokeInfo.MethodInfo.GetParameters(), request.BinaryData);
 
                 var result = await ExecuteMethod(invokeInfo, controllerType, parameters.Items!, ct);
                 if (result != null)

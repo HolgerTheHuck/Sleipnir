@@ -8,6 +8,7 @@
 #   2. package.json under templates/ + samples/ — "sleipnir-client": "^x.y.z" (and codegen) plus
 #      the localfeed .tgz artifact references (sleipnir-client-x.y.z.tgz)
 #   3. Repo-root markdown docs and package READMEs — PackageReference snippets / npm pins in fenced code
+#   4. Directory.Build.props — the central assembly/package <Version> stamp itself
 # Prose version mentions ("as of 1.2.0", CHANGELOG anchors) are intentionally NOT touched —
 # only pin-shaped references match.
 #
@@ -50,6 +51,13 @@ $npmPin = @{
 # localfeed artifact: the version lives in the FILENAME (file:...sleipnir-client-1.0.0.tgz).
 $tgzPin = @{
     Pattern = '(sleipnir-[a-z-]+-)\d+\.\d+\.\d+(\.tgz)'
+    Replace = "`${1}$Version`${2}"
+}
+# Central version stamp: Directory.Build.props carries the assembly/package <Version> for
+# all 14 packable projects. Missing from this list once, it drifted (published 1.4.3
+# assemblies stamped 1.4.2 — audit F2); this rule is the root-cause fix.
+$propsPin = @{
+    Pattern = '(<Version>)\d+\.\d+\.\d+(</Version>)'
     Replace = "`${1}$Version`${2}"
 }
 
@@ -95,6 +103,10 @@ foreach ($pkg in $packageDirs) {
     $p = Join-Path $repoRoot (Join-Path $pkg 'README.md')
     if (Test-Path $p) { Add-Target $p $docRules }
 }
+
+# 4. The central version stamp itself.
+$props = Join-Path $repoRoot 'Directory.Build.props'
+if (Test-Path $props) { Add-Target $props @($propsPin) }
 
 $changed = 0
 foreach ($file in ($targets.Keys | Sort-Object)) {

@@ -32,7 +32,6 @@
 
   <ItemGroup>
     <Folder Include="Grpc\" />
-    <Folder Include="Grpc\" />
     <Folder Include="wwwroot\" />
   </ItemGroup>
 

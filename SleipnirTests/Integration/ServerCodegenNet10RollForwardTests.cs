@@ -42,7 +42,17 @@ public class ServerCodegenNet10RollForwardTests
     private static string ResolveToolDll()
     {
         var repo = ResolveRepoRoot();
-        foreach (var cfg in new[] { "Debug", "Release" })
+        // The tool's configuration MUST match the running test's configuration. Prefer the
+        // directory the tests themselves run from (\Release\ or \Debug\ in BaseDirectory);
+        // fall back to the other one. Debug-first unconditionally is a trap: after any
+        // assembly-version bump, a stale Debug tool references the old SleipnirCore version
+        // while the freshly-built fixture server references the new one → FileLoadException
+        // (0x80131040) when the tool reflects the server assembly.
+        var testConfig = new[] { "Release", "Debug" }
+            .FirstOrDefault(c => AppContext.BaseDirectory.Contains(
+                $"{Path.DirectorySeparatorChar}{c}{Path.DirectorySeparatorChar}"))
+            ?? "Release";
+        foreach (var cfg in new[] { testConfig, testConfig == "Release" ? "Debug" : "Release" })
         {
             var dll = Path.Combine(repo.FullName, "Sleipnir.Server.Codegen", "bin", cfg, "net8.0", "Sleipnir.Server.Codegen.dll");
             if (File.Exists(dll)) return dll;

@@ -76,6 +76,30 @@ jobs:
           path: ./coverage/**/coverage.cobertura.xml
           if-no-files-found: warn
 
+      # Coverage ratchet (audit S1): the report was produced and uploaded but never
+      # evaluated, so coverage could drift down unnoticed. Parsed like the vulnerability
+      # gate above — coverlet.collector's XPlat collector has no /p:Threshold, so rather
+      # than adding a package we parse the Cobertura XML and exit 1 below the threshold.
+      # Baseline = the actual value at ratchet introduction (68.9% line / 56.3% branch,
+      # audit 2026-09-13) — NOT a target. The ratchet only ever moves up.
+      - name: Coverage ratchet
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          LINE=$(grep -o 'line-rate="[0-9.]*"' coverage/**/coverage.cobertura.xml | head -1 | grep -o '[0-9.]*')
+          BRANCH=$(grep -o 'branch-rate="[0-9.]*"' coverage/**/coverage.cobertura.xml | head -1 | grep -o '[0-9.]*')
+          LINEPCT=$(awk "BEGIN{printf \"%.1f\", $LINE*100}")
+          BRANCHPCT=$(awk "BEGIN{printf \"%.1f\", $BRANCH*100}")
+          echo "Coverage: line ${LINEPCT}% / branch ${BRANCHPCT}%"
+          if awk "BEGIN{exit !($LINEPCT < 68.0)}"; then
+            echo "::error::Line coverage ${LINEPCT}% below ratchet (68%) — raise the ratchet only upward"
+            exit 1
+          fi
+          if awk "BEGIN{exit !($BRANCHPCT < 56.0)}"; then
+            echo "::error::Branch coverage ${BRANCHPCT}% below ratchet (56%) — raise the ratchet only upward"
+            exit 1
+          fi
+          echo "Ratchet holds (line ≥ 68% / branch ≥ 56%)."
+
       - name: Check formatting
         if: matrix.os == 'ubuntu-latest'
         run: dotnet format Sleipnir.sln --verify-no-changes --severity warn

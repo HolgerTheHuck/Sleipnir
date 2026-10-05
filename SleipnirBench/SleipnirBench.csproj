@@ -6,6 +6,12 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <OutputType>Exe</OutputType>
+    <!-- CS0436 (duplicate generated types): customer.proto is generated twice — here as a
+         gRPC client and, in parallel, as a gRPC server inside the referenced Sleipnir project.
+         Both emit the same message types in the same namespace. This project is not packed and
+         the duplicate is intentional (client + server sides of the same contract), so the
+         type-conflict warning is noise (~215 of the solution's 460 full-rebuild warnings). -->
+    <NoWarn>$(NoWarn);CS0436</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

@@ -283,7 +283,10 @@ internal static class Program
         Console.WriteLine("The committed contract.sleipnir.json does not match the server's runtime discovery.");
         Console.WriteLine("Either update the server's [SleipnirController]/[SleipnirMethod] declarations to match the");
         Console.WriteLine("committed contract, or regenerate the contract if the change is intentional:");
-        Console.WriteLine($"    SLEIPNIR_REGEN_GOLDEN=1 dotnet build  (regenerates {opts.ContractPath})");
+        Console.WriteLine("    bash:          SLEIPNIR_REGEN_GOLDEN=1 dotnet build");
+        Console.WriteLine("    PowerShell:    $env:SLEIPNIR_REGEN_GOLDEN='1'; dotnet build");
+        Console.WriteLine("    cmd:           set SLEIPNIR_REGEN_GOLDEN=1 && dotnet build");
+        Console.WriteLine($"    (regenerates {opts.ContractPath})");
         Console.WriteLine();
         Console.WriteLine("--- regenerated (normalized, pretty) ---");
         Console.WriteLine(regenNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));

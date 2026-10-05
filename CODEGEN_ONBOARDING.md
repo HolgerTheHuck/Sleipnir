@@ -377,7 +377,8 @@ path): one input, two producers, equal C#. It is mandatory, not optional.
 The committed `contract.sleipnir.json` does not match what the built server exposes. This can happen
 after a merge, a controller change, or if the contract was never regenerated after the last server
 edit. Review the regenerated-vs-committed diff in the build log; if the change is intended, run
-`SLEIPNIR_REGEN_GOLDEN=1 dotnet build` and commit the result.
+`SLEIPNIR_REGEN_GOLDEN=1 dotnet build` (PowerShell: `$env:SLEIPNIR_REGEN_GOLDEN='1'; dotnet build`;
+cmd: `set SLEIPNIR_REGEN_GOLDEN=1 && dotnet build`) and commit the result.
 
 **The generator does not emit anything (no `SleipnirGenerated.cs`).**
 The generator only fires on an AdditionalFile whose filename is `contract.sleipnir.json` (or matches

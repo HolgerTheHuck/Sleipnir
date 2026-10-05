@@ -50,7 +50,7 @@
 
     <!-- Exit codes from the tool: 0 = ok / regenerated, 1 = drift detected, 2 = tool error. -->
     <Error Condition="'$(SleipnirExportExitCode)' == '1'"
-           Text="Sleipnir contract drift detected: the committed $(SleipnirContractFile) does not match the server's runtime discovery. See the regenerated-vs-committed diff above. If the change is intentional, regenerate with: SLEIPNIR_REGEN_GOLDEN=1 dotnet build" />
+           Text="Sleipnir contract drift detected: the committed $(SleipnirContractFile) does not match the server's runtime discovery. See the regenerated-vs-committed diff above. If the change is intentional, regenerate with: SLEIPNIR_REGEN_GOLDEN=1 dotnet build (bash) — PowerShell: $env:SLEIPNIR_REGEN_GOLDEN='1'; dotnet build — cmd: set SLEIPNIR_REGEN_GOLDEN=1 &amp;&amp; dotnet build" />
     <Error Condition="'$(SleipnirExportExitCode)' == '2'"
            Text="Sleipnir export tool error (not a contract drift). See the tool output above." />
     <Error Condition="'$(SleipnirExportExitCode)' != '0' AND '$(SleipnirExportExitCode)' != '1' AND '$(SleipnirExportExitCode)' != '2'"

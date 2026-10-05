@@ -30,12 +30,64 @@ export enum SleipnirConnectionState {
   Reconnecting = 3,
 }
 
+/**
+ * Aggregated, transport-neutral connection status of a `SleipnirTransportRouter`
+ * (`router.connection`). See `SleipnirTransportRouter.connection` for the transitions.
+ *
+ * - `"connecting"` — the first connection (or the `auto` probe) is being established.
+ * - `"open"` — the active transport is usable (the `rest` profile: always — REST is stateless).
+ * - `"reconnecting"` — an established connection dropped; the client is reconnecting.
+ * - `"closed"` — not connected (before first use on WS/SignalR, after reconnect gave up, or
+ *   after `dispose()`).
+ */
+export type SleipnirConnectionStatus = "connecting" | "open" | "reconnecting" | "closed";
+
+/**
+ * Semantic error category — mirror of the server enum `SleipnirCommon.Results.SleipnirErrorCategory`
+ * (see `ERROR_CATALOG.md` §2). Layered *on top of* the numeric `code`; transport-uniform. On the
+ * wire the server writes the enum **name** (PascalCase, `JsonStringEnumConverter`); `"None"` means
+ * "no category set" (fall back to `code`). New categories may be added in minor versions — treat
+ * an unknown value like `"None"`.
+ */
+export type SleipnirErrorCategory =
+  | "None"
+  | "InvalidArgument"
+  | "Unauthenticated"
+  | "PermissionDenied"
+  | "NotFound"
+  | "Conflict"
+  | "FailedPrecondition"
+  | "ResourceExhausted"
+  | "Internal"
+  | "Unavailable"
+  | "Cancelled";
+
+/** All {@link SleipnirErrorCategory} values, in server enum order (index = numeric value). */
+export const SLEIPNIR_ERROR_CATEGORIES: readonly SleipnirErrorCategory[] = [
+  "None",
+  "InvalidArgument",
+  "Unauthenticated",
+  "PermissionDenied",
+  "NotFound",
+  "Conflict",
+  "FailedPrecondition",
+  "ResourceExhausted",
+  "Internal",
+  "Unavailable",
+  "Cancelled",
+];
+
 /** Strukturierter Fehler im SleipnirResponse.error-Feld (code != 2xx). */
 export interface SleipnirErrorBody {
   code: number;
   message: string;
   details?: string | null;
   requestId?: string | null;
+  /**
+   * Semantic category (additive; absent on transport-synthesized errors, e.g. a non-2xx HTTP
+   * status, and on servers that predate it). See {@link SleipnirErrorCategory}.
+   */
+  category?: SleipnirErrorCategory;
 }
 
 /** Ein einzelner Parameter innerhalb von SleipnirRequest.params. */

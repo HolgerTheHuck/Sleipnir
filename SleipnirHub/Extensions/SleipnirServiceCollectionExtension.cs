@@ -48,6 +48,13 @@ namespace SleipnirHub.Extensions
             // (UseSleipnirTransports/MapSleipnir) can read UseSignalR etc. without parameters.
             services.AddSingleton(options);
 
+            // Opt-in ?access_token= fallback for the WebSocket upgrade + SSE (decision 6.3:
+            // narrowly). The transports register their paths into this registry when mapped; the
+            // startup filter puts the promoting middleware in front of the host's
+            // UseAuthentication (a no-op unless AcceptAccessTokenQuery is on).
+            services.AddSingleton<SleipnirCore.Services.SleipnirAccessTokenQueryPaths>();
+            services.AddTransient<Microsoft.AspNetCore.Hosting.IStartupFilter, SleipnirHub.Auth.SleipnirAccessTokenQueryStartupFilter>();
+
             // Observability registry (process-wide, lock-free): backs the
             // sleipnir.ws.connections / sleipnir.subscriptions.active ObservableGauges
             // (read by the Prometheus exporter at scrape time) and the JSON

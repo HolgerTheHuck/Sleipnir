@@ -1,4 +1,4 @@
-import type { SleipnirErrorBody, SleipnirResponse } from "./types.js";
+import type { SleipnirErrorBody, SleipnirErrorCategory, SleipnirResponse } from "./types.js";
 
 /**
  * Fehler bei einem Sleipnir-Aufruf. Spiegelt das C#-Äquivalent (SleipnirException).
@@ -15,17 +15,25 @@ export class SleipnirError extends Error {
   readonly code: number;
   readonly details?: string | null;
   readonly requestId?: string | null;
+  /** Semantic category from `error.category` (absent for transport errors / older servers). */
+  readonly category?: SleipnirErrorCategory;
 
   constructor(
     code: number,
     message: string,
-    options?: { details?: string | null; requestId?: string | null; cause?: unknown },
+    options?: {
+      details?: string | null;
+      requestId?: string | null;
+      category?: SleipnirErrorCategory;
+      cause?: unknown;
+    },
   ) {
     super(message, options?.cause !== undefined ? { cause: options.cause } : undefined);
     this.name = "SleipnirError";
     this.code = code;
     this.details = options?.details;
     this.requestId = options?.requestId;
+    this.category = options?.category;
   }
 
   /** Baut einen SleipnirError aus einem SleipnirErrorBody (z. B. response.error). */
@@ -33,6 +41,7 @@ export class SleipnirError extends Error {
     return new SleipnirError(body.code, body.message, {
       details: body.details,
       requestId: body.requestId,
+      category: body.category,
     });
   }
 

@@ -59,6 +59,7 @@ See [`SECURITY_GUIDE.md`](SECURITY_GUIDE.md) for the full posture matrix and dep
 
 - **WebSocket upgrade** — rejected with 401 before `AcceptWebSocketAsync` when `RequireAuthentication` and unauthenticated.
 - **SignalR hub** — `.RequireAuthorization()` applied when `RequireAuthentication`.
+- **`?access_token=` (opt-in, `AcceptAccessTokenQuery`, default `false`)** — accepted only on the WebSocket upgrade and the SSE `/events/…` GETs, promoted to `Authorization: Bearer` before `UseAuthentication` (an existing header wins) and stripped from the query string for downstream logging. Never read on REST/JSON-RPC/discovery. Cookie auth remains the recommended browser path. See `TRANSPORT_REFERENCE.md` §7.
 - **Discovery** — `GET /api/sleipnir/discovery` and `sleipnir.discover` gated behind auth when `RequireAuthentication` (attack-surface oracle).
 
 ### Structurally Safe

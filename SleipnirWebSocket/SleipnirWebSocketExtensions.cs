@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using SleipnirCore.Services;
 
 namespace SleipnirWebSocket;
 
@@ -13,6 +15,10 @@ public static class SleipnirWebSocketExtensions
     /// </summary>
     public static IApplicationBuilder UseSleipnirWebSocket(this IApplicationBuilder app, string path = "/sleipnirws")
     {
+        // The opt-in ?access_token= fallback (SleipnirOptions.AcceptAccessTokenQuery) is honored
+        // only on the WebSocket upgrade of this path — register it (no-op without AddSleipnir).
+        app.ApplicationServices.GetService<SleipnirAccessTokenQueryPaths>()?.AddWebSocketPath(path);
+
         return app.Map(path, application =>
         {
             application.UseMiddleware<SleipnirWebSocketMiddleware>();

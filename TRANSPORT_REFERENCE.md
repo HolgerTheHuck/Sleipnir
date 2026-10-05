@@ -250,6 +250,35 @@ Use these to reach a raw bundled backend directly (e.g. a REST-only call from an
 - `DisposeAsync`: disposes WS + SignalR (async), SSE + REST (sync), then
   `_negotiateLock`.
 
+### The TypeScript router (`sleipnir-client`) — connection state, 401 hook, subscription options
+
+`clients/ts/src/transport-router.ts` (`SleipnirTransportRouter`) mirrors the C# router and adds
+(since 1.5.0-preview):
+
+- **`router.connection`** — aggregated, store-shaped status
+  (`"connecting" | "open" | "reconnecting" | "closed"`): `connection.state` plus
+  `connection.subscribe(listener) → unsubscribe` (Svelte-store contract: the listener is called
+  synchronously with the current value, then on each change). Derived from the **active
+  profile's** backend: `ws`/`signalr` follow their connection (`onStateChanged` of the backend);
+  `rest` is `"open"` (stateless) except `"reconnecting"` while an SSE stream reconnects; `auto`
+  is `"connecting"` during the probe; `dispose()` → `"closed"`. Inactive bundled backends do not
+  influence it. The backends expose the same as `state` + an `onStateChanged` option (WS:
+  existing; SSE: aggregated over its streams; SignalR: new).
+- **`onUnauthenticated`** (router option) — on a `401` (response `code`, or a subscribe/resume
+  rejection with `code` 401) the hook runs (single-flight across concurrent 401s), then the
+  operation is retried **exactly once**. On `ws`/`signalr` the connection is re-established after
+  the hook (`SleipnirWebSocketClient.reconnect()` / `SleipnirSignalrClient.reconnect()`, new),
+  because those transports authenticate once, at connect. A batch is retried only if every
+  response is 401. `403` never triggers it.
+- **Subscribe options** (`SleipnirSubscribeOptions`): `signal` ends a subscription on every
+  backend — pre-ack it rejects with `CancelledError`, post-ack it unsubscribes (WS previously
+  honored it only pre-ack; the WS handle and signal now also follow a reconnect re-subscribe).
+  `timeout` is the ack timeout and is forwarded to WS, SSE and SignalR. `headers` stays SSE-only.
+- **`SleipnirSubscription.ended`** (optional on the interface, always set by the built-in
+  clients): resolves when the subscription ends for any reason (unsubscribe, signal, terminal
+  frame, `"drop"`, failed re-subscribe, client close, WS reconnect giving up). The caller's
+  signal listener is detached at that point.
+
 ---
 
 ## 4. Capability values & what they bundle
@@ -532,6 +561,38 @@ mirrored on the C# SignalR client (`SleipnirSignalrClient.cs` MessagePack setup)
 (e.g. `samples/server/Program.cs`, `guide/server/Program.cs` — the `UseCors`
 call). Guidance: `BEST_PRACTICES.md` §"1.5 Host and proxy".
 
+### Browser auth on WS/SSE — `AcceptAccessTokenQuery` (opt-in)
+
+A browser cannot set an `Authorization` header on a WebSocket handshake or on a native
+`EventSource`. **Cookie authentication is the recommended way** for browser apps (the cookie
+rides on the upgrade/GET automatically; no token in any URL — e.g. a BFF). For bearer scenarios
+in the browser, the TS WebSocket client sends its bearer as `?access_token=…`, and the server can
+accept it — narrowly:
+
+```csharp
+builder.Services.AddSleipnir(o => o.AcceptAccessTokenQuery = true);
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(/* … */);
+```
+
+- **Where:** only a WebSocket upgrade (`GET` + `Upgrade: websocket`, or an HTTP/2 extended
+  CONNECT) on a path registered by `UseSleipnirWebSocket(path)`, and `GET` requests under
+  `{prefix}/events` registered by `MapSleipnirEndpoints(prefix)` (SSE). REST `/json`,
+  `/json/multi`, `/jsonrpc`, `/discovery`, the SignalR hub and every non-Sleipnir path ignore the
+  parameter — it is never read there.
+- **How:** an `IStartupFilter` (registered by `AddSleipnir`; a no-op unless the option is on)
+  puts `SleipnirHub.Auth.SleipnirAccessTokenQueryMiddleware` in front of the host pipeline, so it
+  runs before `UseAuthentication` whatever order the host writes. It promotes the value to an
+  `Authorization: Bearer …` header — the host's own bearer handler (JwtBearer, custom) validates
+  it unchanged, the scheme-agnostic equivalent of `JwtBearerEvents.OnMessageReceived`. An existing
+  `Authorization` header always wins; a duplicated `access_token` is ignored.
+- **Log hygiene:** on eligible requests the parameter is removed from `Request.QueryString`
+  before anything downstream runs — SSE parameter binding, HTTP logging, the hosting
+  "Request finished" log and exception pages never see it. The hosting "Request starting" log is
+  written before any middleware runs; keep `Microsoft.AspNetCore.Hosting.Diagnostics` below
+  `Information` in production (the ASP.NET template default `"Microsoft.AspNetCore": "Warning"`
+  does) and make sure reverse proxies do not log query strings for these paths.
+- Tests: `SleipnirTests/Integration/AccessTokenQueryTests.cs`.
+
 ### The canonical 3-call wiring
 
 ```csharp
@@ -624,6 +685,7 @@ var sub = await sse.SubscribeAsync<Quote>(req, ...);
 | `EnableJsonRpcCompat` | `bool` | `false` | Registers `POST {prefix}/jsonrpc` |
 | `EnableObservability` | `bool` | `false` | Registers `GET {prefix}/observability` |
 | `RequireAuthentication` | `bool` | `false` | North-bound default-deny (WS upgrade, `/discovery`, `/observability`, JSON-RPC `sleipnir.discover`, hub `RequireAuthorization`) |
+| `AcceptAccessTokenQuery` | `bool` | `false` | Opt-in: accept a bearer as `?access_token=` on the WS upgrade and the SSE `/events/…` GETs only (never REST); see §7 "Browser auth on WS/SSE" |
 | `RateLimitPermitLimit` | `int` | `0` (off) | Fixed-window `"sleipnir"` permit limit; `>0` enables it on REST + hub |
 | `RateLimitWindowSeconds` | `int` | `10` | Fixed-window window size |
 | `MaximumReceiveMessageSize` | `long?` | `null` (SignalR default) | SignalR hub max message size |

@@ -1,4 +1,5 @@
-// Auto-generated Sleipnir data types (JSDoc). Properties are camelCase (wire).
+// Auto-generated Sleipnir data types (JSDoc). Properties are camelCase (wire);
+// nullable properties are bracketed ([name]) — presence-optional on the wire.
 
 /**
  * @typedef {Object} SearchResult

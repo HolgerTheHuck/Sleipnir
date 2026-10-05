@@ -1,38 +1,42 @@
-// Auto-generated Sleipnir data types. Properties are camelCase (wire) and
-// optional (discovery carries no nullability; callers narrow).
+// Auto-generated Sleipnir data types. Properties are camelCase (wire).
+// Required (always present on the wire) unless nullable — nullable properties are
+// presence-optional (`?:`) because event frames omit null values (WhenWritingNull);
+// the value can still be null, so the `| null` remains.
 
 export interface StockInfo {
-  articleId?: number;
-  inStock?: number;
+  articleId: number;
+  inStock: number;
 }
 
 export interface OrderLine {
-  articleId?: number;
-  qty?: number;
+  articleId: number;
+  qty: number;
 }
 
 export interface Article {
-  id?: number;
-  name?: string;
-  price?: number;
+  id: number;
+  name: string;
+  price: number;
 }
 
 export interface Order {
-  id?: number;
-  customerId?: number;
-  shippingAddressId?: number;
-  status?: string;
-  placedAt?: string;
+  customerId: number;
+  id: number;
+  note?: string | null;
+  placedAt: string;
+  shippingAddressId: number;
+  status: string;
 }
 
 export interface Customer {
-  id?: number;
-  name?: string;
+  id: number;
+  name: string;
+  score?: number | null;
 }
 
 export interface Address {
-  id?: number;
-  street?: string;
-  zip?: string;
-  city?: string;
+  id: number;
+  street: string;
+  zip: string;
+  city: string;
 }

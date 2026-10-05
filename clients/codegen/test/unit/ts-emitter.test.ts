@@ -67,11 +67,16 @@ describe("emitTsClient (golden against story01 snapshots, all capabilities)", ()
     });
   }
 
-  it("camelCases properties (wire fix) and method names", () => {
+  it("emits non-nullable properties required and nullable ones presence-optional", () => {
     const tree = emitTsClient(input);
-    expect(tree["api/types.ts"]).toContain("id?: number;");
-    expect(tree["api/types.ts"]).toContain("customerId?: number;");
-    expect(tree["api/types.ts"]).toContain("shippingAddressId?: number;");
+    // Non-nullable wire scalars: presence guaranteed (STJ writes every property)
+    // → no `?`.
+    expect(tree["api/types.ts"]).toContain("id: number;");
+    expect(tree["api/types.ts"]).toContain("customerId: number;");
+    expect(tree["api/types.ts"]).toContain("shippingAddressId: number;");
+    // Nullable (fixture: Order.Note string?, Customer.Score int?) → `?: T | null`.
+    expect(tree["api/types.ts"]).toContain("note?: string | null;");
+    expect(tree["api/types.ts"]).toContain("score?: number | null;");
     expect(tree["api/controllers.ts"]).toContain("getById(id: number): TypedCall<Order, OrderPaths>");
     expect(tree["api/controllers.ts"]).not.toContain("GetById(id"); // no PascalCase method name
   });

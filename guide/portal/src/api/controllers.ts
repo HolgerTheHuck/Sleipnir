@@ -54,15 +54,15 @@ export class PortfolioClient {
     return new TypedCall<Holding[], HoldingArrayPaths>(this._build("Portfolio", "GetHoldings"));
   }
 
-  /** Place a market order for a symbol + quantity. Returns the filled Order. Chain provider for GetOrder(@orderId): expose $.Id as 'orderId'. */
-  placeOrder(symbol: string, quantity: number): TypedCall<Order, OrderPaths> {
-    return new TypedCall<Order, OrderPaths>(this._build("Portfolio", "PlaceOrder").with({ symbol: symbol, quantity: quantity }));
-  }
-
   /** Fetch a previously placed order by id. Chain consumer: PlaceOrder exposes $.Id as 'orderId', GetOrder(@orderId) resolves it. */
   // TODO: return type "SleipnirResponse" is an opaque framework/BCL type not modelled in discovery; emitted as unknown.
   getOrder(id: number): TypedCall<unknown, _VoidPaths> {
     return new TypedCall<unknown, _VoidPaths>(this._build("Portfolio", "GetOrder").with({ id: id }));
+  }
+
+  /** Place a market order for a symbol + quantity. Returns the filled Order. Chain provider for GetOrder(@orderId): expose $.Id as 'orderId'. */
+  placeOrder(symbol: string, quantity: number): TypedCall<Order, OrderPaths> {
+    return new TypedCall<Order, OrderPaths>(this._build("Portfolio", "PlaceOrder").with({ symbol: symbol, quantity: quantity }));
   }
 
   /** Start the live price feed (chapter 9). Admin role required — a Customer token gets 403. */

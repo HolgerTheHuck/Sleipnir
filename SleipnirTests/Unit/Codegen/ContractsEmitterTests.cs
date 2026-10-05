@@ -81,11 +81,13 @@ public class ContractsEmitterTests
     [Fact]
     public void Emits_poco_dtos_with_jsonpropertyname_wire_mapping()
     {
-        // The Order POCO: [JsonPropertyName("customerId")] public int? CustomerId.
+        // The Order POCO: [JsonPropertyName("customerId")] public int CustomerId —
+        // nullability honoured (no blanket `?`); the nullable fixture props keep it.
         var cs = Emit();
         cs.Should().Contain("public class Order");
         cs.Should().Contain("[JsonPropertyName(\"customerId\")]");
-        cs.Should().Contain("public int? CustomerId { get; set; }");
+        cs.Should().Contain("public int CustomerId { get; set; }");
+        cs.Should().Contain("public string? Note { get; set; }");
     }
 
     [Fact]

@@ -49,12 +49,16 @@ function emitTypeDefs(input: EmitterInput, resolver: NamingResolver): string {
   for (const t of input.types) {
     const props = t.properties.map((p) => {
       const ty = jsDocTypeOf(p.typeRef, resolver);
-      return ` * @property {${ty}} ${p.wireName}`;
+      // Presence mirrors the TS emitter: nullable → presence-optional (JSDoc
+      // bracket syntax — the property may be absent, because event frames omit
+      // null values); non-nullable → always present on the wire.
+      const name = p.typeRef.nullable ? `[${p.wireName}]` : p.wireName;
+      return ` * @property {${ty}} ${name}`;
     });
     blocks.push(`/**\n * @typedef {Object} ${t.emittedName}${props.length ? "\n" + props.join("\n") : ""}\n */`);
   }
   if (blocks.length === 0) return "// No structured types declared in discovery.\n";
-  return `// Auto-generated Sleipnir data types (JSDoc). Properties are camelCase (wire).\n\n${blocks.join("\n\n")}\n`;
+  return `// Auto-generated Sleipnir data types (JSDoc). Properties are camelCase (wire);\n// nullable properties are bracketed ([name]) — presence-optional on the wire.\n\n${blocks.join("\n\n")}\n`;
 }
 
 /** JSDoc type string for a resolved ref (arrays render as `T[]`). */

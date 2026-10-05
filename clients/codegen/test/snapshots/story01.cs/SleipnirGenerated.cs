@@ -22,61 +22,65 @@ namespace Sleipnir.Generated
     public class StockInfo
     {
         [JsonPropertyName("articleId")]
-        public int? ArticleId { get; set; }
+        public int ArticleId { get; set; }
         [JsonPropertyName("inStock")]
-        public int? InStock { get; set; }
+        public int InStock { get; set; }
     }
 
     public class OrderLine
     {
         [JsonPropertyName("articleId")]
-        public int? ArticleId { get; set; }
+        public int ArticleId { get; set; }
         [JsonPropertyName("qty")]
-        public int? Qty { get; set; }
+        public int Qty { get; set; }
     }
 
     public class Article
     {
         [JsonPropertyName("id")]
-        public int? Id { get; set; }
+        public int Id { get; set; }
         [JsonPropertyName("name")]
-        public string? Name { get; set; }
+        public string Name { get; set; }
         [JsonPropertyName("price")]
-        public decimal? Price { get; set; }
+        public decimal Price { get; set; }
     }
 
     public class Order
     {
-        [JsonPropertyName("id")]
-        public int? Id { get; set; }
         [JsonPropertyName("customerId")]
-        public int? CustomerId { get; set; }
-        [JsonPropertyName("shippingAddressId")]
-        public int? ShippingAddressId { get; set; }
-        [JsonPropertyName("status")]
-        public string? Status { get; set; }
+        public int CustomerId { get; set; }
+        [JsonPropertyName("id")]
+        public int Id { get; set; }
+        [JsonPropertyName("note")]
+        public string? Note { get; set; }
         [JsonPropertyName("placedAt")]
-        public DateTime? PlacedAt { get; set; }
+        public DateTime PlacedAt { get; set; }
+        [JsonPropertyName("shippingAddressId")]
+        public int ShippingAddressId { get; set; }
+        [JsonPropertyName("status")]
+        public string Status { get; set; }
     }
 
     public class Customer
     {
         [JsonPropertyName("id")]
-        public int? Id { get; set; }
+        public int Id { get; set; }
         [JsonPropertyName("name")]
-        public string? Name { get; set; }
+        public string Name { get; set; }
+        [JsonPropertyName("score")]
+        public int? Score { get; set; }
     }
 
     public class Address
     {
         [JsonPropertyName("id")]
-        public int? Id { get; set; }
+        public int Id { get; set; }
         [JsonPropertyName("street")]
-        public string? Street { get; set; }
+        public string Street { get; set; }
         [JsonPropertyName("zip")]
-        public string? Zip { get; set; }
+        public string Zip { get; set; }
         [JsonPropertyName("city")]
-        public string? City { get; set; }
+        public string City { get; set; }
     }
 
     /// <summary>An opaque alias placeholder (the "@alias" wire value) produced by

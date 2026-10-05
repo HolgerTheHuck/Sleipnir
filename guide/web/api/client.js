@@ -2,7 +2,10 @@
 // Transport is selected at runtime via SleipnirTransportRouter: "auto" (default) probes
 // WebSocket and falls back to REST+SSE on failure; useTransport() switches explicitly.
 import { SleipnirCall, SleipnirTransportRouter } from "sleipnir-client";
+import { AccountClient } from "./controllers.js";
 import { MarketClient } from "./controllers.js";
+import { PortfolioClient } from "./controllers.js";
+import { PriceFeedClient } from "./controllers.js";
 
 export class SleipnirClient {
   /**
@@ -13,7 +16,11 @@ export class SleipnirClient {
   constructor(baseUrl, options = {}) {
     this._router = new SleipnirTransportRouter({ baseUrl, capability: "rest", ...options });
     const build = (controller, method) => SleipnirCall.init(controller, method);
+  this._subscribe = (req, handlers) => this._router.subscribe(req, handlers);
+  this.account = new AccountClient(build);
   this.market = new MarketClient(build);
+  this.portfolio = new PortfolioClient(build);
+  this.priceFeed = new PriceFeedClient(build, this._subscribe);
   }
 
   /** @returns {Promise<void>} resolve the `auto` profile (probe WS → fallback REST+SSE). */

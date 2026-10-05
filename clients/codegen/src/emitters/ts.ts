@@ -12,8 +12,9 @@
 //
 // The path-type is carried explicitly per call (set by the generated controller
 // method) rather than looked up from the data type via a distributive
-// conditional — which would be ambiguous because all generated properties are
-// optional (every interface would be structurally assignable to every other).
+// conditional. Properties carry wire-presence semantics (see emitTypes), so
+// interfaces are no longer universally assignable — but path keys still need
+// the explicit record for `$`-syntax and cardinality, so the design stands.
 
 import type { EmitterInput, ResolvedController, ResolvedMethod, ResolvedType, ResolvedTypeRef } from "../core/model.js";
 import { toCamelCase } from "../core/casing.js";
@@ -69,7 +70,7 @@ function resolverFor(input: EmitterInput): NamingResolver {
 }
 
 // ---------------------------------------------------------------------------
-// types.ts — one interface per ResolvedType (camelCase props, all optional).
+// types.ts — one interface per ResolvedType (camelCase props, presence-aware).
 // ---------------------------------------------------------------------------
 
 function emitTypes(input: EmitterInput, _resolver: NamingResolver): string {
@@ -78,12 +79,25 @@ function emitTypes(input: EmitterInput, _resolver: NamingResolver): string {
     const props = t.properties.map((p) => {
       const ty = tsTypeOfRef(p.typeRef, _resolver);
       const doc = p.documentation ? `  /** ${p.documentation} */\n` : "";
-      return `${doc}  ${p.wireName}?: ${ty};`;
+      // Presence rule (wire-truthful):
+      //  - non-nullable → required (`name: T`): the server serializes call results
+      //    without an ignore condition, so every listed property is always written.
+      //  - nullable → presence-optional (`name?: T | null`): event frames serialize
+      //    with WhenWritingNull, so a null value is omitted (the property is absent).
+      //    [JsonIgnore(WhenWritingNull)] properties are equally indistinguishable in
+      //    discovery. The `| null` stays — the value, present or not, can BE null.
+      const opt = p.typeRef.nullable ? "?" : "";
+      return `${doc}  ${p.wireName}${opt}: ${ty};`;
     });
     blocks.push(`export interface ${t.emittedName} {\n${props.join("\n")}\n}`);
   }
   if (blocks.length === 0) return "// No structured types declared in discovery.\n";
-  return `// Auto-generated Sleipnir data types. Properties are camelCase (wire) and\n// optional (discovery carries no nullability; callers narrow).\n\n${blocks.join("\n\n")}\n`;
+  return `// Auto-generated Sleipnir data types. Properties are camelCase (wire).
+// Required (always present on the wire) unless nullable — nullable properties are
+// presence-optional (\`?:\`) because event frames omit null values (WhenWritingNull);
+// the value can still be null, so the \`| null\` remains.
+
+${blocks.join("\n\n")}\n`;
 }
 
 // ---------------------------------------------------------------------------

@@ -259,10 +259,22 @@ It is read from C# nullable reference types (NRT) via `NullabilityInfoContext`:
   the inner scalar with `nullable:true`. A plain value type is non-nullable.
 - `stream` and `void` are never nullable; the field is absent.
 
-Consumers render nullability per target language (TS: optional `?` / `T | null`; C#:
-`Nullable<T>` for value types, NRT `T?` for references; Python: `Optional[T]`). The prior
-shape carried no nullability, so the generator emitted every property optional as a
-conservative default — that default is no longer needed when `nullable` is present.
+Consumers render nullability per target language (TS: `T | null`; C#: `Nullable<T>` for value
+types, NRT `T?` for references; Python: `Optional[T]`). Nullability (`T | null`) and wire
+**presence** (does the property appear at all) are separate concerns — the emitters apply this
+presence rule:
+
+- **Non-nullable → presence-required.** Call responses are serialized without an ignore
+  condition, so every listed property is always written, including null values of nullable
+  properties. No optional marker.
+- **Nullable → presence-optional.** Event frames serialize with `WhenWritingNull`, so a null
+  value is omitted and the property is genuinely absent on the wire; the same indistinguishability
+  applies to `[JsonIgnore(WhenWritingNull)]` properties, which discovery does not model. TS
+  renders `name?: T | null`, C# `T?` (property — the `Task<T?>` envelope return is unconditional
+  and models the response envelope, not the payload), Python `Optional[T] = None`.
+
+(The prior generator behavior made every property optional as a conservative default; that is
+gone — the emitters now mirror the wire's actual presence guarantees.)
 
 ---
 

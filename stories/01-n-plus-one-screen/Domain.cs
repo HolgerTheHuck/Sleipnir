@@ -15,12 +15,20 @@ public sealed class Order
     public int ShippingAddressId { get; set; }
     public string Status { get; set; } = "";
     public DateTime PlacedAt { get; set; }
+
+    // Nullable wire property — exercises the emitters' presence rule
+    // (TS `?: T | null` on null-omitting serializers, C# `T?`, Python `Optional[T] = None`).
+    // Untouched by the store — stays null.
+    public string? Note { get; set; }
 }
 
 public sealed class Customer
 {
     public int Id { get; set; }
     public string Name { get; set; } = "";
+
+    // Nullable value-type counterpart to Order.Note (see above).
+    public int? Score { get; set; }
 }
 
 public sealed class OrderLine

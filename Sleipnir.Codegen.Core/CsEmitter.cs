@@ -272,7 +272,7 @@ internal static class CsEmitter
 
     private static string EmitPocoProperty(ResolvedProperty p, NamingResolver resolver)
     {
-        var ty = EmitterBuilder.Nullable(EmitterBuilder.CsTypeOfRef(p.TypeRef, resolver));
+        var ty = EmitterBuilder.Nullable(p.TypeRef, EmitterBuilder.CsTypeOfRef(p.TypeRef, resolver));
         var propName = Casing.PascalCase(p.DeclaredName);
         var todo = p.TypeRef.Kind == "opaque"
             ? "        // TODO: property \"" + p.DeclaredName + "\" type \"" + (p.TypeRef.NativeName ?? "?") + "\" is an opaque framework/BCL type not modelled in discovery; emitted as object.\n"

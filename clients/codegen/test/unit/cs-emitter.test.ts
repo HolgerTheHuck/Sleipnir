@@ -23,12 +23,14 @@ describe("emitCsClient (golden against story01 snapshot)", () => {
     expect(tree["SleipnirGenerated.cs"]).toBe(snapshot);
   });
 
-  it("emits camelCase [JsonPropertyName] on nullable PascalCase POCOs", () => {
+  it("emits camelCase [JsonPropertyName] with nullability honoured on POCOs", () => {
     const cs = tree["SleipnirGenerated.cs"];
-    expect(cs).toContain('[JsonPropertyName("customerId")]\n        public int? CustomerId { get; set; }');
-    expect(cs).toContain('[JsonPropertyName("placedAt")]\n        public DateTime? PlacedAt { get; set; }');
-    // Arrays are nullable List<T>.
-    expect(cs).toContain("public class OrderLine\n");
+    // Non-nullable wire scalars: no blanket `?` (discovery carries NRT nullability).
+    expect(cs).toContain('[JsonPropertyName("customerId")]\n        public int CustomerId { get; set; }');
+    expect(cs).toContain('[JsonPropertyName("placedAt")]\n        public DateTime PlacedAt { get; set; }');
+    // Nullable fixtures (Order.Note string?, Customer.Score int?) keep the `?`.
+    expect(cs).toContain('[JsonPropertyName("note")]\n        public string? Note { get; set; }');
+    expect(cs).toContain('[JsonPropertyName("score")]\n        public int? Score { get; set; }');
   });
 
   it("emits Arg<T> params and the Alias/Arg/Call/Batch runtime", () => {

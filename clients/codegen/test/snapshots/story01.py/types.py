@@ -1,5 +1,6 @@
-# Auto-generated Sleipnir data types. Fields are camelCase (wire) and
-# default to None (discovery carries no nullability; callers narrow).
+# Auto-generated Sleipnir data types. Fields are camelCase (wire).
+# Non-nullable fields are always present on the wire (no default); nullable fields
+# are Optional and default to None (event frames omit null values — WhenWritingNull).
 # DateTime is emitted as str (parse with datetime.fromisoformat if needed).
 from __future__ import annotations
 
@@ -8,8 +9,8 @@ from typing import Any, Optional
 
 @dataclass
 class StockInfo:
-    articleId: Optional[int] = None
-    inStock: Optional[int] = None
+    articleId: int
+    inStock: int
     @classmethod
     def from_dict(cls, d: dict) -> "StockInfo":
         if d is None:
@@ -20,8 +21,8 @@ class StockInfo:
 
 @dataclass
 class OrderLine:
-    articleId: Optional[int] = None
-    qty: Optional[int] = None
+    articleId: int
+    qty: int
     @classmethod
     def from_dict(cls, d: dict) -> "OrderLine":
         if d is None:
@@ -32,9 +33,9 @@ class OrderLine:
 
 @dataclass
 class Article:
-    id: Optional[int] = None
-    name: Optional[str] = None
-    price: Optional[float] = None
+    id: int
+    name: str
+    price: float
     @classmethod
     def from_dict(cls, d: dict) -> "Article":
         if d is None:
@@ -46,40 +47,44 @@ class Article:
 
 @dataclass
 class Order:
-    id: Optional[int] = None
-    customerId: Optional[int] = None
-    shippingAddressId: Optional[int] = None
-    status: Optional[str] = None
-    placedAt: Optional[str] = None
+    customerId: int
+    id: int
+    placedAt: str
+    shippingAddressId: int
+    status: str
+    note: Optional[str] = None
     @classmethod
     def from_dict(cls, d: dict) -> "Order":
         if d is None:
-            return cls(id=None, customerId=None, shippingAddressId=None, status=None, placedAt=None)  # type: ignore[arg-type]
-        id=d.get("id")
+            return cls(customerId=None, id=None, note=None, placedAt=None, shippingAddressId=None, status=None)  # type: ignore[arg-type]
         customerId=d.get("customerId")
+        id=d.get("id")
+        note=d.get("note")
+        placedAt=d.get("placedAt")
         shippingAddressId=d.get("shippingAddressId")
         status=d.get("status")
-        placedAt=d.get("placedAt")
-        return cls(id=id, customerId=customerId, shippingAddressId=shippingAddressId, status=status, placedAt=placedAt)  # type: ignore[call-arg]
+        return cls(customerId=customerId, id=id, note=note, placedAt=placedAt, shippingAddressId=shippingAddressId, status=status)  # type: ignore[call-arg]
 
 @dataclass
 class Customer:
-    id: Optional[int] = None
-    name: Optional[str] = None
+    id: int
+    name: str
+    score: Optional[int] = None
     @classmethod
     def from_dict(cls, d: dict) -> "Customer":
         if d is None:
-            return cls(id=None, name=None)  # type: ignore[arg-type]
+            return cls(id=None, name=None, score=None)  # type: ignore[arg-type]
         id=d.get("id")
         name=d.get("name")
-        return cls(id=id, name=name)  # type: ignore[call-arg]
+        score=d.get("score")
+        return cls(id=id, name=name, score=score)  # type: ignore[call-arg]
 
 @dataclass
 class Address:
-    id: Optional[int] = None
-    street: Optional[str] = None
-    zip: Optional[str] = None
-    city: Optional[str] = None
+    id: int
+    street: str
+    zip: str
+    city: str
     @classmethod
     def from_dict(cls, d: dict) -> "Address":
         if d is None:

@@ -1,4 +1,5 @@
-// Auto-generated Sleipnir data types (JSDoc). Properties are camelCase (wire).
+// Auto-generated Sleipnir data types (JSDoc). Properties are camelCase (wire);
+// nullable properties are bracketed ([name]) — presence-optional on the wire.
 
 /**
  * @typedef {Object} StockInfo
@@ -21,17 +22,19 @@
 
 /**
  * @typedef {Object} Order
- * @property {number} id
  * @property {number} customerId
+ * @property {number} id
+ * @property {string | null} [note]
+ * @property {string} placedAt
  * @property {number} shippingAddressId
  * @property {string} status
- * @property {string} placedAt
  */
 
 /**
  * @typedef {Object} Customer
  * @property {number} id
  * @property {string} name
+ * @property {number | null} [score]
  */
 
 /**

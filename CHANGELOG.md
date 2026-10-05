@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed — Codegen: required/optional presence no longer conflated with nullability
+
+- **All generated clients marked every contract property optional**, although the server
+  always sends them: the emitters assumed "discovery carries no nullability" and emitted
+  `symbol?: string` for a non-nullable C# `string` (`string? Name` / `DateTime?` were
+  already mapped to `| null` / `?` / `Optional[...]` correctly — only the
+  required/optional distinction was missing). That forced TypeScript consumers into
+  `?.` / `??` checks that can never apply on call data.
+- **New presence rule** (see [`docs/discovery-schema.md`](docs/discovery-schema.md) §7):
+  non-nullable properties are emitted **required**; nullable properties stay
+  **presence-optional** (`name?: T | null` in TS, `[name]` in JSDoc, `Optional[T] = None`
+  in Python, `T?` in C#) because event frames serialize with `WhenWritingNull` — a null
+  value is genuinely absent there. Call responses always write every listed property.
+  Affected emitters: TS, JSDoc (JS), C# (both implementations, parity gate untouched),
+  Python. The response **envelope** (`Task<T?>` / `data: T | null`) stays null-able as
+  before. **Regenerating a client narrows the emitted types** — consumer code that
+  constructs contract objects partially now fails to compile, which is the intended
+  direction.
+- Coverage: the Story-01 fixture and the live story contract gained nullable properties
+  (`Order.Note` string?, `Customer.Score` int?) so all four emitters' nullable paths are
+  pinned by the goldens and the compile tests (`cs-compile`, `tsc`, `py_compile`).
+
 ## [1.4.3] — 2026-09-02
 
 ### Added — Built-in Heimdall telemetry backend

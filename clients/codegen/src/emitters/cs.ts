@@ -91,7 +91,7 @@ function emitHeader(baseUrl?: string, capability: CsBundleCapability = "all"): s
 }
 
 // ---------------------------------------------------------------------------
-// POCOs — one class per ResolvedType (nullable props, [JsonPropertyName] wire).
+// POCOs — one class per ResolvedType (props honour discovery nullability, [JsonPropertyName] wire).
 // ---------------------------------------------------------------------------
 
 function emitPocos(input: EmitterInput, resolver: NamingResolver): string {
@@ -106,7 +106,7 @@ function emitPoco(t: { emittedName: string; properties: ResolvedProperty[] }, re
 }
 
 function emitPocoProperty(p: ResolvedProperty, resolver: NamingResolver): string {
-  const ty = nullable(csTypeOfRef(p.typeRef, resolver));
+  const ty = nullable(p.typeRef, csTypeOfRef(p.typeRef, resolver));
   const propName = pascalName(p.declaredName);
   const todo = p.typeRef.kind === "opaque"
     ? `        // TODO: property "${p.declaredName}" type "${p.typeRef.nativeName ?? "?"}" is an opaque framework/BCL type not modelled in discovery; emitted as object.\n`
@@ -115,9 +115,11 @@ function emitPocoProperty(p: ResolvedProperty, resolver: NamingResolver): string
   return `${doc}${todo}        [JsonPropertyName("${p.wireName}")]\n        public ${ty} ${propName} { get; set; }`;
 }
 
-/** Append `?` to a POCO property type (discovery carries no nullability; callers narrow). */
-function nullable(ty: string): string {
-  return ty.endsWith("?") ? ty : `${ty}?`;
+/** C# type with the discovery nullability honoured: `?` only when the ref actually
+ * carries `nullable` (NRT Nullable state), never blanket. Presence is not modelled
+ * in C# — STJ deserialization is duck-typed, so a missing value takes its default. */
+function nullable(ref: ResolvedTypeRef, ty: string): string {
+  return ref.nullable === true ? (ty.endsWith("?") ? ty : `${ty}?`) : ty;
 }
 
 /** PascalCase a declared property name (`customerId` → `CustomerId`). */

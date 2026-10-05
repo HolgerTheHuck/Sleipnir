@@ -6,53 +6,32 @@
 // validity are compile-checked without a (structurally ambiguous) lookup over T.
 import { SleipnirCall, ExecutionMode } from "sleipnir-client";
 import type { SleipnirRequest, SleipnirMultiRequest, SleipnirResponse } from "sleipnir-client";
-import type { PriceTick, Holding, Order, Profile, Quote } from "./types.js";
-
-export interface PriceTickPaths {
-  "$": PriceTick;
-  "$.symbol": string;
-  "$.price": number;
-  "$.change": number;
-  "$.time": string;
-}
-
-export interface PriceTickArrayPaths {
-  "$": PriceTick[];
-  "$[0]": PriceTick;
-  "$[0].symbol": string;
-  "$[0].price": number;
-  "$[0].change": number;
-  "$[0].time": string;
-  "$[*].symbol": string[];
-  "$[*].price": number[];
-  "$[*].change": number[];
-  "$[*].time": string[];
-}
+import type { Holding, Order, PriceTick, Profile, Quote } from "./types.js";
 
 export interface HoldingPaths {
   "$": Holding;
-  "$.symbol": string;
-  "$.quantity": number;
   "$.averagePrice": number;
+  "$.quantity": number;
+  "$.symbol": string;
 }
 
 export interface HoldingArrayPaths {
   "$": Holding[];
   "$[0]": Holding;
-  "$[0].symbol": string;
-  "$[0].quantity": number;
   "$[0].averagePrice": number;
-  "$[*].symbol": string[];
-  "$[*].quantity": number[];
+  "$[0].quantity": number;
+  "$[0].symbol": string;
   "$[*].averagePrice": number[];
+  "$[*].quantity": number[];
+  "$[*].symbol": string[];
 }
 
 export interface OrderPaths {
   "$": Order;
   "$.id": number;
-  "$.symbol": string;
-  "$.quantity": number;
   "$.price": number;
+  "$.quantity": number;
+  "$.symbol": string;
   "$.time": string;
 }
 
@@ -60,50 +39,71 @@ export interface OrderArrayPaths {
   "$": Order[];
   "$[0]": Order;
   "$[0].id": number;
-  "$[0].symbol": string;
-  "$[0].quantity": number;
   "$[0].price": number;
+  "$[0].quantity": number;
+  "$[0].symbol": string;
   "$[0].time": string;
   "$[*].id": number[];
-  "$[*].symbol": string[];
-  "$[*].quantity": number[];
   "$[*].price": number[];
+  "$[*].quantity": number[];
+  "$[*].symbol": string[];
+  "$[*].time": string[];
+}
+
+export interface PriceTickPaths {
+  "$": PriceTick;
+  "$.change": number;
+  "$.price": number;
+  "$.symbol": string;
+  "$.time": string;
+}
+
+export interface PriceTickArrayPaths {
+  "$": PriceTick[];
+  "$[0]": PriceTick;
+  "$[0].change": number;
+  "$[0].price": number;
+  "$[0].symbol": string;
+  "$[0].time": string;
+  "$[*].change": number[];
+  "$[*].price": number[];
+  "$[*].symbol": string[];
   "$[*].time": string[];
 }
 
 export interface ProfilePaths {
   "$": Profile;
-  "$.username": string;
   "$.role": string;
+  "$.username": string;
 }
 
 export interface ProfileArrayPaths {
   "$": Profile[];
   "$[0]": Profile;
-  "$[0].username": string;
   "$[0].role": string;
-  "$[*].username": string[];
+  "$[0].username": string;
   "$[*].role": string[];
+  "$[*].username": string[];
 }
 
 export interface QuotePaths {
   "$": Quote;
-  "$.symbol": string;
-  "$.price": number;
   "$.change": number;
+  "$.price": number;
+  "$.symbol": string;
   "$.time": string;
 }
 
 export interface QuoteArrayPaths {
   "$": Quote[];
   "$[0]": Quote;
-  "$[0].symbol": string;
-  "$[0].price": number;
   "$[0].change": number;
+  "$[0].price": number;
+  "$[0].symbol": string;
   "$[0].time": string;
-  "$[*].symbol": string[];
-  "$[*].price": number[];
   "$[*].change": number[];
+  "$[*].price": number[];
+  "$[*].symbol": string[];
   "$[*].time": string[];
 }
 

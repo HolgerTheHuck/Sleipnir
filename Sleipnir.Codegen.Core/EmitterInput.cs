@@ -213,6 +213,15 @@ internal static class EmitterBuilder
     /// <summary>The element TypeRef of an array/set/stream, or a fallback opaque ref.</summary>
     private static TypeRef ElementOf(TypeRef r) => r.Element ?? OpaqueRef;
 
-    /// <summary>Append <c>?</c> to a POCO property type (discovery carries no nullability; callers narrow).</summary>
-    public static string Nullable(string ty) => ty.EndsWith("?") ? ty : ty + "?";
+    /// <summary>C# type string with the discovery nullability honoured: <c>?</c> only when the
+    /// ref actually carries <see cref="TypeRef.Nullable"/> (NRT Nullable state), never blanket.
+    /// Presence is not modelled in C# — STJ deserialization is duck-typed, so a missing
+    /// value takes its default.</summary>
+    public static string Nullable(TypeRef r, string ty)
+        => r.Nullable == true ? EnsureNullable(ty) : ty;
+
+    /// <summary>Append <c>?</c> unconditionally — for the response ENVELOPE only: interface
+    /// method returns stay <c>Task&lt;T?&gt;</c> because the envelope's <c>data</c> can be null
+    /// on 2xx (Ok(null) / 204) regardless of the payload's own nullability.</summary>
+    public static string EnsureNullable(string ty) => ty.EndsWith("?") ? ty : ty + "?";
 }

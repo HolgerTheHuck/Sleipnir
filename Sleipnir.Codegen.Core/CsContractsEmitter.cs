@@ -78,7 +78,7 @@ internal static class CsContractsEmitter
 
     private static string EmitPocoProperty(ResolvedProperty p, NamingResolver resolver)
     {
-        var ty = EmitterBuilder.Nullable(EmitterBuilder.CsTypeOfRef(p.TypeRef, resolver));
+        var ty = EmitterBuilder.Nullable(p.TypeRef, EmitterBuilder.CsTypeOfRef(p.TypeRef, resolver));
         var propName = Casing.PascalCase(p.DeclaredName);
         var todo = p.TypeRef.Kind == "opaque"
             ? "        // TODO: property \"" + p.DeclaredName + "\" type \"" + (p.TypeRef.NativeName ?? "?") + "\" is an opaque framework/BCL type not modelled in discovery; emitted as object.\n"
@@ -131,9 +131,12 @@ internal static class CsContractsEmitter
                    "        [SleipnirMethodContract(\"" + m.MethodName + "\")]\n        Task " + m.MethodName + "(" + string.Join(", ", parms) + ");";
         }
 
+        // The `Task<T?>` return keeps the blanket `?` deliberately (EnsureNullable): it models
+        // the response ENVELOPE (data may be null on 2xx — Ok(null) / 204), not the payload's
+        // own nullability. Mirrors the TS `TypedResponse<T> = SleipnirResponse & { data: T | null }`.
         var ret = m.IsVoid
             ? "Task"
-            : "Task<" + EmitterBuilder.Nullable(EmitterBuilder.CsTypeOfRef(m.ReturnType, resolver)) + ">";
+            : "Task<" + EmitterBuilder.EnsureNullable(EmitterBuilder.CsTypeOfRef(m.ReturnType, resolver)) + ">";
         var todo = (m.ReturnType.Kind == "opaque" && !m.IsVoid)
             ? "        // TODO: return type \"" + (m.ReturnType.NativeName ?? "?") + "\" is an opaque framework/BCL type not modelled in discovery; deserialize as object.\n"
             : "";

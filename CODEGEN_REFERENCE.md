@@ -293,8 +293,8 @@ somewhere other than the project directory.
 At compile time the generator emits `SleipnirGenerated.cs` in the `Sleipnir.Generated` namespace,
 containing (see [§5.2](#52-c) for the concrete shape):
 
-- A POCO for every contract type (properties nullable, `[JsonPropertyName]` in camelCase matching
-  the wire).
+- A POCO for every contract type (properties honour discovery nullability — `?` only when the
+  NRT-declared type is nullable — with `[JsonPropertyName]` in camelCase matching the wire).
 - An `Arg<T>` wrapper for method parameters, `Call` / `BatchEntry` / `Batch` shapes, and
   `Alias` / `Exposes` helpers for dependency chaining.
 - One client class per controller and a root `SleipnirGeneratedClient` that owns them.
@@ -577,7 +577,11 @@ The shapes below are from the committed Story-01 snapshots
 The TS emitter produces a typed client with **dependency chaining as a first-class,
 compile-checked surface**. Five files:
 
-- **`api/types.ts`** — a POCO interface per contract type.
+- **`api/types.ts`** — a POCO interface per contract type. **Presence rule:** non-nullable
+  properties are required (`name: T`) — the server serializes every listed property (call
+  responses write nulls, not omissions). Nullable properties are presence-optional
+  (`name?: T | null`) because event frames serialize with `WhenWritingNull` and omit null
+  values; the `| null` still carries the value nullability.
 - **`api/controllers.ts`** — one client class per controller; each method returns a `TypedCall<T, TPaths>`.
 - **`api/typed-call.ts`** — `TypedCall`, `TypedRequest`, `Batch`, and the per-type **path records**
   (`OrderPaths`, `OrderArrayPaths`, …) that constrain `exposes(jsonPath, alias)` to real `$`-paths
@@ -629,15 +633,17 @@ A single file `SleipnirGenerated.cs` in namespace `Sleipnir.Generated`. The full
 at [`clients/codegen/test/snapshots/story01.cs/SleipnirGenerated.cs`](clients/codegen/test/snapshots/story01.cs/SleipnirGenerated.cs).
 It contains:
 
-- **POCOs** — one per contract type, properties nullable with `[JsonPropertyName("camelCase")]`:
+- **POCOs** — one per contract type, nullability honoured (`?` only for nullable NRT declarations)
+  with `[JsonPropertyName("camelCase")]`:
 
   ```csharp
   public class Order {
-      [JsonPropertyName("id")]                public int? Id { get; set; }
-      [JsonPropertyName("customerId")]        public int? CustomerId { get; set; }
-      [JsonPropertyName("shippingAddressId")] public int? ShippingAddressId { get; set; }
-      [JsonPropertyName("status")]            public string? Status { get; set; }
-      [JsonPropertyName("placedAt")]          public DateTime? PlacedAt { get; set; }
+      [JsonPropertyName("id")]                public int Id { get; set; }
+      [JsonPropertyName("customerId")]        public int CustomerId { get; set; }
+      [JsonPropertyName("shippingAddressId")] public int ShippingAddressId { get; set; }
+      [JsonPropertyName("status")]            public string Status { get; set; }
+      [JsonPropertyName("placedAt")]          public DateTime PlacedAt { get; set; }
+      [JsonPropertyName("note")]              public string? Note { get; set; }   // nullable
   }
   ```
 
@@ -671,7 +677,9 @@ It contains:
 ### 5.3 Python
 
 `client.py`, `types.py`, `__init__.py` — self-contained (only `httpx`), REST only. `types.py` holds
-`@dataclass` contract types; `client.py` holds an async client over `httpx`, with a `py.typed`
+`@dataclass` contract types (non-nullable fields declared without default, nullable fields as
+`Optional[T] = None`, non-defaulted fields first so the dataclass stays legal);
+`client.py` holds an async client over `httpx`, with a `py.typed`
 marker for typed consumption. The `Alias` / `Arg` / `Batch` typed-batch surface mirrors the TS/C#
 shape. Python ships REST only (no Python WS/SSE runtime yet), so `--transport` is rejected for
 `--lang py`.

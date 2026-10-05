@@ -44,8 +44,12 @@ describe("emitPyClient (golden against story01 snapshot)", () => {
 
   it("emits camelCase @dataclass fields with from_dict", () => {
     expect(tree["types.py"]).toContain("class Order:");
-    expect(tree["types.py"]).toContain("customerId: Optional[int] = None");
-    expect(tree["types.py"]).toContain("placedAt: Optional[str] = None");
+    // Non-nullable wire scalars: no Optional blanket (nullable → Optional = None).
+    expect(tree["types.py"]).toContain("customerId: int");
+    expect(tree["types.py"]).toContain("placedAt: str");
+    // Nullable fixtures: Optional + None default.
+    expect(tree["types.py"]).toContain("note: Optional[str] = None");
+    expect(tree["types.py"]).toContain("score: Optional[int] = None");
     expect(tree["types.py"]).toContain("def from_dict(cls, d: dict) -> \"Order\":");
   });
 

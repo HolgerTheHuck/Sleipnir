@@ -58,32 +58,36 @@ export interface ArticleArrayPaths {
 
 export interface OrderPaths {
   "$": Order;
-  "$.id": number;
   "$.customerId": number;
+  "$.id": number;
+  "$.note": string | null;
+  "$.placedAt": string;
   "$.shippingAddressId": number;
   "$.status": string;
-  "$.placedAt": string;
 }
 
 export interface OrderArrayPaths {
   "$": Order[];
   "$[0]": Order;
-  "$[0].id": number;
   "$[0].customerId": number;
+  "$[0].id": number;
+  "$[0].note": string | null;
+  "$[0].placedAt": string;
   "$[0].shippingAddressId": number;
   "$[0].status": string;
-  "$[0].placedAt": string;
-  "$[*].id": number[];
   "$[*].customerId": number[];
+  "$[*].id": number[];
+  "$[*].note": string | null[];
+  "$[*].placedAt": string[];
   "$[*].shippingAddressId": number[];
   "$[*].status": string[];
-  "$[*].placedAt": string[];
 }
 
 export interface CustomerPaths {
   "$": Customer;
   "$.id": number;
   "$.name": string;
+  "$.score": number | null;
 }
 
 export interface CustomerArrayPaths {
@@ -91,8 +95,10 @@ export interface CustomerArrayPaths {
   "$[0]": Customer;
   "$[0].id": number;
   "$[0].name": string;
+  "$[0].score": number | null;
   "$[*].id": number[];
   "$[*].name": string[];
+  "$[*].score": number | null[];
 }
 
 export interface AddressPaths {

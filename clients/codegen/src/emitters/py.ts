@@ -53,13 +53,19 @@ function snakeCase(name: string): string {
 // ---------------------------------------------------------------------------
 
 function emitTypes(input: EmitterInput, resolver: NamingResolver): string {
-  const header = `# Auto-generated Sleipnir data types. Fields are camelCase (wire) and
-# default to None (discovery carries no nullability; callers narrow).
+  const anyNullable = input.types.some((t) =>
+    t.properties.some((p) => p.typeRef.nullable === true));
+  const imports = anyNullable
+    ? "from typing import Any, Optional"
+    : "from typing import Any";
+  const header = `# Auto-generated Sleipnir data types. Fields are camelCase (wire).
+# Non-nullable fields are always present on the wire (no default); nullable fields
+# are Optional and default to None (event frames omit null values — WhenWritingNull).
 # DateTime is emitted as str (parse with datetime.fromisoformat if needed).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+${imports}
 
 `;
   if (input.types.length === 0) return `${header}# No structured types declared in discovery.\n`;
@@ -68,18 +74,30 @@ from typing import Any, Optional
 }
 
 function emitDataclass(t: { emittedName: string; properties: ResolvedProperty[] }, resolver: NamingResolver): string {
-  const fields = t.properties.map((p) => emitDataclassField(p, resolver));
+  // Dataclass rule: fields WITHOUT defaults must precede fields WITH defaults.
+  // Non-nullable wire fields are always present (no default); nullable fields
+  // default to None. Partition so any discovery property order stays legal —
+  // `from_dict` passes all fields as keyword args, so declaration order is
+  // wire-neutral.
+  const ordered = [
+    ...t.properties.filter((p) => !p.typeRef.nullable),
+    ...t.properties.filter((p) => p.typeRef.nullable),
+  ];
+  const fields = ordered.map((p) => emitDataclassField(p, resolver));
   const fromDict = emitFromDict(t);
   return `@dataclass\nclass ${t.emittedName}:\n${fields.length ? fields.join("\n") : "    pass"}\n${fromDict}`;
 }
 
 function emitDataclassField(p: ResolvedProperty, resolver: NamingResolver): string {
+  // pyTypeOfRef already wraps a nullable ref in `Optional[...]` — the only extra
+  // is the `= None` default (and the non-default-first partition in emitDataclass).
   const ty = pyTypeOfRef(p.typeRef, resolver);
   const todo = p.typeRef.kind === "opaque"
     ? `    # TODO: field "${p.declaredName}" type "${p.typeRef.nativeName ?? "?"}" is an opaque framework/BCL type not modelled in discovery; emitted as Any.\n`
     : "";
   const doc = p.documentation ? `    """${p.documentation}"""\n` : "";
-  return `${todo}${doc}    ${p.wireName}: Optional[${ty}] = None`;
+  const def = p.typeRef.nullable ? " = None" : "";
+  return `${todo}${doc}    ${p.wireName}: ${ty}${def}`;
 }
 
 function emitFromDict(t: { emittedName: string; properties: ResolvedProperty[] }): string {

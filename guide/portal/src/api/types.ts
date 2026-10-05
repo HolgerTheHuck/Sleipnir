@@ -1,35 +1,37 @@
-// Auto-generated Sleipnir data types. Properties are camelCase (wire) and
-// optional (discovery carries no nullability; callers narrow).
-
-export interface PriceTick {
-  symbol?: string;
-  price?: number;
-  change?: number;
-  time?: string;
-}
+// Auto-generated Sleipnir data types. Properties are camelCase (wire).
+// Required (always present on the wire) unless nullable — nullable properties are
+// presence-optional (`?:`) because event frames omit null values (WhenWritingNull);
+// the value can still be null, so the `| null` remains.
 
 export interface Holding {
-  symbol?: string;
-  quantity?: number;
-  averagePrice?: number;
+  averagePrice: number;
+  quantity: number;
+  symbol: string;
 }
 
 export interface Order {
-  id?: number;
-  symbol?: string;
-  quantity?: number;
-  price?: number;
-  time?: string;
+  id: number;
+  price: number;
+  quantity: number;
+  symbol: string;
+  time: string;
+}
+
+export interface PriceTick {
+  change: number;
+  price: number;
+  symbol: string;
+  time: string;
 }
 
 export interface Profile {
-  username?: string;
-  role?: string;
+  role: string;
+  username: string;
 }
 
 export interface Quote {
-  symbol?: string;
-  price?: number;
-  change?: number;
-  time?: string;
+  change: number;
+  price: number;
+  symbol: string;
+  time: string;
 }

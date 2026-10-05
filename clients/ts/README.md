@@ -206,6 +206,59 @@ router.setBearer(newToken);    // fans out to every bundled backend
 router.dispose();              // terminal; idempotent
 ```
 
+### Connection state
+
+`router.connection` is a store (`state` + `subscribe(listener) → unsubscribe`, the Svelte-store
+contract — the listener gets the current value immediately, then every change):
+
+```ts
+const off = router.connection.subscribe((s) => (badge = s)); // "connecting" | "open" | "reconnecting" | "closed"
+router.connection.state;                                     // current value
+off();
+```
+
+It follows the **active profile**: `ws`/`signalr` mirror their connection (`"closed"` until the
+lazy first connect, `"connecting"` → `"open"`, a drop → `"reconnecting"` → `"open"`, or
+`"closed"` when reconnecting gives up); `rest` is `"open"` (REST is stateless) and
+`"reconnecting"` while an SSE stream reconnects; `auto` is `"connecting"` during the probe;
+`dispose()` → `"closed"`. The backends expose `state` + `onStateChanged` individually as well.
+
+### 401 → refresh → retry once (`onUnauthenticated`)
+
+```ts
+const router = new SleipnirTransportRouter({
+  baseUrl, capability: "all", bearer: () => tokens.access,
+  onUnauthenticated: async ({ transport, operation }) => {
+    await tokens.refresh();          // a provider-function bearer picks the new token up
+  },
+});
+```
+
+On a `401` (`code` 401 in the response, or a subscribe/resume rejected with 401) the hook runs —
+once for all concurrent 401s — and the operation is retried **exactly once**; a second 401 is
+returned/thrown as is. On `ws`/`signalr` the connection is re-established after the hook (they
+authenticate at connect); calls still in flight on the old connection fail with a transport
+error (`code` 0), as on a network drop. A batch is retried only if every response is 401. A
+throwing hook rejects the operation. `403` never triggers it.
+
+### Subscriptions: `signal`, `timeout`, `ended`
+
+```ts
+const ac = new AbortController();
+const sub = await router.subscribe<Tick>(req, handlers, { signal: ac.signal, timeout: 5_000 });
+sub.ended?.then(() => console.log("subscription over"));
+ac.abort();   // unsubscribes (any transport); before the ack it rejects with CancelledError
+```
+
+- `signal` — pre-ack: the subscribe rejects with `CancelledError`; post-ack: ends the
+  subscription like `unsubscribe()`. Works on WS, SSE and SignalR, and survives a WS reconnect
+  (the handle follows the new server `subscriptionId`).
+- `timeout` — ack timeout (ms) on every backend → `CancelledError` with `timedOut: true`.
+- `ended` — resolves once the subscription is over for any reason (unsubscribe, signal, server
+  `complete`/`error`, resume policy `"drop"`, client close); the signal listener is detached
+  then. Optional on the `SleipnirSubscription` interface for hand-written implementations; the
+  built-in clients always set it.
+
 ### Cross-transport resume
 
 The server-side subscription store is **process-wide**, so a `subscriptionId` created over one
@@ -249,7 +302,10 @@ try {
 }
 ```
 
-- **`SleipnirError`**: transport/logical failures (`code`, `message`, `details?`, `requestId?`).
+- **`SleipnirError`**: transport/logical failures (`code`, `message`, `details?`, `requestId?`,
+  `category?`). `category` is the server's semantic `SleipnirErrorCategory` (`"NotFound"`,
+  `"Unauthenticated"`, `"PermissionDenied"`, …; see `ERROR_CATALOG.md`), also on
+  `response.error.category`.
 - **`CancelledError`**: caller abort or timeout — propagated **unwrapped** (consistent
   with the C# client). `timedOut` distinguishes a timeout from a caller abort.
 
@@ -273,11 +329,12 @@ await rest.call("C", "M", { id: 1 }, { signal: ac.signal, timeout: 5_000 }); // 
 
 ## Known limitations
 
-- **Browser WebSocket auth:** the Sleipnir server authenticates the WS upgrade **only** via the
-  HTTP `Authorization` header, which the browser WebSocket API cannot set. The client
-  falls back to `?access_token=` in the URL for browser WS, which the server does not yet
-  accept — so authenticated browser-WS calls need REST (or server-side `?access_token=`
-  support, tracked in ROADMAP). Node (`ws`) sends the header correctly. See PROTOCOL.md.
+- **Browser WebSocket auth:** the browser WebSocket API cannot set an `Authorization` header, so
+  in a browser (any runtime with a global `WebSocket`) the client sends the bearer as
+  `?access_token=` in the URL. The server accepts it only when the host opts in with
+  `SleipnirOptions.AcceptAccessTokenQuery = true` (server ≥ 1.5.0-preview; WS upgrade + SSE only,
+  stripped from logged query strings). Cookie authentication remains the recommended browser
+  path. Node with `ws` sends the header. See `TRANSPORT_REFERENCE.md` §7.
 - **Batch `id` collisions:** concurrent batches whose first request shares the same `id`
   (default `Controller.Method`) collide on correlation. Set explicit, unique `id`s via
   `.named(...)` for concurrent batches (same constraint as the C# client).

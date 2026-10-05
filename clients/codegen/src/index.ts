@@ -30,8 +30,9 @@ export { NamingResolver } from "./core/naming.js";
 export {
   type ResolvedTypeRef, type ResolvedProperty, type ResolvedType,
   type ResolvedParameter, type ResolvedMethod, type ResolvedController,
-  type EmitterInput,
-  buildEmitterInput, resolveTypeRef, tsTypeOfRef, csTypeOfRef, pyTypeOfRef,
+  type EmitterInput, type ResolvedEnum, type ResolvedEnumMember,
+  type EnumAnnotatedTypeRef, type TsTypeOfRefOptions,
+  buildEmitterInput, resolveTypeRef, enumRefOf, tsTypeOfRef, csTypeOfRef, pyTypeOfRef,
 } from "./core/model.js";
 
 // Emitters.

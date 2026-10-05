@@ -1,5 +1,11 @@
-import { ExecutionMode } from "./types.js";
-import type { SleipnirMultiRequest, SleipnirParameter, SleipnirRequest, SleipnirResponse } from "./types.js";
+import { ExecutionMode, SLEIPNIR_ERROR_CATEGORIES } from "./types.js";
+import type {
+  SleipnirErrorCategory,
+  SleipnirMultiRequest,
+  SleipnirParameter,
+  SleipnirRequest,
+  SleipnirResponse,
+} from "./types.js";
 
 /**
  * Baut das `params`-Feld (Array von SleipnirParameter mit nativen `data`-Werten) aus
@@ -81,9 +87,32 @@ export function buildMulti(
  * Client spiegelt diese Ableitung, sodass `response.isSuccess` verlässlich ist.
  */
 export function normalizeResponse<T extends SleipnirResponse>(resp: T): T {
-  if (typeof resp?.isSuccess === "boolean") return resp;
-  const code = typeof resp?.code === "number" ? resp.code : 0;
-  return { ...resp, isSuccess: code >= 200 && code <= 299 };
+  const normalized = normalizeErrorCategory(resp);
+  if (typeof normalized?.isSuccess === "boolean") return normalized;
+  const code = typeof normalized?.code === "number" ? normalized.code : 0;
+  return { ...normalized, isSuccess: code >= 200 && code <= 299 };
+}
+
+/**
+ * Coerces `error.category` to the canonical {@link SleipnirErrorCategory} name. The server writes
+ * the PascalCase enum name; a host that overrides the JSON enum handling (a camelCase
+ * `JsonStringEnumConverter`, or numeric enums) would otherwise leak a different spelling. An
+ * unrecognized value is left untouched (forward-compatible with categories added later).
+ */
+function normalizeErrorCategory<T extends SleipnirResponse>(resp: T): T {
+  const error = resp?.error;
+  const raw: unknown = error?.category;
+  if (raw == null) return resp;
+  if (typeof raw === "string" && (SLEIPNIR_ERROR_CATEGORIES as readonly string[]).includes(raw)) return resp;
+  let canonical: SleipnirErrorCategory | undefined;
+  if (typeof raw === "number") {
+    canonical = SLEIPNIR_ERROR_CATEGORIES[raw];
+  } else if (typeof raw === "string") {
+    const lower = raw.toLowerCase();
+    canonical = SLEIPNIR_ERROR_CATEGORIES.find((c) => c.toLowerCase() === lower);
+  }
+  if (!canonical || !error) return resp;
+  return { ...resp, error: { ...error, category: canonical } };
 }
 
 /** `normalizeResponse` für jedes Element eines Batch-Arrays. */

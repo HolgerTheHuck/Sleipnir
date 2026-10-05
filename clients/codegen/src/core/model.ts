@@ -10,14 +10,17 @@
 //
 // Enum refs: Sleipnir serializes enums as their underlying integer on the wire
 // (no global JsonStringEnumConverter), so an enum usage is rendered as its
-// numeric wire type. The enum `TypeMeta` (with members) is still emitted by the
-// producer for documentation/DevUI, but the codegen does not emit language-
-// native enum declarations — enum usages collapse to a wide integer scalar
-// (`long`) that is lossless for every C# enum backing type. The enum identity
-// is therefore not preserved in generated clients; a future increment can emit
-// native enums. Sets and streams also collapse: JSON materializes both as
-// arrays (the invoker consumes IAsyncEnumerable<T> into List<T>; STJ writes a
-// HashSet<T> as a JSON array), so the client's deser target is an array.
+// numeric wire type: enum usages collapse to a wide integer scalar (`long`)
+// that is lossless for every C# enum backing type. The collapsed scalar keeps
+// the enum's registry key as `enumRef` (see `EnumAnnotatedTypeRef`), and the
+// enum members are exposed as `EmitterInput.enums`, so an emitter can opt into
+// an enum identity. The TypeScript emitter does (an `as const` object plus a
+// literal-union type of the member values); the JS / C# / Python emitters
+// ignore `enumRef` and keep rendering the numeric scalar.
+//
+// Sets and streams also collapse: JSON materializes both as arrays (the invoker
+// consumes IAsyncEnumerable<T> into List<T>; STJ writes a HashSet<T> as a JSON
+// array), so the client's deser target is an array.
 
 import type {
   ControllerMeta,
@@ -34,6 +37,30 @@ import { csTypeOf, pyTypeOf, tsTypeOf } from "./scalars.js";
 
 /** A reference to a type — the wire `TypeRef`, consumed directly (passthrough). */
 export type ResolvedTypeRef = TypeRef;
+
+/**
+ * A collapsed enum usage: the numeric wire scalar, annotated with the enum's
+ * registry key. Emitters that do not model enums read it as a plain scalar.
+ */
+export type EnumAnnotatedTypeRef = TypeRef & { enumRef?: string };
+
+/** The enum registry key of a collapsed enum usage, or undefined for any other ref. */
+export function enumRefOf(ref: ResolvedTypeRef): string | undefined {
+  return ref.kind === "scalar" ? (ref as EnumAnnotatedTypeRef).enumRef : undefined;
+}
+
+export interface ResolvedEnumMember {
+  /** Member name as declared in C# (`Shipped`). */
+  name: string;
+  /** Numeric wire value of the member. */
+  value: number;
+}
+
+export interface ResolvedEnum {
+  /** Registry key (the `types` key). */
+  fullName: string;
+  members: ResolvedEnumMember[];
+}
 
 export interface ResolvedProperty {
   /** camelCase wire name (matches the server's CamelCase policy). */
@@ -84,6 +111,12 @@ export interface ResolvedController {
 export interface EmitterInput {
   controllers: ResolvedController[];
   types: ResolvedType[];
+  /**
+   * Enum types whose members all carry a finite numeric value. Usages of these
+   * enums are scalars annotated with `enumRef`. Enums with a non-numeric member
+   * value are left out (their usages stay plain numeric scalars).
+   */
+  enums: ResolvedEnum[];
   /** Raw discovery, retained for emitters that need the example payloads. */
   discovery: DiscoveryInfo;
 }
@@ -91,22 +124,30 @@ export interface EmitterInput {
 /**
  * Passthrough/normalizer of the wire `TypeRef`. The producer already builds the
  * neutral IR; we only collapse enum refs to their numeric wire scalar so the
- * emitters never see an enum ref (and need no enum-type plumbing). All other
- * kinds pass through unchanged.
+ * emitters never see an enum ref. When `enumIdentity` contains the enum's key,
+ * the collapsed scalar is annotated with `enumRef` (see `EnumAnnotatedTypeRef`).
+ * All other kinds pass through unchanged.
  */
 export function resolveTypeRef(
   ref: TypeRef,
   enumKeys: ReadonlySet<string>,
+  enumIdentity: ReadonlySet<string> = new Set(),
 ): ResolvedTypeRef {
-  return normalizeRef(ref, enumKeys);
+  return normalizeRef(ref, enumKeys, enumIdentity);
 }
 
 /** Recursively collapse enum refs; recurse into element/key/value. */
-function normalizeRef(ref: TypeRef, enumKeys: ReadonlySet<string>): ResolvedTypeRef {
+function normalizeRef(
+  ref: TypeRef,
+  enumKeys: ReadonlySet<string>,
+  enumIdentity: ReadonlySet<string>,
+): ResolvedTypeRef {
   if (ref.kind === "ref" && ref.ref != null && enumKeys.has(ref.ref)) {
     // Enum serializes as its underlying integer on the wire; `long` is lossless
     // for every C# enum backing type (int/long/short/byte/…).
-    return { kind: "scalar", name: "long", nullable: ref.nullable ?? undefined };
+    const collapsed: EnumAnnotatedTypeRef = { kind: "scalar", name: "long", nullable: ref.nullable ?? undefined };
+    if (enumIdentity.has(ref.ref)) collapsed.enumRef = ref.ref;
+    return collapsed;
   }
   switch (ref.kind) {
     case "array":
@@ -115,16 +156,37 @@ function normalizeRef(ref: TypeRef, enumKeys: ReadonlySet<string>): ResolvedType
     case "event":
       // Events carry their payload as `element` (IObservable<T> → T); recurse so an
       // enum-typed event payload also collapses to its numeric wire scalar.
-      return { ...ref, element: ref.element ? normalizeRef(ref.element, enumKeys) : undefined };
+      return { ...ref, element: ref.element ? normalizeRef(ref.element, enumKeys, enumIdentity) : undefined };
     case "map":
       return {
         ...ref,
-        key: ref.key ? normalizeRef(ref.key, enumKeys) : undefined,
-        value: ref.value ? normalizeRef(ref.value, enumKeys) : undefined,
+        key: ref.key ? normalizeRef(ref.key, enumKeys, enumIdentity) : undefined,
+        value: ref.value ? normalizeRef(ref.value, enumKeys, enumIdentity) : undefined,
       };
     default:
       return ref;
   }
+}
+
+/** Enum bookkeeping threaded through the resolve walk. */
+interface EnumSets {
+  /** Every enum registry key (usages collapse to the numeric scalar). */
+  keys: ReadonlySet<string>;
+  /** Enum keys with a representable identity (usages also carry `enumRef`). */
+  identity: ReadonlySet<string>;
+}
+
+/**
+ * The members of an enum TypeMeta as numeric wire values, or undefined when any
+ * member value is not a finite number (no identity can be emitted for it then).
+ */
+function resolveEnumMembers(tm: TypeMeta): ResolvedEnumMember[] | undefined {
+  const members: ResolvedEnumMember[] = [];
+  for (const m of tm.members ?? []) {
+    if (typeof m.value !== "number" || !Number.isFinite(m.value)) return undefined;
+    members.push({ name: m.name, value: m.value });
+  }
+  return members.length > 0 ? members : undefined;
 }
 
 /** Walk DiscoveryInfo once into a ResolvedEmitterInput. */
@@ -133,13 +195,24 @@ export function buildEmitterInput(
   resolver: NamingResolver,
 ): EmitterInput {
   // Register all *object* type names first so collision detection sees the full
-  // set. Enum TypeMetas stay in discovery.types for documentation but are not
-  // emitted as structured types (their usages collapse to a numeric scalar).
+  // set. Enum TypeMetas are not emitted as structured types (their usages
+  // collapse to a numeric scalar); they are surfaced separately as `enums`.
   const enumKeys = new Set<string>();
+  const enumIdentity = new Set<string>();
+  const enums: ResolvedEnum[] = [];
   for (const [key, tm] of Object.entries(discovery.types)) {
-    if ((tm as TypeMeta).kind === "enum") enumKeys.add(key);
-    else resolver.register(key);
+    if ((tm as TypeMeta).kind === "enum") {
+      enumKeys.add(key);
+      const members = resolveEnumMembers(tm as TypeMeta);
+      if (members) {
+        enumIdentity.add(key);
+        enums.push({ fullName: key, members });
+      }
+    } else {
+      resolver.register(key);
+    }
   }
+  const sets: EnumSets = { keys: enumKeys, identity: enumIdentity };
 
   const types: ResolvedType[] = [];
   for (const [fullName, tm] of Object.entries(discovery.types)) {
@@ -147,55 +220,55 @@ export function buildEmitterInput(
     types.push({
       fullName,
       emittedName: resolver.resolve(fullName),
-      properties: ((tm as TypeMeta).properties ?? []).map((p) => resolveProperty(p, enumKeys)),
+      properties: ((tm as TypeMeta).properties ?? []).map((p) => resolveProperty(p, sets)),
     });
   }
 
   const controllers: ResolvedController[] = (discovery.controllers ?? []).map((c) =>
-    resolveController(c, enumKeys),
+    resolveController(c, sets),
   );
 
-  return { controllers, types, discovery };
+  return { controllers, types, enums, discovery };
 }
 
-function resolveProperty(prop: PropertyMeta, enumKeys: ReadonlySet<string>): ResolvedProperty {
+function resolveProperty(prop: PropertyMeta, sets: EnumSets): ResolvedProperty {
   return {
     wireName: toCamelCase(prop.propertyName),
     declaredName: prop.propertyName,
-    typeRef: resolveTypeRef(prop.propertyType, enumKeys),
+    typeRef: resolveTypeRef(prop.propertyType, sets.keys, sets.identity),
   };
 }
 
-function resolveController(ctrl: ControllerMeta, enumKeys: ReadonlySet<string>): ResolvedController {
+function resolveController(ctrl: ControllerMeta, sets: EnumSets): ResolvedController {
   return {
     name: ctrl.name,
     accessor: toCamelCase(ctrl.name),
     className: ctrl.name.charAt(0).toUpperCase() + ctrl.name.slice(1) + "Client",
-    methods: (ctrl.methods ?? []).map((m) => resolveMethod(ctrl.name, m, enumKeys)),
+    methods: (ctrl.methods ?? []).map((m) => resolveMethod(ctrl.name, m, sets)),
   };
 }
 
 function resolveMethod(
   controllerName: string,
   method: MethodMeta,
-  enumKeys: ReadonlySet<string>,
+  sets: EnumSets,
 ): ResolvedMethod {
   const isVoid = method.returnType?.kind === "void";
   return {
     methodName: method.methodName,
     emittedName: toCamelCase(method.methodName),
     controller: controllerName,
-    parameters: (method.parameters ?? []).map((p) => resolveParameter(p, enumKeys)),
-    returnType: resolveTypeRef(method.returnType ?? { kind: "void" }, enumKeys),
+    parameters: (method.parameters ?? []).map((p) => resolveParameter(p, sets)),
+    returnType: resolveTypeRef(method.returnType ?? { kind: "void" }, sets.keys, sets.identity),
     isVoid,
     documentation: method.documentation,
   };
 }
 
-function resolveParameter(param: ParameterMeta, enumKeys: ReadonlySet<string>): ResolvedParameter {
+function resolveParameter(param: ParameterMeta, sets: EnumSets): ResolvedParameter {
   return {
     name: param.parameterName,
-    typeRef: resolveTypeRef(param.parameterType, enumKeys),
+    typeRef: resolveTypeRef(param.parameterType, sets.keys, sets.identity),
     defaultValue: param.defaultValue,
     documentation: param.documentation,
   };
@@ -224,27 +297,40 @@ export function hasEvents(input: EmitterInput): boolean {
   return input.controllers.some((c) => c.methods.some(isEventMethod));
 }
 
+/** Options for {@link tsTypeOfRef}. */
+export interface TsTypeOfRefOptions {
+  /**
+   * Render a collapsed enum usage (a scalar carrying `enumRef`) as the enum's
+   * emitted type name instead of `number`. The resolver must have the enum key
+   * registered. Used by the TS emitter; the JS emitter keeps `number`.
+   */
+  enumIdentity?: boolean;
+}
+
 /** TS type string for a resolved ref (used by the TS + JS emitters). */
-export function tsTypeOfRef(ref: ResolvedTypeRef, resolver: NamingResolver): string {
-  const base = tsTypeOfRefInner(ref, resolver);
+export function tsTypeOfRef(ref: ResolvedTypeRef, resolver: NamingResolver, opts: TsTypeOfRefOptions = {}): string {
+  const base = tsTypeOfRefInner(ref, resolver, opts);
   return ref.nullable ? `${base} | null` : base;
 }
 
-function tsTypeOfRefInner(ref: ResolvedTypeRef, resolver: NamingResolver): string {
+function tsTypeOfRefInner(ref: ResolvedTypeRef, resolver: NamingResolver, opts: TsTypeOfRefOptions): string {
   switch (ref.kind) {
-    case "scalar": return tsTypeOf(ref.name ?? "any");
+    case "scalar": {
+      const enumRef = opts.enumIdentity ? enumRefOf(ref) : undefined;
+      return enumRef ? resolver.resolve(enumRef) : tsTypeOf(ref.name ?? "any");
+    }
     // JSON materializes sets and streams as arrays — the deser target is T[].
     case "array":
     case "set":
     case "stream":
-      return tsTypeOfRefInner(elementOf(ref), resolver) + "[]";
+      return tsTypeOfRefInner(elementOf(ref), resolver, opts) + "[]";
     // Event: the payload type T of IObservable<T>. The generated client emits a
     // typed `subscribe<T>` surface (not a call), so the element is the handler's
     // `onNext` value type — a scalar, not an array.
     case "event":
-      return tsTypeOfRefInner(elementOf(ref), resolver);
+      return tsTypeOfRefInner(elementOf(ref), resolver, opts);
     case "map":
-      return `Record<string, ${tsTypeOfRefInner((ref as { value?: ResolvedTypeRef }).value ?? { kind: "opaque" }, resolver)}>`;
+      return `Record<string, ${tsTypeOfRefInner((ref as { value?: ResolvedTypeRef }).value ?? { kind: "opaque" }, resolver, opts)}>`;
     case "ref": return resolver.resolve(ref.ref ?? "");
     case "opaque": return "unknown";
     case "void": return "void";

@@ -26,6 +26,7 @@ export {
   SleipnirSseClient,
   type SleipnirSseClientOptions,
   type SseSubscribeOptions,
+  type SseResumeOptions,
   type SseFetchLike,
 } from "./sse.js";
 export {
@@ -47,6 +48,8 @@ export {
   type SleipnirBundleCapability,
   type SleipnirRouterOptions,
   type SleipnirSubscribeOptions,
+  type SleipnirConnectionStore,
+  type SleipnirUnauthenticatedContext,
 } from "./transport-router.js";
 
 import { SleipnirRestClient, type SleipnirRestClientOptions } from "./rest.js";

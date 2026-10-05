@@ -1,7 +1,7 @@
 // Auto-generated Sleipnir controllers. Method names are camelCase; parameter
 // names bind case-sensitively on the wire (keys passed verbatim to SleipnirCall).
 import { SleipnirCall } from "sleipnir-client";
-import type { SleipnirRequest, SubscribeHandlers, SleipnirSubscription } from "sleipnir-client";
+import type { SleipnirRequest, SubscribeHandlers, SleipnirSubscription, SleipnirSubscribeOptions } from "sleipnir-client";
 import { TypedCall } from "./typed-call.js";
 import type { Holding, Order, PriceTick, Profile, Quote } from "./types.js";
 import type { HoldingArrayPaths, OrderPaths, ProfilePaths, QuoteArrayPaths, QuotePaths, _BooleanPaths, _StringArrayPaths, _VoidPaths } from "./typed-call.js";
@@ -78,16 +78,16 @@ export class PortfolioClient {
 
 export class PriceFeedClient {
   /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
-  /** @internal */ _subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>) => Promise<SleipnirSubscription>;
+  /** @internal */ _subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions) => Promise<SleipnirSubscription>;
   constructor(
     build: (controller: string, method: string) => SleipnirCall,
-    subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>) => Promise<SleipnirSubscription>,
+    subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions) => Promise<SleipnirSubscription>,
   ) {
     this._build = build;
     this._subscribe = subscribe;
   }
   /** Live price feed. Subscribe to a symbol (e.g. BTC) to receive a PriceTick ~once per second while the feed is running. Resumable: reconnect within 60s and the server replays the missed ticks by eventId. The feed is anonymous (subscribe as anyone); the admin starts/stops it via Portfolio.StartFeed/StopFeed. */
-  ticks(symbol: string, handlers: SubscribeHandlers<PriceTick>): Promise<SleipnirSubscription> {
-    return this._subscribe<PriceTick>(this._build("PriceFeed", "Ticks").with({ symbol: symbol }).toRequest(), handlers);
+  ticks(symbol: string, handlers: SubscribeHandlers<PriceTick>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription> {
+    return this._subscribe<PriceTick>(this._build("PriceFeed", "Ticks").with({ symbol: symbol }).toRequest(), handlers, options);
   }
 }

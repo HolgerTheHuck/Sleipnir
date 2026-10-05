@@ -191,18 +191,22 @@ the shape the codegen keys on to emit a *subscribe* entry rather than a *call* e
   "parameters":[{ "parameterName":"symbol", "parameterType":{ "kind":"scalar", "name":"string" } }] }
 ```
 
-The TS emitter turns that into a `ticks(symbol, handlers)` method returning
+The TS emitter turns that into a `ticks(symbol, handlers, options?)` method returning
 `Promise<SleipnirSubscription>`; the C# emitter turns it into a `Ticks(Arg<string>)` method
 returning a `Call` you feed to `Subscribe<T>`. Both are the *same* method, just shaped for
 their language's subscribe API:
 
 ```ts
 // generated TS (portal)
-ticks(symbol: string, handlers: SubscribeHandlers<PriceTick>): Promise<SleipnirSubscription> {
+ticks(symbol: string, handlers: SubscribeHandlers<PriceTick>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription> {
   return this._subscribe<PriceTick>(
-    this._build("PriceFeed", "Ticks").with({ symbol }).toRequest(), handlers);
+    this._build("PriceFeed", "Ticks").with({ symbol }).toRequest(), handlers, options);
 }
 ```
+
+`options` (1.5.0-preview) carries `signal` (aborting it ends the subscription — handy for
+tying a feed to a component's lifetime), `resumePolicy`, `timeout` (WS subscribe-ack) and
+`headers` (SSE).
 
 ```csharp
 // generated C# (admin)

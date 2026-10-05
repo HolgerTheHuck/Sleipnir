@@ -16,9 +16,9 @@
 // interfaces are no longer universally assignable — but path keys still need
 // the explicit record for `$`-syntax and cardinality, so the design stands.
 
-import type { EmitterInput, ResolvedController, ResolvedMethod, ResolvedType, ResolvedTypeRef } from "../core/model.js";
+import type { EmitterInput, ResolvedController, ResolvedEnum, ResolvedMethod, ResolvedType, ResolvedTypeRef } from "../core/model.js";
 import { toCamelCase } from "../core/casing.js";
-import { tsTypeOfRef, isEventMethod, eventPayloadRef, hasEvents } from "../core/model.js";
+import { tsTypeOfRef as tsTypeOfRefBase, enumRefOf, isEventMethod, eventPayloadRef, hasEvents } from "../core/model.js";
 import { tsTypeOf } from "../core/scalars.js";
 import { NamingResolver } from "../core/naming.js";
 
@@ -61,23 +61,45 @@ export function emitTsClient(input: EmitterInput, opts: EmitTsOptions = {}): Rec
   };
 }
 
-// We need the NamingResolver used to build the input. Re-derive it from emitted
-// names via a thin wrapper — the input already carries emittedName per type.
+// The TS emitter's own NamingResolver over every name it declares in types.ts —
+// object types AND enums — so a short-name collision between an object and an
+// enum is disambiguated consistently for declarations and references alike.
+// (Declarations therefore use `resolver.resolve(fullName)`, not the input's
+// `emittedName`, which was resolved over object types only.)
 function resolverFor(input: EmitterInput): NamingResolver {
   const r = new NamingResolver();
   for (const t of input.types) r.register(t.fullName);
+  for (const e of input.enums ?? []) r.register(e.fullName);
   return r;
 }
 
+/** TS type of a ref with enum identity: an enum usage renders as the enum type, not `number`. */
+function tsTypeOfRef(ref: ResolvedTypeRef, resolver: NamingResolver): string {
+  return tsTypeOfRefBase(ref, resolver, { enumIdentity: true });
+}
+
+/** A member name as an object-literal key (quoted unless it is a plain identifier). */
+function enumKey(name: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
+}
+
 // ---------------------------------------------------------------------------
-// types.ts — one interface per ResolvedType (camelCase props, presence-aware).
+// types.ts — one `as const` object + literal-union type per enum, one interface
+// per ResolvedType (camelCase props, presence-aware).
 // ---------------------------------------------------------------------------
 
-function emitTypes(input: EmitterInput, _resolver: NamingResolver): string {
+function emitEnum(e: ResolvedEnum, resolver: NamingResolver): string {
+  const name = resolver.resolve(e.fullName);
+  const members = e.members.map((m) => `  ${enumKey(m.name)}: ${m.value},`);
+  return `export const ${name} = {\n${members.join("\n")}\n} as const;\nexport type ${name} = (typeof ${name})[keyof typeof ${name}];`;
+}
+
+function emitTypes(input: EmitterInput, resolver: NamingResolver): string {
+  const enumBlocks = (input.enums ?? []).map((e) => emitEnum(e, resolver));
   const blocks: string[] = [];
   for (const t of input.types) {
     const props = t.properties.map((p) => {
-      const ty = tsTypeOfRef(p.typeRef, _resolver);
+      const ty = tsTypeOfRef(p.typeRef, resolver);
       const doc = p.documentation ? `  /** ${p.documentation} */\n` : "";
       // Presence rule (wire-truthful):
       //  - non-nullable → required (`name: T`): the server serializes call results
@@ -89,15 +111,18 @@ function emitTypes(input: EmitterInput, _resolver: NamingResolver): string {
       const opt = p.typeRef.nullable ? "?" : "";
       return `${doc}  ${p.wireName}${opt}: ${ty};`;
     });
-    blocks.push(`export interface ${t.emittedName} {\n${props.join("\n")}\n}`);
+    blocks.push(`export interface ${resolver.resolve(t.fullName)} {\n${props.join("\n")}\n}`);
   }
-  if (blocks.length === 0) return "// No structured types declared in discovery.\n";
-  return `// Auto-generated Sleipnir data types. Properties are camelCase (wire).
-// Required (always present on the wire) unless nullable — nullable properties are
-// presence-optional (\`?:\`) because event frames omit null values (WhenWritingNull);
-// the value can still be null, so the \`| null\` remains.
-
-${blocks.join("\n\n")}\n`;
+  if (blocks.length === 0 && enumBlocks.length === 0)
+    return "// No structured types declared in discovery.\n";
+  // Enums: the wire value stays the number; the `as const` object gives the
+  // member names, the same-named type is the union of the member values.
+  const enumSection = enumBlocks.length
+    ? `// Enums: the wire carries the numeric value. \`X.Member\` names a value; the type\n// \`X\` is the union of the member values (no TS \`enum\` — tree-shakable,\n// isolatedModules-safe).\n\n${enumBlocks.join("\n\n")}\n`
+    : "";
+  if (blocks.length === 0) return `// Auto-generated Sleipnir data types.\n\n${enumSection}`;
+  const header = `// Auto-generated Sleipnir data types. Properties are camelCase (wire) and\n// presence-aware: non-nullable properties are required (always present on\n// the wire); nullable properties are presence-optional (\`?:\`) because event\n// frames omit null values (WhenWritingNull) — the value can still be null,\n// so the \`| null\` remains.\n\n`;
+  return `${header}${enumSection}${enumSection ? "\n" : ""}${blocks.join("\n\n")}\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,8 +206,13 @@ function descendProps(
 function emitTypedCall(input: EmitterInput, resolver: NamingResolver): string {
   const pathRecords: string[] = [];
   // typed-call.ts references every emitted type name in path records.
-  const typeImport = input.types.length
-    ? `import type { ${input.types.map((t) => t.emittedName).join(", ")} } from "./types.js";\n`
+  const enums = input.enums ?? [];
+  const importedNames = [
+    ...input.types.map((t) => resolver.resolve(t.fullName)),
+    ...enums.map((e) => resolver.resolve(e.fullName)),
+  ];
+  const typeImport = importedNames.length
+    ? `import type { ${importedNames.join(", ")} } from "./types.js";\n`
     : "";
 
   // Object types: object + array path records. Paths descend recursively into
@@ -192,7 +222,7 @@ function emitTypedCall(input: EmitterInput, resolver: NamingResolver): string {
   const typesByFullName = new Map<string, ResolvedType>(input.types.map((t) => [t.fullName, t]));
 
   for (const t of input.types) {
-    const name = t.emittedName;
+    const name = resolver.resolve(t.fullName);
     // XPaths: "$" → X, then descend "$.prop", "$.prop.sub", "$.arr[*].sub", …
     const objEntries: string[] = [`  "$": ${name};`];
     descendProps("$", t, "single", 0, new Set([t.fullName]), objEntries, resolver, typesByFullName);
@@ -205,6 +235,16 @@ function emitTypedCall(input: EmitterInput, resolver: NamingResolver): string {
     descendProps("$[0]", t, "single", 0, new Set([t.fullName]), arrEntries, resolver, typesByFullName);
     descendProps("$[*]", t, "array", 0, new Set([t.fullName]), arrEntries, resolver, typesByFullName);
     pathRecords.push(`export interface ${name}ArrayPaths {\n${arrEntries.join("\n")}\n}`);
+  }
+
+  // Enums: like scalar path records, but typed with the enum type, so an alias
+  // exposed from an enum-returning call binds to an enum-typed parameter.
+  for (const e of enums) {
+    const name = resolver.resolve(e.fullName);
+    pathRecords.push(`export interface ${name}Paths {\n  "$": ${name};\n}`);
+    pathRecords.push(
+      `export interface ${name}ArrayPaths {\n  "$": ${name}[];\n  "$[0]": ${name};\n  "$[*]": ${name}[];\n}`,
+    );
   }
 
   // Scalar kinds: scalar + scalar-array path records (for scalar-returning methods).
@@ -314,6 +354,17 @@ function scalarArrayPathsName(s: string): string {
 }
 
 /**
+ * The scalar path-record kind for a scalar name: its TS type when a record is
+ * emitted for it (`SCALAR_KINDS`), else `unknown`. A scalar whose TS type has no
+ * record (e.g. the `any` scalar) would otherwise reference an undeclared
+ * `_AnyPaths` and break the generated client's compile.
+ */
+function scalarPathKind(name: string | undefined): string {
+  const t = tsTypeOf(name ?? "any");
+  return t === "void" || (SCALAR_KINDS as readonly string[]).includes(t) ? t : "unknown";
+}
+
+/**
  * The generated path-record interface name for a return type ref — the `TPaths`
  * carried by the method's `TypedCall<T, TPaths>`. Arrays/sets/streams use
  * `XArrayPaths` (or `_ScalarArrayPaths`); object refs use `XPaths`; scalars use
@@ -328,8 +379,10 @@ function pathRecordForRef(ref: ResolvedTypeRef, resolver: NamingResolver): strin
       return arrayPathsNameFor(ref.element, resolver);
     case "ref":
       return resolver.resolve(ref.ref ?? "") + "Paths";
-    case "scalar":
-      return scalarPathsName(tsTypeOf(ref.name ?? "any"));
+    case "scalar": {
+      const enumRef = enumRefOf(ref);
+      return enumRef ? resolver.resolve(enumRef) + "Paths" : scalarPathsName(scalarPathKind(ref.name));
+    }
     case "opaque":
     case "void":
       return "_VoidPaths"; // opaque has no structured paths to expose
@@ -347,7 +400,10 @@ function arrayPathsNameFor(element: ResolvedTypeRef | undefined, resolver: Namin
   const el = element ?? { kind: "opaque" as const };
   switch (el.kind) {
     case "ref": return resolver.resolve(el.ref ?? "") + "ArrayPaths";
-    case "scalar": return scalarArrayPathsName(tsTypeOf(el.name ?? "any"));
+    case "scalar": {
+      const enumRef = enumRefOf(el);
+      return enumRef ? resolver.resolve(enumRef) + "ArrayPaths" : scalarArrayPathsName(scalarPathKind(el.name));
+    }
     case "opaque": return scalarArrayPathsName("unknown");
     default: return scalarArrayPathsName("unknown"); // nested array/map element — opaque-ish
   }
@@ -362,11 +418,10 @@ function emitControllers(input: EmitterInput, resolver: NamingResolver): string 
   const pathImports = collectPathRecordImports(input, resolver);
   const events = hasEvents(input);
   const classes = input.controllers.map((c) => emitControllerClass(c, resolver));
-  // Event-Controller brauchen die Subscribe-Typen aus dem Runtime-Client (neben
-  // SleipnirCall). Controller ohne Event-Method bleiben unverändert (kein Import-
-  // Schwenk → story01/story02-Snapshots byte-identisch).
+  // Event controllers need the subscribe types from the runtime client (next to
+  // SleipnirCall). Controllers without event methods keep their original imports.
   const subscribeTypeImport = events
-    ? `import type { SleipnirRequest, SubscribeHandlers, SleipnirSubscription } from "sleipnir-client";\n`
+    ? `import type { SleipnirRequest, SubscribeHandlers, SleipnirSubscription, SleipnirSubscribeOptions } from "sleipnir-client";\n`
     : "";
   return `// Auto-generated Sleipnir controllers. Method names are camelCase; parameter
 // names bind case-sensitively on the wire (keys passed verbatim to SleipnirCall).
@@ -383,7 +438,7 @@ function emitControllerClass(ctrl: ResolvedController, resolver: NamingResolver)
     isEventMethod(m) ? emitEventMethod(ctrl, m, resolver) : emitMethod(ctrl, m, resolver),
   );
   if (!events) {
-    // Keine Event-Methoden → ursprüngliche Form (build-only), Snapshots stabil.
+    // No event methods → the original build-only form.
     return `export class ${ctrl.className} {
   /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
   constructor(build: (controller: string, method: string) => SleipnirCall) {
@@ -392,14 +447,14 @@ function emitControllerClass(ctrl: ResolvedController, resolver: NamingResolver)
 ${methods.join("\n\n")}
 }`;
   }
-  // Mit Event-Methoden: zweiter ctor-Parameter `subscribe` (delegiert an den
-  // WS-Client). Event-Methoden rufen this._subscribe<T>(req, handlers) auf.
+  // With event methods: a second ctor parameter `subscribe` (delegates to the
+  // transport router). Event methods call this._subscribe<T>(req, handlers, options).
   return `export class ${ctrl.className} {
   /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
-  /** @internal */ _subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>) => Promise<SleipnirSubscription>;
+  /** @internal */ _subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions) => Promise<SleipnirSubscription>;
   constructor(
     build: (controller: string, method: string) => SleipnirCall,
-    subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>) => Promise<SleipnirSubscription>,
+    subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions) => Promise<SleipnirSubscription>,
   ) {
     this._build = build;
     this._subscribe = subscribe;
@@ -414,6 +469,10 @@ ${methods.join("\n\n")}
  * delegates to the root client's `_subscribe<T>`, which sends `kind:"subscribe"`
  * over WebSocket and routes the returned `SleipnirSubscription`'s event frames to
  * the caller's handlers. Events are NOT chainable (no `exposes`/`@alias`).
+ *
+ * The trailing optional `options` (`SleipnirSubscribeOptions`: `signal`,
+ * `resumePolicy`, `timeout`, SSE `headers`) is passed through to the router;
+ * aborting `signal` ends the subscription (see the root client's `_subscribe`).
  */
 function emitEventMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: NamingResolver): string {
   const payloadType = tsTypeOfRef(eventPayloadRef(m), resolver);
@@ -431,9 +490,10 @@ function emitEventMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: 
     ? `.with({ ${withEntries.join(", ")} })`
     : "";
   const handlerParam = `handlers: SubscribeHandlers<${payloadType}>`;
+  const optionsParam = `options?: SleipnirSubscribeOptions`;
   const doc = m.documentation ? `  /** ${m.documentation} */\n` : "";
-  return `${doc}  ${m.emittedName}(${[...params, handlerParam].join(", ")}): Promise<SleipnirSubscription> {
-    return this._subscribe<${payloadType}>(this._build("${ctrl.name}", "${m.methodName}")${withCall}.toRequest(), handlers);
+  return `${doc}  ${m.emittedName}(${[...params, handlerParam, optionsParam].join(", ")}): Promise<SleipnirSubscription> {
+    return this._subscribe<${payloadType}>(this._build("${ctrl.name}", "${m.methodName}")${withCall}.toRequest(), handlers, options);
   }`;
 }
 
@@ -484,20 +544,31 @@ function emitClient(input: EmitterInput, opts: EmitTsOptions): string {
   const events = hasEvents(input);
   const imports = input.controllers.map((c) => `import { ${c.className} } from "./controllers.js";`).join("\n");
   const accessors = input.controllers.map((c) => `  readonly ${c.accessor}: ${c.className};`);
-  // Event-Controller brauchen den `subscribe`-Callback als zweiten ctor-Arg; reine
-  // Call-Controller bleiben beim 1-arg-ctor (Snapshots von story01/story02 stabil).
+  // Event controllers take the `subscribe` callback as a second ctor arg; pure
+  // call controllers keep the 1-arg ctor.
   const inits = input.controllers.map((c) => {
     const args = c.methods.some(isEventMethod) ? "build, this._subscribe" : "build";
     return `    this.${c.accessor} = new ${c.className}(${args});`;
   });
-  // Typ-Import-Fragment + `_subscribe`-Feld, nur wenn Events vorhanden. Das `_subscribe`-
-  // Feld delegiert an den Transport-Router, der den WS-vs-SSE-Unterschied kapselt
-  // (WS reicht das Request durch; SSE entpackt es zu (controller, method, params)).
-  const subscribeTypes = events
-    ? ", SleipnirRequest, SubscribeHandlers, SleipnirSubscription"
-    : "";
+  // The `_subscribe` field (only when events exist) delegates to the transport router,
+  // which bridges the WS-vs-SSE difference (WS passes the request through; SSE unpacks
+  // it into (controller, method, params)). It also makes `options.signal` end an
+  // ACTIVE subscription on every backend: the router's SSE/SignalR backends already
+  // do that, the WS backend honors the signal only until the subscribe is
+  // acknowledged — so the abort is bridged to the idempotent `unsubscribe()` here.
   const subscribeField = events
-    ? `  private readonly _subscribe = <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>): Promise<SleipnirSubscription> => this._router.subscribe<T>(req, handlers);\n`
+    ? `  private readonly _subscribe = async <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription> => {
+    const sub = await this._router.subscribe<T>(req, handlers, options);
+    const signal = options?.signal;
+    if (signal) {
+      // Aborting the signal ends the subscription (unsubscribe() is idempotent).
+      const end = (): void => { sub.unsubscribe().catch(() => undefined); };
+      if (signal.aborted) end();
+      else signal.addEventListener("abort", end, { once: true });
+    }
+    return sub;
+  };
+`
     : "";
 
   return `// Auto-generated root Sleipnir client (capability: ${capability}). Compose with the sleipnir-client runtime.
@@ -505,7 +576,7 @@ function emitClient(input: EmitterInput, opts: EmitTsOptions): string {
 // and falls back to REST+SSE on failure; useTransport() switches explicitly. The public surface
 // is identical across all capabilities — only the bundled backends differ.
 import { SleipnirCall, SleipnirTransportRouter } from "sleipnir-client";
-import type { SleipnirResponse, SleipnirRequest, SubscribeHandlers, SleipnirSubscription, SleipnirTransport, SleipnirRestClient, SleipnirWebSocketClient, SleipnirSseClient, SleipnirSignalrClient, SleipnirRestClientOptions, SleipnirWebSocketClientOptions, SleipnirSseClientOptions, SleipnirSignalrClientOptions } from "sleipnir-client";
+import type { SleipnirResponse, SleipnirRequest, SubscribeHandlers, SleipnirSubscription,${events ? " SleipnirSubscribeOptions," : ""} SleipnirTransport, SleipnirRestClient, SleipnirWebSocketClient, SleipnirSseClient, SleipnirSignalrClient, SleipnirRestClientOptions, SleipnirWebSocketClientOptions, SleipnirSseClientOptions, SleipnirSignalrClientOptions } from "sleipnir-client";
 import { Batch, TypedCall } from "./typed-call.js";
 ${imports}
 
@@ -597,7 +668,7 @@ export { SleipnirClient } from "./client.js";
 /** Collect the import line for all emitted type names referenced by controllers. */
 function collectTypeImports(input: EmitterInput, resolver: NamingResolver): string {
   const used = new Set<string>();
-  for (const t of input.types) used.add(t.emittedName);
+  for (const t of input.types) used.add(resolver.resolve(t.fullName));
   for (const c of input.controllers) {
     for (const m of c.methods) {
       if (!m.isVoid) collectRefs(m.returnType, resolver, used);
@@ -631,18 +702,24 @@ function collectRefs(ref: ResolvedTypeRef, resolver: NamingResolver, used: Set<s
     case "ref":
       used.add(resolver.resolve(ref.ref ?? ""));
       break;
+    case "scalar": {
+      // A collapsed enum usage references the enum type.
+      const enumRef = enumRefOf(ref);
+      if (enumRef) used.add(resolver.resolve(enumRef));
+      break;
+    }
     case "array":
     case "set":
     case "stream":
     case "event":
-      // Event-Payload (T aus IObservable<T>) kann ein ref sein → importieren,
-      // damit die `SubscribeHandlers<PayloadType>`-Signatur den Typ auflöst.
+      // An event payload (T of IObservable<T>) can be a ref → import it so the
+      // `SubscribeHandlers<PayloadType>` signature resolves the type.
       if (ref.element) collectRefs(ref.element, resolver, used);
       break;
     case "map":
       if (ref.key) collectRefs(ref.key, resolver, used);
       if (ref.value) collectRefs(ref.value, resolver, used);
       break;
-    // scalar / opaque / void → nothing to import.
+    // opaque / void (and plain scalars) → nothing to import.
   }
 }

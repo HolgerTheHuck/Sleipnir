@@ -1,23 +1,23 @@
 // Auto-generated Sleipnir controllers. Method names are camelCase; parameter
 // names bind case-sensitively on the wire (keys passed verbatim to SleipnirCall).
 import { SleipnirCall } from "sleipnir-client";
-import type { SleipnirRequest, SubscribeHandlers, SleipnirSubscription } from "sleipnir-client";
+import type { SleipnirRequest, SubscribeHandlers, SleipnirSubscription, SleipnirSubscribeOptions } from "sleipnir-client";
 import { TypedCall } from "./typed-call.js";
 import type { Message, User } from "./types.js";
 import type { MessageArrayPaths, UserPaths } from "./typed-call.js";
 
 export class ChatClient {
   /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
-  /** @internal */ _subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>) => Promise<SleipnirSubscription>;
+  /** @internal */ _subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions) => Promise<SleipnirSubscription>;
   constructor(
     build: (controller: string, method: string) => SleipnirCall,
-    subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>) => Promise<SleipnirSubscription>,
+    subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions) => Promise<SleipnirSubscription>,
   ) {
     this._build = build;
     this._subscribe = subscribe;
   }
-  messageReceived(chatId: number, handlers: SubscribeHandlers<Message>): Promise<SleipnirSubscription> {
-    return this._subscribe<Message>(this._build("Chat", "MessageReceived").with({ chatId: chatId }).toRequest(), handlers);
+  messageReceived(chatId: number, handlers: SubscribeHandlers<Message>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription> {
+    return this._subscribe<Message>(this._build("Chat", "MessageReceived").with({ chatId: chatId }).toRequest(), handlers, options);
   }
 
   getHistory(chatId: number): TypedCall<Message[], MessageArrayPaths> {
@@ -27,16 +27,16 @@ export class ChatClient {
 
 export class TickerClient {
   /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
-  /** @internal */ _subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>) => Promise<SleipnirSubscription>;
+  /** @internal */ _subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions) => Promise<SleipnirSubscription>;
   constructor(
     build: (controller: string, method: string) => SleipnirCall,
-    subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>) => Promise<SleipnirSubscription>,
+    subscribe: <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions) => Promise<SleipnirSubscription>,
   ) {
     this._build = build;
     this._subscribe = subscribe;
   }
-  ticks(handlers: SubscribeHandlers<number>): Promise<SleipnirSubscription> {
-    return this._subscribe<number>(this._build("Ticker", "Ticks").toRequest(), handlers);
+  ticks(handlers: SubscribeHandlers<number>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription> {
+    return this._subscribe<number>(this._build("Ticker", "Ticks").toRequest(), handlers, options);
   }
 }
 

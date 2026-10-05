@@ -1,0 +1,77 @@
+{
+  "discoveryVersion": "1",
+  "controllers": [
+    {
+      "name": "Order",
+      "methods": [
+        {
+          "methodName": "GetById",
+          "returnType": { "kind": "ref", "ref": "Shop.Order" },
+          "parameters": [{ "parameterName": "id", "parameterType": { "kind": "scalar", "name": "int" } }]
+        },
+        {
+          "methodName": "GetState",
+          "returnType": { "kind": "ref", "ref": "Shop.OrderState" },
+          "parameters": [{ "parameterName": "id", "parameterType": { "kind": "scalar", "name": "int" } }]
+        },
+        {
+          "methodName": "GetStates",
+          "returnType": { "kind": "array", "element": { "kind": "ref", "ref": "Shop.OrderState" } },
+          "parameters": []
+        },
+        {
+          "methodName": "FindByState",
+          "returnType": { "kind": "array", "element": { "kind": "ref", "ref": "Shop.Order" } },
+          "parameters": [{ "parameterName": "state", "parameterType": { "kind": "ref", "ref": "Shop.OrderState" } }]
+        },
+        {
+          "methodName": "SetState",
+          "returnType": { "kind": "void" },
+          "parameters": [
+            { "parameterName": "id", "parameterType": { "kind": "scalar", "name": "int" } },
+            { "parameterName": "state", "parameterType": { "kind": "ref", "ref": "Shop.OrderState" } },
+            { "parameterName": "priority", "parameterType": { "kind": "ref", "ref": "Shop.Priority", "nullable": true } }
+          ]
+        },
+        {
+          "methodName": "StateChanged",
+          "returnType": { "kind": "event", "element": { "kind": "ref", "ref": "Shop.OrderState" } },
+          "parameters": [{ "parameterName": "orderId", "parameterType": { "kind": "scalar", "name": "int" } }]
+        }
+      ]
+    }
+  ],
+  "types": {
+    "Shop.Order": {
+      "kind": "object",
+      "typeName": "Shop.Order",
+      "properties": [
+        { "propertyName": "Id", "propertyType": { "kind": "scalar", "name": "int" } },
+        { "propertyName": "State", "propertyType": { "kind": "ref", "ref": "Shop.OrderState" } },
+        { "propertyName": "PreviousState", "propertyType": { "kind": "ref", "ref": "Shop.OrderState", "nullable": true } },
+        { "propertyName": "History", "propertyType": { "kind": "array", "element": { "kind": "ref", "ref": "Shop.OrderState" } } },
+        { "propertyName": "Priority", "propertyType": { "kind": "ref", "ref": "Shop.Priority" } }
+      ],
+      "example": { "id": 0, "state": 0, "previousState": null, "history": [], "priority": 0 }
+    },
+    "Shop.OrderState": {
+      "kind": "enum",
+      "typeName": "Shop.OrderState",
+      "properties": [],
+      "members": [
+        { "name": "Open", "value": 0 },
+        { "name": "Shipped", "value": 1 },
+        { "name": "Cancelled", "value": -1 }
+      ]
+    },
+    "Shop.Priority": {
+      "kind": "enum",
+      "typeName": "Shop.Priority",
+      "properties": [],
+      "members": [
+        { "name": "Low", "value": 0 },
+        { "name": "High", "value": 10 }
+      ]
+    }
+  }
+}

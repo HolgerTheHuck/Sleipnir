@@ -141,9 +141,14 @@ TypeRef =
   nullable. `stream` and `void` are never nullable. `Task<T>`/`ValueTask<T>` returns are reported
   non-nullable (the NRT of `T` inside `Task<T>` is not exposed by `NullabilityInfoContext`).
 - **Enums** register as `TypeMeta` with `kind:"enum"` + `members:[{name,value}]`; a usage site is
-  `{kind:"ref", ref:"<enumKey>"}`. Sleipnir serializes enums as their underlying **integer**, so a
-  ref to an enum emits as `number`/`long`/`int` — the generator does **not** emit a native enum
-  declaration; `TypeMeta.members` is documentation only.
+  `{kind:"ref", ref:"<enumKey>"}`. Sleipnir serializes enums as their underlying **integer**, and
+  the wire stays that integer in every generated client. The **TypeScript** emitter (since
+  1.5.0-preview) keeps the enum identity: it emits an `as const` object plus a same-named
+  literal-union type (see §5.1), and use sites reference that type instead of `number`. The JS,
+  C# and Python emitters still render an enum usage as its numeric scalar
+  (`number`/`long`/`int`) without a native enum declaration.
+  *Limitation:* discovery does not report a per-type `JsonStringEnumConverter`; an enum serialized
+  as a string is still described (and typed) by its numeric members.
 - **Default values**: `ParameterMeta.defaultValue` carries a C# compile-time constant when the
   method declares one (`void M(int id = 0)`); absent for non-constant defaults (`= new X()`) or no
   default. The generator renders it as the parameter default in the generated signature.
@@ -577,11 +582,29 @@ The shapes below are from the committed Story-01 snapshots
 The TS emitter produces a typed client with **dependency chaining as a first-class,
 compile-checked surface**. Five files:
 
-- **`api/types.ts`** — a POCO interface per contract type. **Presence rule:** non-nullable
-  properties are required (`name: T`) — the server serializes every listed property (call
-  responses write nulls, not omissions). Nullable properties are presence-optional
-  (`name?: T | null`) because event frames serialize with `WhenWritingNull` and omit null
-  values; the `| null` still carries the value nullability.
+- **`api/types.ts`** — a POCO interface per contract type, plus an enum declaration per contract
+  enum. Properties are camelCase and **presence-aware** (see the presence rule below).
+  Nullability *is* honored — a nullable occurrence is `T | null`.
+  Enums are an `as const` object plus a literal-union type of the member values (no TS `enum`, so
+  the output stays tree-shakable and `isolatedModules`/`verbatimModuleSyntax`-safe); the wire
+  value is the number:
+
+  ```ts
+  export const OrderState = {
+    Open: 0,
+    Shipped: 1,
+  } as const;
+  export type OrderState = (typeof OrderState)[keyof typeof OrderState];   // 0 | 1
+
+  export interface Order {
+    state: OrderState;
+    previousState: OrderState | null;
+  }
+  ```
+
+  Parameters, return types, event payloads and path records reference `OrderState` (an enum-returning
+  method gets `OrderStatePaths`/`OrderStateArrayPaths`, so an exposed enum alias binds to an
+  enum-typed parameter).
 - **`api/controllers.ts`** — one client class per controller; each method returns a `TypedCall<T, TPaths>`.
 - **`api/typed-call.ts`** — `TypedCall`, `TypedRequest`, `Batch`, and the per-type **path records**
   (`OrderPaths`, `OrderArrayPaths`, …) that constrain `exposes(jsonPath, alias)` to real `$`-paths
@@ -742,6 +765,24 @@ var sub = await client.Subscribe<PriceTick>(client.Market.Prices("BTC"), ResumeP
 sub.Subscribe(tick => Console.WriteLine(tick.Price));
 // ... later
 sub.Dispose();
+```
+
+In the generated **TypeScript** client each event method takes the handlers and an optional
+`options` argument (`SleipnirSubscribeOptions` from `sleipnir-client`): `signal` (an
+`AbortSignal` — aborting it **ends the subscription**, before or after it was acknowledged),
+`resumePolicy` (per-subscription override, WS/SSE/SignalR), `timeout` (subscribe-ack timeout, WS
+only) and `headers` (SSE only).
+
+```ts
+const ac = new AbortController();
+const sub = await client.chat.messageReceived(42, { onNext: (m) => render(m) }, {
+  signal: ac.signal,
+  resumePolicy: () => "resume",
+  timeout: 5_000,
+});
+// ... later: either of these ends it
+ac.abort();            // e.g. tied to a component's lifetime
+await sub.unsubscribe();
 ```
 
 Events are only available over a bundled event backend: `--transport rest` bundles SSE,

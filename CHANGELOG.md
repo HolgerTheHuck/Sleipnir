@@ -5,29 +5,99 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] — 1.5.0-preview
 
-### Fixed — Codegen: required/optional presence no longer conflated with nullability
+### Added — TS client (`sleipnir-client`): connection state, 401 hook, subscription lifecycle (U4)
 
+- **`SleipnirTransportRouter.connection`** — aggregated connection status
+  (`"connecting" | "open" | "reconnecting" | "closed"`, type `SleipnirConnectionStatus`) as a
+  store: `connection.state` + `connection.subscribe(listener) → unsubscribe` (Svelte-store
+  contract). Follows the active profile (WS / SignalR connection; REST is `"open"`, SSE streams
+  surface `"reconnecting"`; `auto` probe = `"connecting"`). `SleipnirSseClient` and
+  `SleipnirSignalrClient` gain `state` + `onStateChanged` (WS had them); a user `onStateChanged`
+  passed through the router options still fires.
+- **`onUnauthenticated`** router option — on a 401 the app refreshes its credentials, then the
+  operation is retried exactly once (single-flight across concurrent 401s; batches only when
+  every response is 401; 403 never). On `ws`/`signalr` the connection is re-established after the
+  hook via the new `SleipnirWebSocketClient.reconnect()` / `SleipnirSignalrClient.reconnect()`.
+- **`SleipnirErrorBody.category`** / **`SleipnirError.category`** typed as the server's
+  `SleipnirErrorCategory` string-literal union (+ `SLEIPNIR_ERROR_CATEGORIES`); numeric or
+  differently-cased values are canonicalized. Fixes the drift against
+  `SleipnirCommon/Results/SleipnirErrorCategory.cs`.
+- **Subscriptions:** `SleipnirSubscription.ended` (optional on the interface, always set by the
+  built-in clients) resolves when a subscription ends for any reason, and the caller's `signal`
+  listener is detached then. `timeout` (ack timeout) is now forwarded to SSE and SignalR too
+  (`SseSubscribeOptions.timeout`, `SseResumeOptions.timeout`, `SignalrSubscribeOptions.timeout`).
+
+### Fixed — TS client subscriptions
+
+- WebSocket: `signal` aborted **after** the subscribe ack now unsubscribes (it was honored only
+  until the ack). The handle (`subscriptionId`, `lastEventId`, `unsubscribe()`) and the signal now
+  follow a reconnect re-subscribe (previously the handle kept the dead pre-reconnect id).
+- WebSocket: when no reconnect follows (reconnect disabled, or the backoff is exhausted), active
+  subscriptions now end with `onError` instead of lingering silently.
+- SSE: aborting the `signal` before the ack rejects with `CancelledError` instead of entering
+  the reconnect loop.
+- SignalR: aborting the `signal` before the ack rejects with `CancelledError` (the promise used
+  to stay pending); an already-aborted signal is honored; concurrent `connect()` calls share one
+  hub connection.
+
+### Added — Server: opt-in `?access_token=` on WebSocket upgrade and SSE (U4, decision 6.3)
+
+- **`SleipnirOptions.AcceptAccessTokenQuery`** (default `false`). When on, a bearer sent as
+  `?access_token=` is promoted to `Authorization: Bearer …` — only on the WebSocket upgrade
+  (paths registered by `UseSleipnirWebSocket`) and the SSE `GET {prefix}/events/…` endpoints
+  (registered by `MapSleipnirEndpoints`), never on REST/JSON-RPC/discovery. A startup filter
+  places the middleware before the host's `UseAuthentication`, so any bearer handler (e.g.
+  JwtBearer) validates it unchanged; an existing `Authorization` header wins. The parameter is
+  removed from the query string, so downstream logs never contain it. Cookie auth stays the
+  recommended browser path. Tests: `AccessTokenQueryTests`.
+### Changed — `sleipnir-codegen` TypeScript emitter (codegen correctness)
+
+- **Enum identity.** Contract enums are emitted into `api/types.ts` as an `as const` object
+  plus a same-named literal-union type —
+  `export const OrderState = { Open: 0, Shipped: 1 } as const;` and
+  `export type OrderState = (typeof OrderState)[keyof typeof OrderState];` — instead of
+  collapsing to `number`. DTO properties, parameters, return types, event payloads and path
+  records (`OrderStatePaths` / `OrderStateArrayPaths`) reference the type. The wire value stays
+  the number. No TS `enum` (tree-shakable, `isolatedModules`/`verbatimModuleSyntax`-safe).
+  An enum with a non-numeric member value falls back to `number`. **Source-compatible for
+  readers; stricter for writers:** code that passed an arbitrary `number` where an enum is
+  expected now fails to compile — use `OrderState.Shipped` (or a member value).
+  The JS, C# and Python emitters are unchanged (still the numeric scalar).
+- **Event subscribe options.** Every generated event method takes an optional trailing
+  `options?: SleipnirSubscribeOptions` (`signal`, `resumePolicy`, `timeout`, SSE `headers`),
+  passed through to `SleipnirTransportRouter.subscribe`. Aborting `signal` **ends the
+  subscription** on every backend — the generated client bridges the abort to the idempotent
+  `unsubscribe()`, because the WebSocket backend honors the signal only until the subscribe is
+  acknowledged.
+- **Requiredness vs. nullability (presence rule).** Generated clients no longer mark every
+  contract property optional. Discovery carries NRT nullability, and the server's wire behavior
+  derives presence from it: non-nullable properties are emitted **required** (`name: T`);
+  nullable properties stay **presence-optional** (`name?: T | null` in TS, `[name]` in JSDoc,
+  `Optional[T] = None` in Python, `T?` in C#) because event frames serialize with
+  `WhenWritingNull` — a null value is genuinely absent there. Call responses always write every
+  listed property. Affected emitters: TS, JSDoc (JS), C# (both implementations, parity gate
+  untouched), Python. The response **envelope** (`Task<T?>` / `data: T | null`) stays null-able.
+  **Regenerating a client narrows the emitted types** — consumer code that constructs contract
+  objects partially now fails to compile, which is the intended direction. (Supersedes the
+  earlier stance of "properties stay optional until discovery carries `required`".)
+
+### Fixed — `sleipnir-codegen` TypeScript emitter
+
+- A method returning the `any` scalar referenced an undeclared `_AnyPaths` path record and the
+  generated client failed to compile; scalars without their own path record now map to
+  `_UnknownPaths` / `_UnknownArrayPaths`.
 - **All generated clients marked every contract property optional**, although the server
   always sends them: the emitters assumed "discovery carries no nullability" and emitted
-  `symbol?: string` for a non-nullable C# `string` (`string? Name` / `DateTime?` were
-  already mapped to `| null` / `?` / `Optional[...]` correctly — only the
-  required/optional distinction was missing). That forced TypeScript consumers into
-  `?.` / `??` checks that can never apply on call data.
-- **New presence rule** (see [`docs/discovery-schema.md`](docs/discovery-schema.md) §7):
-  non-nullable properties are emitted **required**; nullable properties stay
-  **presence-optional** (`name?: T | null` in TS, `[name]` in JSDoc, `Optional[T] = None`
-  in Python, `T?` in C#) because event frames serialize with `WhenWritingNull` — a null
-  value is genuinely absent there. Call responses always write every listed property.
-  Affected emitters: TS, JSDoc (JS), C# (both implementations, parity gate untouched),
-  Python. The response **envelope** (`Task<T?>` / `data: T | null`) stays null-able as
-  before. **Regenerating a client narrows the emitted types** — consumer code that
-  constructs contract objects partially now fails to compile, which is the intended
-  direction.
+  `symbol?: string` for a non-nullable C# `string`. That forced TypeScript consumers into
+  `?.` / `??` checks that can never apply on call data — fixed by the presence rule above.
 - Coverage: the Story-01 fixture and the live story contract gained nullable properties
   (`Order.Note` string?, `Customer.Score` int?) so all four emitters' nullable paths are
   pinned by the goldens and the compile tests (`cs-compile`, `tsc`, `py_compile`).
+- Python: a nullable property previously emitted a double-`Optional` wrap
+  (`Optional[Optional[T]] = None`) — the emitters wrapped again although the model's
+  `pyTypeOfRef` already does; now the wrap happens exactly once.
 
 ## [1.4.3] — 2026-09-02
 

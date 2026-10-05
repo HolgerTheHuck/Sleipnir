@@ -106,6 +106,24 @@ catch (SleipnirException ex) when (ex.Error?.Category == SleipnirErrorCategory.N
 The category is transport-uniform: REST, WebSocket, and SignalR all carry the same
 `error.category` field. No need to switch on transport + code.
 
+**Wire form.** JSON transports write the enum **name** in PascalCase (`"category":"NotFound"` —
+`[JsonConverter(typeof(JsonStringEnumConverter))]` on `SleipnirErrorCategory`); the C# MessagePack
+path carries the enum as its number (key 4). Transport-synthesized errors (e.g. a non-2xx HTTP
+status seen by a client) have no category.
+
+**TypeScript (`sleipnir-client` ≥ 1.5.0-preview).** `SleipnirErrorBody.category` is typed as the
+string-literal union `SleipnirErrorCategory` (`"None" | "InvalidArgument" | "Unauthenticated" |
+"PermissionDenied" | "NotFound" | "Conflict" | "FailedPrecondition" | "ResourceExhausted" |
+"Internal" | "Unavailable" | "Cancelled"`, also as the runtime list `SLEIPNIR_ERROR_CATEGORIES`),
+and `SleipnirError.category` carries it into thrown errors. The client canonicalizes a numeric or
+differently-cased value (a host that overrides the JSON enum handling) to the PascalCase name;
+an unknown future value is passed through — treat it like `"None"`.
+
+```ts
+const res = await client.call(req);
+if (res.error?.category === "PermissionDenied") { /* 403: show "insufficient permissions" */ }
+```
+
 ### 3.3 Generated clients (Phase 3-B — planned)
 
 Codegen will emit typed exceptions per category (`SleipnirPermissionDeniedException`,

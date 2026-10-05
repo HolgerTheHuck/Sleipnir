@@ -152,9 +152,16 @@ collection-kind flag — the gaps the schema used to carry are closed. The gener
 - **Nullability** → occurrence-level NRT nullability is on the `TypeRef` (`nullable: true`); the TS
   emitter renders `T | null`, C# leaves it to `nullable()`, Python renders `Optional[...]`.
 - **Enums** register as a `TypeMeta` with `kind:"enum"` + `members:[{name,value}]`; a usage site is
-  `{kind:"ref", ref:"<enumKey>"}`. Sleipnir serializes enums as their underlying **integer**, so a ref
-  to an enum emits as `number`/`long`/`int` (lossless for every C# enum backing); the generator does
-  **not** emit a native enum declaration — the `TypeMeta` members are documentation only.
+  `{kind:"ref", ref:"<enumKey>"}`. Sleipnir serializes enums as their underlying **integer**; the wire
+  stays that integer in every generated client. The **TS** emitter keeps the enum identity:
+  `export const OrderState = { Open: 0, Shipped: 1 } as const;` plus
+  `export type OrderState = (typeof OrderState)[keyof typeof OrderState];` (a literal union of the
+  member values, no TS `enum`), and use sites reference `OrderState` instead of `number`. The JS, C#
+  and Python emitters still emit an enum usage as `number`/`long`/`int` (lossless for every C# enum
+  backing) without a native enum declaration. An enum whose member values are not all numeric falls
+  back to `number` in TS as well.
+- **Requiredness** → not in discovery yet, so every generated TS property is optional (`name?: T`);
+  nullability (above) is independent of that and honored.
 - **Collections** → `array`/`set`/`stream` all materialize as JSON arrays → emit `T[]`
   (`Array<T>` in JSDoc) / `List<T>` / `list[T]` (the invoker consumes `IAsyncEnumerable<T>` to a
   `List<T>` at runtime, but the contract declares streaming so other servers/clients can model it).

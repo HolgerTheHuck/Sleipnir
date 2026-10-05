@@ -142,6 +142,23 @@ namespace SleipnirHub.Extensions
         public bool RequireAuthentication { get; set; } = false;
 
         /// <summary>
+        /// When <c>true</c>, a bearer token sent as <c>?access_token=…</c> is accepted on the
+        /// WebSocket upgrade and on the SSE event endpoints — and <b>only</b> there, never on
+        /// ordinary REST/JSON-RPC/discovery requests. A browser cannot set an
+        /// <c>Authorization</c> header on a WebSocket handshake or a native
+        /// <c>EventSource</c>; the Sleipnir browser WebSocket client therefore sends its bearer
+        /// in the query. A middleware at the front of the pipeline promotes the query value to an
+        /// <c>Authorization: Bearer …</c> header (an existing header always wins), so the host's
+        /// own bearer authentication (e.g. <c>AddJwtBearer</c>) validates it unchanged, and
+        /// removes the parameter from the query string so downstream logging never sees it.
+        /// Default <c>false</c> (opt-in): cookie authentication remains the recommended way for
+        /// browser apps (no token in any URL). Paths come from the transports
+        /// (<c>UseSleipnirWebSocket(path)</c>, <c>MapSleipnirEndpoints(prefix)</c> →
+        /// <c>{prefix}/events</c>). See <c>SECURITY.md</c> / <c>guide/chapters/08-auth.md</c>.
+        /// </summary>
+        public bool AcceptAccessTokenQuery { get; set; } = false;
+
+        /// <summary>
         /// Maximum number of requests in a batch (default 0 = unlimited,
         /// non-breaking). Protects the server against fan-out DoS: without a cap, a
         /// single 1-MB body can contain thousands of requests that fire

@@ -233,6 +233,55 @@ authed call over `auto` (WS) would 401. REST + SSE *can* carry the header, so th
 friends" theme made concrete: REST + SSE is the proxy-safe, browser-auth-friendly path the
 portal reaches for the moment auth enters the picture.
 
+### Alternatives for the browser: cookies (recommended), or `?access_token=` (opt-in)
+
+Pinning REST + SSE is one answer. Two others keep the browser on WebSocket:
+
+- **Cookie authentication — the recommended way for browser apps.** The browser attaches the
+  auth cookie to the WebSocket upgrade and to SSE GETs by itself; no token ever appears in a URL
+  or in JavaScript (the backend-for-frontend pattern). Sleipnir only reads `HttpContext.User`, so
+  `AddAuthentication().AddCookie(...)` works for every transport unchanged.
+- **Bearer in the query string — opt-in, narrowly.** The TS WebSocket client already sends its
+  bearer as `?access_token=…` when it runs in a browser (it cannot set the header). The server
+  ignores that unless you opt in:
+
+  ```csharp
+  builder.Services.AddSleipnir(o => o.AcceptAccessTokenQuery = true);
+  ```
+
+  Then — and only on the WebSocket upgrade and the SSE `/events/…` endpoints, never on REST —
+  Sleipnir promotes the query value to an `Authorization: Bearer` header before
+  `UseAuthentication` runs, so the `AddJwtBearer` setup above validates it unchanged. The
+  parameter is removed from the query string so request logs downstream never contain it (the
+  hosting "Request starting" line is the one exception — keep `Microsoft.AspNetCore` logging at
+  `Warning` in production, the template default). URLs leak more easily than headers (proxies,
+  browser history for `EventSource`), which is why this is opt-in and cookies stay the
+  recommendation. Details: `TRANSPORT_REFERENCE.md` §7 "Browser auth on WS/SSE".
+
+### Expired tokens: `onUnauthenticated`
+
+Tokens expire mid-session. The TS router takes an `onUnauthenticated` hook: on a `401` it calls
+the hook, lets you refresh, and retries the operation **exactly once** (a second `401` is
+returned as is — no loop; `403` never triggers it):
+
+```ts
+import { SleipnirTransportRouter } from "sleipnir-client";
+
+const router = new SleipnirTransportRouter({
+  baseUrl: "https://localhost:5010",
+  capability: "all",
+  onUnauthenticated: async () => {
+    const token = await refreshToken();   // your refresh flow
+    router.setBearer(token);
+  },
+});
+```
+
+(The option lives on `SleipnirTransportRouter` — the runtime every generated client wraps;
+surfacing it in the generated `SleipnirClientOptions` is a codegen follow-up.) On the WebSocket
+profile the router reconnects after the hook, because a WebSocket is
+authenticated once, at the upgrade — the new token only counts on a new connection.
+
 ## Try it
 
 ```bash

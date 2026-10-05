@@ -15,9 +15,11 @@
 //   "signalr"  -> calls=SignalR, events=SignalR (Phase 3)
 //   "auto"     -> probe WS; success -> ws profile, failure -> rest profile
 
-import { ExecutionMode } from "./types.js";
+import { ExecutionMode, SleipnirConnectionState } from "./types.js";
+import { SleipnirError } from "./errors.js";
 import type {
   BearerProvider,
+  SleipnirConnectionStatus,
   SleipnirMultiRequest,
   SleipnirRequest,
   SleipnirResponse,
@@ -101,22 +103,83 @@ export interface SleipnirRouterOptions {
   sse?: Omit<SleipnirSseClientOptions, "bearer">;
   /** SignalR backend options (Phase 3; bearer is injected from the shared field). */
   signalr?: Omit<SleipnirSignalrClientOptions, "bearer">;
+  /**
+   * Called when the server answers **401 Unauthenticated** (a response/error with `code` 401):
+   * refresh the credentials here (e.g. renew the token and call `setBearer`, or re-establish the
+   * auth cookie); the router then retries the operation **exactly once**. The retry's result is
+   * returned as is — a second 401 is not retried again (no loop). Concurrent 401s share one
+   * refresh. On the `ws`/`signalr` profiles the connection is re-established after the hook
+   * (those transports authenticate once, at connect); calls still in flight on the old connection
+   * are then rejected with a transport error (`code` 0), as on a network drop. A batch is retried
+   * only when **every** response is 401 (nothing ran); a partially rejected batch is returned as
+   * is. If the hook throws, the operation rejects with that error. 403 (`PermissionDenied`) never
+   * triggers the hook.
+   */
+  onUnauthenticated?: (ctx: SleipnirUnauthenticatedContext) => void | Promise<void>;
+}
+
+/** Context passed to {@link SleipnirRouterOptions.onUnauthenticated}. */
+export interface SleipnirUnauthenticatedContext {
+  /** Active profile the 401 came from. */
+  readonly transport: Exclude<SleipnirTransport, "auto">;
+  /** Which operation got the 401. */
+  readonly operation: "call" | "batch" | "subscribe" | "resume";
+}
+
+/**
+ * Store-shaped view of the router's aggregated connection status — the `subscribe(listener) →
+ * unsubscribe` contract of Svelte stores (the listener is called synchronously with the current
+ * value, then on every change) and of Tsazor's `observe()`.
+ */
+export interface SleipnirConnectionStore {
+  /** Current status. */
+  readonly state: SleipnirConnectionStatus;
+  /** Registers a listener; called immediately with the current status, then on each change. */
+  subscribe(listener: (state: SleipnirConnectionStatus) => void): () => void;
 }
 
 /** Unified subscribe options across event backends (WS / SSE / SignalR). */
 export interface SleipnirSubscribeOptions {
-  /** Abort signal — ends the subscription without reconnect. */
+  /**
+   * Abort signal. Before the subscription is acknowledged the subscribe rejects with
+   * `CancelledError`; afterwards aborting ends the subscription (like `unsubscribe()`), without
+   * reconnect — on every event backend. The listener is detached when the subscription ends
+   * (see `SleipnirSubscription.ended`).
+   */
   signal?: AbortSignal;
-  /** Per-subscription resume policy (overrides the client-wide policy). WS + SSE. */
+  /** Per-subscription resume policy (overrides the client-wide policy). WS + SSE + SignalR. */
   resumePolicy?: ResumePolicy;
-  /** Per-call timeout (WS only; SSE has no call timeout). */
+  /**
+   * Subscribe timeout in ms — the time allowed until the server acknowledges the subscription
+   * (WS: the subscribe response; SSE: the `ack` block; SignalR: the ack frame). On expiry the
+   * subscribe rejects with `CancelledError` (`timedOut: true`). A live subscription has no timeout.
+   */
   timeout?: number;
-  /** Extra headers for this subscribe request (SSE only). */
+  /** Extra headers for this subscribe request (SSE only — WS/SignalR carry no per-request headers). */
   headers?: Record<string, string>;
 }
 
 function hasBackend(cap: SleipnirBundleCapability, b: Backend): boolean {
   return CAPABILITY_BACKEDS[cap].includes(b);
+}
+
+/** Maps a backend's connection state onto the router's status vocabulary. */
+function toStatus(s: SleipnirConnectionState): SleipnirConnectionStatus {
+  switch (s) {
+    case SleipnirConnectionState.Connecting:
+      return "connecting";
+    case SleipnirConnectionState.Connected:
+      return "open";
+    case SleipnirConnectionState.Reconnecting:
+      return "reconnecting";
+    default:
+      return "closed";
+  }
+}
+
+/** True for a 401 Unauthenticated error (a thrown {@link SleipnirError} or an error body). */
+function isUnauthenticatedError(err: unknown): boolean {
+  return err instanceof SleipnirError && err.code === 401;
 }
 
 /**
@@ -132,32 +195,102 @@ export class SleipnirTransportRouter {
   private readonly _sse?: SleipnirSseClient;
   private readonly _signalr?: SleipnirSignalrClient;
   private readonly _probeTimeout: number;
+  private readonly _onUnauthenticated?: (ctx: SleipnirUnauthenticatedContext) => void | Promise<void>;
 
   /** Active profile (set by `negotiate`/`useTransport`). `null` until first resolution. */
   private _profile: Exclude<SleipnirTransport, "auto"> | null = null;
   private _negotiatePromise: Promise<void> | null = null;
+  private _negotiating = false;
   private _disposed = false;
+  private _refreshPromise: Promise<void> | null = null;
+
+  private _status: SleipnirConnectionStatus = "closed";
+  private readonly _statusListeners = new Set<(state: SleipnirConnectionStatus) => void>();
+
+  /**
+   * Aggregated connection status of the active transport profile, as a store
+   * (`connection.state` + `connection.subscribe(listener) → unsubscribe`).
+   *
+   * Transitions:
+   * - Initial: `"closed"`; `"open"` right away when the default profile is `rest` (stateless).
+   * - `auto`: `"connecting"` while the WebSocket probe runs → then the resolved profile's status.
+   * - `ws` / `signalr`: follows the backend — `"connecting"` (first connect) → `"open"`;
+   *   a drop → `"reconnecting"` → `"open"` again, or `"closed"` when reconnecting gives up.
+   *   Before the first call/subscribe the lazily-connecting backend is `"closed"`.
+   * - `rest`: `"open"` (REST needs no connection); `"reconnecting"` while any SSE event stream is
+   *   reconnecting, back to `"open"` afterwards.
+   * - `useTransport(...)` re-evaluates against the new profile; `dispose()` → `"closed"` (final).
+   *
+   * Listeners are only notified on an actual change. Inactive bundled backends (e.g. the WS socket
+   * left over after `auto` fell back to REST) do not influence the status.
+   */
+  readonly connection: SleipnirConnectionStore;
 
   constructor(opts: SleipnirRouterOptions) {
     if (!opts?.baseUrl) throw new Error("SleipnirTransportRouter: baseUrl is required.");
     this.capability = opts.capability;
     this._probeTimeout = opts.probeTimeout ?? 1500;
+    this._onUnauthenticated = opts.onUnauthenticated;
 
     const bearer = opts.bearer;
     const callTimeout = opts.callTimeout;
+    const recompute = () => this.recomputeStatus();
 
     if (hasBackend(this.capability, "rest")) {
       this._rest = new SleipnirRestClient(opts.baseUrl, { ...(opts.rest ?? {}), bearer, callTimeout });
     }
     if (hasBackend(this.capability, "ws")) {
-      this._ws = new SleipnirWebSocketClient(opts.baseUrl, { ...(opts.ws ?? {}), bearer, callTimeout });
+      const user = opts.ws?.onStateChanged;
+      this._ws = new SleipnirWebSocketClient(opts.baseUrl, {
+        ...(opts.ws ?? {}),
+        bearer,
+        callTimeout,
+        onStateChanged: (s) => {
+          user?.(s);
+          recompute();
+        },
+      });
     }
     if (hasBackend(this.capability, "sse")) {
-      this._sse = new SleipnirSseClient(opts.baseUrl, { ...(opts.sse ?? {}), bearer });
+      const user = opts.sse?.onStateChanged;
+      this._sse = new SleipnirSseClient(opts.baseUrl, {
+        ...(opts.sse ?? {}),
+        bearer,
+        onStateChanged: (s) => {
+          user?.(s);
+          recompute();
+        },
+      });
     }
     if (hasBackend(this.capability, "signalr")) {
-      this._signalr = new SleipnirSignalrClient(opts.baseUrl, { ...(opts.signalr ?? {}), bearer });
+      const user = opts.signalr?.onStateChanged;
+      this._signalr = new SleipnirSignalrClient(opts.baseUrl, {
+        ...(opts.signalr ?? {}),
+        bearer,
+        onStateChanged: (s) => {
+          user?.(s);
+          recompute();
+        },
+      });
     }
+
+    const self = this;
+    this.connection = {
+      get state() {
+        return self._status;
+      },
+      subscribe(listener) {
+        self._statusListeners.add(listener);
+        try {
+          listener(self._status);
+        } catch {
+          /* listener errors are not fatal */
+        }
+        return () => {
+          self._statusListeners.delete(listener);
+        };
+      },
+    };
 
     // Resolve the initial profile. A non-auto default is set immediately; "auto" is probed
     // lazily on first use (avoid constructor side-effects / connect races).
@@ -165,6 +298,7 @@ export class SleipnirTransportRouter {
     if (initial !== "auto") {
       this._profile = this.resolveProfile(initial);
     }
+    this.recomputeStatus();
   }
 
   // --- escape hatches (raw backends; undefined if not bundled) ---
@@ -238,7 +372,12 @@ export class SleipnirTransportRouter {
     if (this._disposed) throw new Error("SleipnirTransportRouter: disposed.");
     if (this._profile) return;
     if (!this._negotiatePromise) {
-      this._negotiatePromise = this.runAutoNegotiation();
+      this._negotiating = true;
+      this.recomputeStatus();
+      this._negotiatePromise = this.runAutoNegotiation().finally(() => {
+        this._negotiating = false;
+        this.recomputeStatus();
+      });
     }
     await this._negotiatePromise;
   }
@@ -285,16 +424,28 @@ export class SleipnirTransportRouter {
     if (t === "auto") {
       this._profile = null;
       this._negotiatePromise = null;
+      this.recomputeStatus();
       await this.negotiate();
       return;
     }
     this._profile = this.resolveProfile(t);
+    this.recomputeStatus();
   }
 
   // --- call routing ---
 
-  /** Execute a single request over the active call backend. */
+  /** Execute a single request over the active call backend (401 → `onUnauthenticated` → one retry). */
   async call(
+    req: SleipnirRequest,
+    opts?: CallOptions | WsCallOptions | SignalrCallOptions,
+  ): Promise<SleipnirResponse> {
+    const first = await this.callOnce(req, opts);
+    if (first.code !== 401 || !this._onUnauthenticated) return first;
+    await this.refreshCredentials("call");
+    return this.callOnce(req, opts);
+  }
+
+  private async callOnce(
     req: SleipnirRequest,
     opts?: CallOptions | WsCallOptions | SignalrCallOptions,
   ): Promise<SleipnirResponse> {
@@ -305,10 +456,25 @@ export class SleipnirTransportRouter {
     return this._rest!.call(req, opts as CallOptions | undefined);
   }
 
-  /** Execute a batch over the active call backend. */
+  /**
+   * Execute a batch over the active call backend. 401 handling: retried once after
+   * `onUnauthenticated` only when every response is 401 (nothing executed).
+   */
   async callBatch(
     requests: SleipnirRequest[],
     mode: ExecutionMode = ExecutionMode.Parallel,
+    opts?: CallOptions | WsCallOptions | SignalrCallOptions,
+  ): Promise<SleipnirResponse[]> {
+    const first = await this.callBatchOnce(requests, mode, opts);
+    const allUnauthenticated = first.length > 0 && first.every((r) => r.code === 401);
+    if (!allUnauthenticated || !this._onUnauthenticated) return first;
+    await this.refreshCredentials("batch");
+    return this.callBatchOnce(requests, mode, opts);
+  }
+
+  private async callBatchOnce(
+    requests: SleipnirRequest[],
+    mode: ExecutionMode,
     opts?: CallOptions | WsCallOptions | SignalrCallOptions,
   ): Promise<SleipnirResponse[]> {
     await this.ensureProfile();
@@ -332,8 +498,24 @@ export class SleipnirTransportRouter {
    * - SSE: the request is unpacked into `(controller, method, params)` because SSE carries method
    *   arguments as URL query params (no body). Only named params (`parameterName`) are expressible
    *   over SSE; positional/binary params are a WS/SignalR-only capability.
+   *
+   * A 401 rejection triggers `onUnauthenticated` and one retry (see {@link SleipnirRouterOptions}).
    */
   async subscribe<T>(
+    req: SleipnirRequest,
+    handlers: SubscribeHandlers<T>,
+    opts?: SleipnirSubscribeOptions,
+  ): Promise<SleipnirSubscription> {
+    try {
+      return await this.subscribeOnce(req, handlers, opts);
+    } catch (err) {
+      if (!isUnauthenticatedError(err) || !this._onUnauthenticated || opts?.signal?.aborted) throw err;
+      await this.refreshCredentials("subscribe");
+      return this.subscribeOnce(req, handlers, opts);
+    }
+  }
+
+  private async subscribeOnce<T>(
     req: SleipnirRequest,
     handlers: SubscribeHandlers<T>,
     opts?: SleipnirSubscribeOptions,
@@ -348,7 +530,7 @@ export class SleipnirTransportRouter {
     }
     if (backend === "signalr") {
       const srOpts: SignalrSubscribeOptions | undefined = opts
-        ? { signal: opts.signal, resumePolicy: opts.resumePolicy }
+        ? { signal: opts.signal, resumePolicy: opts.resumePolicy, timeout: opts.timeout }
         : undefined;
       return this._signalr!.subscribe<T>(req, handlers, srOpts);
     }
@@ -356,7 +538,7 @@ export class SleipnirTransportRouter {
     const params: Record<string, unknown> = {};
     for (const p of req.params ?? []) params[p.parameterName] = p.data;
     const sseOpts: SseSubscribeOptions | undefined = opts
-      ? { signal: opts.signal, resumePolicy: opts.resumePolicy, headers: opts.headers }
+      ? { signal: opts.signal, resumePolicy: opts.resumePolicy, headers: opts.headers, timeout: opts.timeout }
       : undefined;
     return this._sse!.subscribe<T>(req.controller, req.method, handlers, params, sseOpts);
   }
@@ -381,6 +563,21 @@ export class SleipnirTransportRouter {
     handlers: SubscribeHandlers<T>,
     opts?: SleipnirSubscribeOptions,
   ): Promise<SleipnirSubscription> {
+    try {
+      return await this.resumeOnce(subscriptionId, lastEventId, handlers, opts);
+    } catch (err) {
+      if (!isUnauthenticatedError(err) || !this._onUnauthenticated || opts?.signal?.aborted) throw err;
+      await this.refreshCredentials("resume");
+      return this.resumeOnce(subscriptionId, lastEventId, handlers, opts);
+    }
+  }
+
+  private async resumeOnce<T>(
+    subscriptionId: string,
+    lastEventId: number,
+    handlers: SubscribeHandlers<T>,
+    opts?: SleipnirSubscribeOptions,
+  ): Promise<SleipnirSubscription> {
     await this.ensureProfile();
     const backend = this.eventBackend();
     if (backend === "ws") {
@@ -391,12 +588,12 @@ export class SleipnirTransportRouter {
     }
     if (backend === "signalr") {
       const srOpts: SignalrSubscribeOptions | undefined = opts
-        ? { signal: opts.signal, resumePolicy: opts.resumePolicy }
+        ? { signal: opts.signal, resumePolicy: opts.resumePolicy, timeout: opts.timeout }
         : undefined;
       return this._signalr!.resume<T>(subscriptionId, lastEventId, handlers, srOpts);
     }
     const sseOpts: SseResumeOptions | undefined = opts
-      ? { signal: opts.signal, resumePolicy: opts.resumePolicy, headers: opts.headers }
+      ? { signal: opts.signal, resumePolicy: opts.resumePolicy, headers: opts.headers, timeout: opts.timeout }
       : undefined;
     return this._sse!.resume<T>(subscriptionId, lastEventId, handlers, sseOpts);
   }
@@ -417,10 +614,49 @@ export class SleipnirTransportRouter {
     this._ws?.close();
     this._signalr?.dispose();
     // REST + SSE are stateless / per-subscribe; nothing to dispose.
+    this.recomputeStatus();
+    this._statusListeners.clear();
   }
 
   private async ensureProfile(): Promise<void> {
     if (this._profile) return;
     await this.negotiate();
+  }
+
+  /**
+   * Runs `onUnauthenticated` once for all concurrent 401s, then — on the connection-oriented
+   * profiles — re-establishes the connection so the refreshed credentials are presented.
+   */
+  private refreshCredentials(operation: SleipnirUnauthenticatedContext["operation"]): Promise<void> {
+    if (!this._refreshPromise) {
+      const transport = this._profile ?? "rest";
+      this._refreshPromise = (async () => {
+        await this._onUnauthenticated!({ transport, operation });
+        if (transport === "ws" && this._ws) await this._ws.reconnect();
+        else if (transport === "signalr" && this._signalr) await this._signalr.reconnect();
+      })().finally(() => {
+        this._refreshPromise = null;
+      });
+    }
+    return this._refreshPromise;
+  }
+
+  /** Recomputes the aggregated status; notifies listeners on change. */
+  private recomputeStatus(): void {
+    let next: SleipnirConnectionStatus;
+    if (this._disposed) next = "closed";
+    else if (!this._profile) next = this._negotiating ? "connecting" : "closed";
+    else if (this._profile === "ws") next = toStatus(this._ws!.state);
+    else if (this._profile === "signalr") next = toStatus(this._signalr!.state);
+    else next = this._sse?.state === SleipnirConnectionState.Reconnecting ? "reconnecting" : "open";
+    if (next === this._status) return;
+    this._status = next;
+    for (const listener of [...this._statusListeners]) {
+      try {
+        listener(next);
+      } catch {
+        /* listener errors are not fatal */
+      }
+    }
   }
 }

@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — 1.5.0-preview
+
+### Added — TS client (`sleipnir-client`): connection state, 401 hook, subscription lifecycle (U4)
+
+- **`SleipnirTransportRouter.connection`** — aggregated connection status
+  (`"connecting" | "open" | "reconnecting" | "closed"`, type `SleipnirConnectionStatus`) as a
+  store: `connection.state` + `connection.subscribe(listener) → unsubscribe` (Svelte-store
+  contract). Follows the active profile (WS / SignalR connection; REST is `"open"`, SSE streams
+  surface `"reconnecting"`; `auto` probe = `"connecting"`). `SleipnirSseClient` and
+  `SleipnirSignalrClient` gain `state` + `onStateChanged` (WS had them); a user `onStateChanged`
+  passed through the router options still fires.
+- **`onUnauthenticated`** router option — on a 401 the app refreshes its credentials, then the
+  operation is retried exactly once (single-flight across concurrent 401s; batches only when
+  every response is 401; 403 never). On `ws`/`signalr` the connection is re-established after the
+  hook via the new `SleipnirWebSocketClient.reconnect()` / `SleipnirSignalrClient.reconnect()`.
+- **`SleipnirErrorBody.category`** / **`SleipnirError.category`** typed as the server's
+  `SleipnirErrorCategory` string-literal union (+ `SLEIPNIR_ERROR_CATEGORIES`); numeric or
+  differently-cased values are canonicalized. Fixes the drift against
+  `SleipnirCommon/Results/SleipnirErrorCategory.cs`.
+- **Subscriptions:** `SleipnirSubscription.ended` (optional on the interface, always set by the
+  built-in clients) resolves when a subscription ends for any reason, and the caller's `signal`
+  listener is detached then. `timeout` (ack timeout) is now forwarded to SSE and SignalR too
+  (`SseSubscribeOptions.timeout`, `SseResumeOptions.timeout`, `SignalrSubscribeOptions.timeout`).
+
+### Fixed — TS client subscriptions
+
+- WebSocket: `signal` aborted **after** the subscribe ack now unsubscribes (it was honored only
+  until the ack). The handle (`subscriptionId`, `lastEventId`, `unsubscribe()`) and the signal now
+  follow a reconnect re-subscribe (previously the handle kept the dead pre-reconnect id).
+- WebSocket: when no reconnect follows (reconnect disabled, or the backoff is exhausted), active
+  subscriptions now end with `onError` instead of lingering silently.
+- SSE: aborting the `signal` before the ack rejects with `CancelledError` instead of entering
+  the reconnect loop.
+- SignalR: aborting the `signal` before the ack rejects with `CancelledError` (the promise used
+  to stay pending); an already-aborted signal is honored; concurrent `connect()` calls share one
+  hub connection.
+
+### Added — Server: opt-in `?access_token=` on WebSocket upgrade and SSE (U4, decision 6.3)
+
+- **`SleipnirOptions.AcceptAccessTokenQuery`** (default `false`). When on, a bearer sent as
+  `?access_token=` is promoted to `Authorization: Bearer …` — only on the WebSocket upgrade
+  (paths registered by `UseSleipnirWebSocket`) and the SSE `GET {prefix}/events/…` endpoints
+  (registered by `MapSleipnirEndpoints`), never on REST/JSON-RPC/discovery. A startup filter
+  places the middleware before the host's `UseAuthentication`, so any bearer handler (e.g.
+  JwtBearer) validates it unchanged; an existing `Authorization` header wins. The parameter is
+  removed from the query string, so downstream logs never contain it. Cookie auth stays the
+  recommended browser path. Tests: `AccessTokenQueryTests`.
+
 ## [1.4.3] — 2026-09-02
 
 ### Added — Built-in Heimdall telemetry backend

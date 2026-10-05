@@ -141,6 +141,10 @@ namespace SleipnirRest
             if (useSse)
             {
                 group.MapSleipnirSseEndpoints(defaultBufferCapacity: sseBufferCapacity);
+                // Opt-in ?access_token= fallback (SleipnirOptions.AcceptAccessTokenQuery) is
+                // honored only under this SSE prefix — register it (no-op without AddSleipnir).
+                endpoints.ServiceProvider.GetService<SleipnirAccessTokenQueryPaths>()
+                    ?.AddSsePrefix(new PathString(prefix).Add("/events"));
             }
 
             // JSON-RPC 2.0 Kompatibilitäts-Endpoint (Opt-in). Liest den Body roh

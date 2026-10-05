@@ -15,6 +15,7 @@
 // Durable subscriptions are process-wide on the server, so a subscription created over
 // WebSocket can be resumed over this SSE client and vice-versa (cross-transport resume).
 
+import { SleipnirConnectionState } from "./types.js";
 import type { BearerProvider } from "./types.js";
 import type {
   ResumeDecision,
@@ -23,7 +24,8 @@ import type {
   SubscribeHandlers,
   SleipnirSubscription,
 } from "./websocket.js";
-import { SleipnirError } from "./errors.js";
+import { createEnded } from "./websocket.js";
+import { SleipnirError, CancelledError } from "./errors.js";
 
 // Re-export the shared event types so consumers import everything from one module, and so the
 // codegen emitter (S4) can `import { SleipnirSseClient, type SubscribeHandlers } from "..."`.
@@ -62,16 +64,32 @@ export interface SleipnirSseClientOptions {
    * resume on a non-resumable event / expired buffer degrades to fresh (server returns 410).
    */
   onResume?: ResumePolicy;
+  /**
+   * Observer for the aggregated stream state of this client (see {@link SleipnirSseClient.state}).
+   * SSE has no shared connection — every subscription is its own HTTP stream — so the client-level
+   * state aggregates the live streams: `Reconnecting` if any stream is reconnecting, else
+   * `Connecting` if any is connecting, else `Connected` if any is open, else `Disconnected`.
+   */
+  onStateChanged?: (state: SleipnirConnectionState) => void;
 }
 
 /** Pro-Subscription-Optionen (Spiegel der WS `SubscribeOptions`). */
 export interface SseSubscribeOptions {
-  /** Abbruch-Signal (Browser/Node); beendet die Subscription ohne Reconnect. */
+  /**
+   * Abbruch-Signal (Browser/Node). Before the ack the subscribe rejects with `CancelledError`;
+   * afterwards aborting ends the subscription (like `unsubscribe()`), without reconnect.
+   */
   signal?: AbortSignal;
   /** Per-subscription resume policy (überschreibt clientweiten `onResume`). */
   resumePolicy?: ResumePolicy;
   /** Zusätzliche Header für diesen Subscribe-Request. */
   headers?: Record<string, string>;
+  /**
+   * Subscribe timeout in ms: how long to wait for the server's ack (first stream block). On
+   * expiry the subscribe rejects with `CancelledError` (`timedOut: true`) and the stream is
+   * aborted. Once acked, a live stream has no timeout. Default: none.
+   */
+  timeout?: number;
 }
 
 /**
@@ -81,7 +99,7 @@ export interface SseSubscribeOptions {
  * Resume-URL mit aktualisiertem Cursor), bis `complete`/`error`/`410`/Abbruch.
  */
 export interface SseResumeOptions {
-  /** Abbruch-Signal; beendet die Resume-Subscription ohne Reconnect. */
+  /** Abbruch-Signal; vor dem Ack → `CancelledError`, danach beendet es die Resume-Subscription. */
   signal?: AbortSignal;
   /** Zusätzliche Header für jeden Resume-Request. */
   headers?: Record<string, string>;
@@ -91,6 +109,26 @@ export interface SseResumeOptions {
   reconnectDelays?: number[];
   /** Per-subscription resume policy — `"drop"` beendet, sonst wird fortgesetzt (Default: resume). */
   resumePolicy?: ResumePolicy;
+  /** Ack timeout in ms (see {@link SseSubscribeOptions.timeout}). Default: none. */
+  timeout?: number;
+}
+
+/** Phase of one SSE stream, aggregated into {@link SleipnirSseClient.state}. */
+type StreamPhase = SleipnirConnectionState.Connecting | SleipnirConnectionState.Connected | SleipnirConnectionState.Reconnecting;
+
+/**
+ * Lifecycle of one SSE subscription stream: the abort controller for fetch + reconnect loop, the
+ * caller-signal / ack-timeout wiring, the `ended` promise, and the phase reported to the
+ * client-level state. `finish()` is the single terminal exit (idempotent).
+ */
+interface StreamLife {
+  readonly ctrl: AbortController;
+  readonly ended: Promise<void>;
+  setPhase(phase: StreamPhase): void;
+  /** Marks the ack (clears the ack timeout, phase → Connected). */
+  acked(): void;
+  finish(): void;
+  readonly finished: boolean;
 }
 
 /**
@@ -108,6 +146,10 @@ export class SleipnirSseClient {
   private readonly _reconnect: boolean;
   private readonly _reconnectDelays: number[];
   private _onResume?: ResumePolicy;
+  private readonly _onStateChanged?: (state: SleipnirConnectionState) => void;
+  private readonly _streams = new Map<number, StreamPhase>();
+  private _streamSeq = 0;
+  private _state: SleipnirConnectionState = SleipnirConnectionState.Disconnected;
 
   constructor(baseUrl: string, options: SleipnirSseClientOptions = {}) {
     if (!baseUrl || baseUrl.trim().length === 0) {
@@ -122,6 +164,15 @@ export class SleipnirSseClient {
     this._reconnect = options.reconnect ?? true;
     this._reconnectDelays = options.reconnectDelays ?? [0, 1000, 2000, 5000, 10000, 15000, 30000];
     this._onResume = options.onResume;
+    this._onStateChanged = options.onStateChanged;
+  }
+
+  /**
+   * Aggregated state of this client's live SSE streams (see
+   * {@link SleipnirSseClientOptions.onStateChanged}). `Disconnected` when no stream is live.
+   */
+  get state(): SleipnirConnectionState {
+    return this._state;
   }
 
   /** Tauscht den Bearer (String oder Provider-Funktion) für künftige Requests aus. */
@@ -145,32 +196,33 @@ export class SleipnirSseClient {
     const freshUrl = this.buildFreshUrl(controller, method, params);
     const policy = opts.resumePolicy ?? this._onResume;
 
-    // Ein AbortController pro Subscription:unsubscribe() oder das Caller-Signal brechen
-    // sowohl den laufenden fetch als auch den Reconnect-Loop ab.
-    const ctrl = new AbortController();
-    const onCallerAbort = () => ctrl.abort(opts.signal?.reason);
-    if (opts.signal) {
-      if (opts.signal.aborted) ctrl.abort(opts.signal.reason);
-      else opts.signal.addEventListener("abort", onCallerAbort, { once: true });
-    }
-
     let unsubscribed = false;
     let subscriptionId = "";
     let lastEventId = 0;                 // Phase R dedup cursor (0 = noch kein Event)
     let attempt = 0;                     // Backoff-Index
     let forceFresh = false;               // Einmal-Override nach 410 (Server degradiert Resume→Fresh)
 
-    const unsubscribe = async (): Promise<void> => {
-      unsubscribed = true;
-      ctrl.abort(new Error("SSE subscription unsubscribed."));
-    };
-
     // Der Subscribe-Promise löst auf, sobald der erste Ack-Block gelesen wurde.
     return new Promise<SleipnirSubscription>((resolve, reject) => {
+      // One lifecycle per subscription: unsubscribe(), the caller signal and the ack timeout abort
+      // both the running fetch and the reconnect loop (ctrl), and end the subscription (finish).
+      const life = this.beginStream(opts.signal, opts.timeout, (err) => {
+        unsubscribed = true;
+        if (subscriptionId === "") reject(err);  // pre-ack: the subscribe itself fails
+      });
+      const ctrl = life.ctrl;
+
+      const unsubscribe = async (): Promise<void> => {
+        unsubscribed = true;
+        ctrl.abort(new Error("SSE subscription unsubscribed."));
+        life.finish();
+      };
+
       // Erste Verbindung ist Fresh; jede Reconnect-Verbindung ist Fresh ODER Resume (Policy).
       let mode: "fresh" | "resume" = "fresh";
 
       const connectOnce = async (): Promise<void> => {
+        if (unsubscribed || life.finished) return;
         const url = mode === "resume" && subscriptionId
           ? this.buildResumeUrl(subscriptionId, lastEventId)
           : freshUrl;
@@ -185,6 +237,7 @@ export class SleipnirSseClient {
         try {
           resp = await this._fetch(url, { method: "GET", headers, signal: ctrl.signal });
         } catch (e) {
+          if (unsubscribed || ctrl.signal.aborted) return;
           return handleDrop(e);
         }
 
@@ -227,7 +280,14 @@ export class SleipnirSseClient {
               // Eine Resume, die eine neue id liefert, bedeutet Server-Degraded-to-Fresh
               // (TTL expired / non-resumable) → der eventId-Zähler startet neu bei 1 → Cursor reset.
               if (mode === "resume" && ack.replayedFrom == null) lastEventId = 0;
-              resolve({ subscriptionId, get lastEventId() { return lastEventId; }, unsubscribe });
+              attempt = 0;
+              life.acked();
+              resolve({
+                get subscriptionId() { return subscriptionId; },
+                get lastEventId() { return lastEventId; },
+                unsubscribe,
+                ended: life.ended,
+              });
               continue;
             }
             dispatchFrame(block);
@@ -246,9 +306,11 @@ export class SleipnirSseClient {
           try { handlers.onNext(frame.data); } catch { /* Handler-Fehler nicht fatal */ }
         } else if (block.event === "complete") {
           unsubscribed = true;                  // Terminal → kein Reconnect
+          life.finish();
           try { handlers.onComplete?.(); } catch { /* Handler-Fehler nicht fatal */ }
         } else if (block.event === "error") {
           unsubscribed = true;
+          life.finish();
           const msg = (JSON.parse(block.data) as { message?: string }).message ?? "Subscription error";
           try { handlers.onError?.(new Error(msg)); } catch { /* Handler-Fehler nicht fatal */ }
         }
@@ -257,6 +319,8 @@ export class SleipnirSseClient {
       const handleNonOk = (resp: Response, wasMode: "fresh" | "resume"): void => {
         // Erste Fresh-Subscribe: non-2xx → Subscribe scheitert (Auth/Routing/Binding).
         if (subscriptionId === "") {
+          unsubscribed = true;
+          life.finish();
           reject(new SleipnirError(resp.status, `SSE subscribe failed (HTTP ${resp.status}).`));
           return;
         }
@@ -276,9 +340,12 @@ export class SleipnirSseClient {
       const handleDrop = (e: unknown): void => {
         if (unsubscribed || !this._reconnect || this._reconnectDelays.length === 0) {
           // Kein Reconnect: ein Drop vor dem ersten Ack → Subscribe scheitert; danach → onError.
+          const wasLive = !unsubscribed;
+          unsubscribed = true;
+          life.finish();
           if (subscriptionId === "") {
             reject(e instanceof Error ? e : new Error("SSE stream ended before ack"));
-          } else {
+          } else if (wasLive) {
             try { handlers.onError?.(e instanceof Error ? e : new Error("SSE stream ended")); } catch { /* noop */ }
           }
           return;
@@ -306,10 +373,12 @@ export class SleipnirSseClient {
         }
         if (decision === "drop") {
           unsubscribed = true;
+          life.finish();
           try { handlers.onComplete?.(); } catch { /* noop */ }
           return;
         }
         mode = decision;                        // "fresh" | "resume"
+        life.setPhase(subscriptionId === "" ? SleipnirConnectionState.Connecting : SleipnirConnectionState.Reconnecting);
         const delay = this._reconnectDelays[Math.min(attempt, this._reconnectDelays.length - 1)];
         attempt++;
         if (delay > 0) {
@@ -349,27 +418,28 @@ export class SleipnirSseClient {
     const reconnect = opts.reconnect ?? this._reconnect;
     const reconnectDelays = opts.reconnectDelays ?? this._reconnectDelays;
 
-    const ctrl = new AbortController();
-    const onCallerAbort = () => ctrl.abort(opts.signal?.reason);
-    if (opts.signal) {
-      if (opts.signal.aborted) ctrl.abort(opts.signal.reason);
-      else opts.signal.addEventListener("abort", onCallerAbort, { once: true });
-    }
-
     let unsubscribed = false;
     let activeId = subscriptionId;       // server may hand back a new id on degraded-to-fresh
     let cursor = lastEventId;
     let attempt = 0;
 
-    const unsubscribe = async (): Promise<void> => {
-      unsubscribed = true;
-      ctrl.abort(new Error("SSE resume unsubscribed."));
-    };
-
     return new Promise<SleipnirSubscription>((resolve, reject) => {
       let ackSeen = false;
 
+      const life = this.beginStream(opts.signal, opts.timeout, (err) => {
+        unsubscribed = true;
+        if (!ackSeen) reject(err);
+      });
+      const ctrl = life.ctrl;
+
+      const unsubscribe = async (): Promise<void> => {
+        unsubscribed = true;
+        ctrl.abort(new Error("SSE resume unsubscribed."));
+        life.finish();
+      };
+
       const connectOnce = async (): Promise<void> => {
+        if (unsubscribed || life.finished) return;
         const url = this.buildResumeUrl(activeId, cursor);
         const headers: Record<string, string> = { ...this._headers, Accept: "text/event-stream" };
         if (cursor > 0) headers["Last-Event-Id"] = String(cursor);
@@ -381,17 +451,21 @@ export class SleipnirSseClient {
         try {
           resp = await this._fetch(url, { method: "GET", headers, signal: ctrl.signal });
         } catch (e) {
+          if (unsubscribed || ctrl.signal.aborted) return;
           return handleDrop(e);
         }
         if (!resp.ok || !resp.body) {
           // Pre-ack: die durable Subscription ist weg/verweigert → Subscribe scheitert.
           if (!ackSeen) {
+            unsubscribed = true;
+            life.finish();
             reject(new SleipnirError(resp.status, `SSE resume failed (HTTP ${resp.status}).`));
             return;
           }
           if (resp.status === 410) {
             // Durable Subscription abgelaufen/geräumt → terminal (kein Fresh-Fallback: keine Params).
             unsubscribed = true;
+            life.finish();
             try { handlers.onError?.(new Error("SSE resume target gone (410): subscription expired.")); } catch { /* non-fatal */ }
             return;
           }
@@ -410,6 +484,7 @@ export class SleipnirSseClient {
         const reader = body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
+        let streamAcked = false;
         for (;;) {
           const { value, done } = await reader.read();
           if (done) break;
@@ -420,13 +495,23 @@ export class SleipnirSseClient {
             buffer = buffer.slice(sep + 2);
             const block = parseSseBlock(blockText);
             if (!block) continue;
-            if (!ackSeen && block.event === "ack") {
-              ackSeen = true;
+            if (!streamAcked && block.event === "ack") {
+              streamAcked = true;
               const ack = JSON.parse(block.data) as { subscriptionId?: string; replayedFrom?: number };
               if (ack.subscriptionId) activeId = ack.subscriptionId;
               // Degraded-to-fresh (TTL expired / non-resumable): eventId-Zähler startet neu → Cursor reset.
               if (ack.replayedFrom == null) cursor = 0;
-              resolve({ subscriptionId: activeId, get lastEventId() { return cursor; }, unsubscribe });
+              attempt = 0;
+              life.acked();
+              if (!ackSeen) {
+                ackSeen = true;
+                resolve({
+                  get subscriptionId() { return activeId; },
+                  get lastEventId() { return cursor; },
+                  unsubscribe,
+                  ended: life.ended,
+                });
+              }
               continue;
             }
             if (block.event === "event") {
@@ -439,9 +524,11 @@ export class SleipnirSseClient {
               try { handlers.onNext(frame.data); } catch { /* Handler-Fehler nicht fatal */ }
             } else if (block.event === "complete") {
               unsubscribed = true;
+              life.finish();
               try { handlers.onComplete?.(); } catch { /* non-fatal */ }
             } else if (block.event === "error") {
               unsubscribed = true;
+              life.finish();
               const msg = (JSON.parse(block.data) as { message?: string }).message ?? "Subscription error";
               try { handlers.onError?.(new Error(msg)); } catch { /* non-fatal */ }
             }
@@ -451,8 +538,11 @@ export class SleipnirSseClient {
 
       const handleDrop = (e: unknown): void => {
         if (unsubscribed || !reconnect || reconnectDelays.length === 0) {
+          const wasLive = !unsubscribed;
+          unsubscribed = true;
+          life.finish();
           if (!ackSeen) reject(e instanceof Error ? e : new Error("SSE resume ended before ack"));
-          else { try { handlers.onError?.(e instanceof Error ? e : new Error("SSE resume stream ended")); } catch { /* non-fatal */ } }
+          else if (wasLive) { try { handlers.onError?.(e instanceof Error ? e : new Error("SSE resume stream ended")); } catch { /* non-fatal */ } }
           return;
         }
         scheduleReconnect();
@@ -475,9 +565,11 @@ export class SleipnirSseClient {
         }
         if (decision === "drop") {
           unsubscribed = true;
+          life.finish();
           try { handlers.onComplete?.(); } catch { /* non-fatal */ }
           return;
         }
+        life.setPhase(ackSeen ? SleipnirConnectionState.Reconnecting : SleipnirConnectionState.Connecting);
         const delay = reconnectDelays[Math.min(attempt, reconnectDelays.length - 1)];
         attempt++;
         if (delay > 0) setTimeout(() => { if (!unsubscribed) void connectOnce(); }, delay);
@@ -490,6 +582,87 @@ export class SleipnirSseClient {
   }
 
   // --- Interna ---
+
+  /**
+   * Creates the lifecycle of one stream (see {@link StreamLife}) and registers it for the
+   * client-level state. `onCancel` runs when the caller signal fires or the ack timeout expires
+   * (with a `CancelledError`) — before `finish()`; it decides whether the subscribe promise
+   * rejects (pre-ack) or the subscription simply ends (post-ack).
+   */
+  private beginStream(
+    signal: AbortSignal | undefined,
+    timeoutMs: number | undefined,
+    onCancel: (err: CancelledError) => void,
+  ): StreamLife {
+    const id = ++this._streamSeq;
+    const ctrl = new AbortController();
+    const { ended, end } = createEnded();
+    let finished = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const cancel = (err: CancelledError) => {
+      if (finished) return;
+      onCancel(err);
+      ctrl.abort(err);
+      life.finish();
+    };
+    const onCallerAbort = () => cancel(new CancelledError("Sleipnir subscribe was cancelled."));
+
+    const life: StreamLife = {
+      ctrl,
+      ended,
+      get finished() {
+        return finished;
+      },
+      setPhase: (phase) => {
+        if (finished) return;
+        this._streams.set(id, phase);
+        this.updateState();
+      },
+      acked: () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = undefined;
+        }
+        life.setPhase(SleipnirConnectionState.Connected);
+      },
+      finish: () => {
+        if (finished) return;
+        finished = true;
+        if (timer) clearTimeout(timer);
+        signal?.removeEventListener("abort", onCallerAbort);
+        this._streams.delete(id);
+        this.updateState();
+        end();
+      },
+    };
+
+    life.setPhase(SleipnirConnectionState.Connecting);
+    if (signal) {
+      if (signal.aborted) queueMicrotask(onCallerAbort);
+      else signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+    if (timeoutMs && timeoutMs > 0) {
+      timer = setTimeout(() => cancel(new CancelledError("Sleipnir subscribe timed out.", true)), timeoutMs);
+    }
+    return life;
+  }
+
+  /** Recomputes the aggregated state; notifies the observer on change. */
+  private updateState(): void {
+    let next = SleipnirConnectionState.Disconnected;
+    const phases = [...this._streams.values()];
+    if (phases.includes(SleipnirConnectionState.Reconnecting)) next = SleipnirConnectionState.Reconnecting;
+    else if (phases.includes(SleipnirConnectionState.Connecting)) next = SleipnirConnectionState.Connecting;
+    else if (phases.length > 0) next = SleipnirConnectionState.Connected;
+    if (next === this._state) return;
+    this._state = next;
+    try {
+      this._onStateChanged?.(next);
+    } catch {
+      /* observer errors are not fatal */
+    }
+  }
 
   private resolveBearer(): string | undefined {
     const b = this._bearer;

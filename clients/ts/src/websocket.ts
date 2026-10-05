@@ -132,6 +132,31 @@ export interface SleipnirSubscription {
   readonly lastEventId: number;
   /** Stoppt die Event-Lieferung; sendet `kind:"unsubscribe"`. Idempotent. */
   unsubscribe(): Promise<void>;
+  /**
+   * Resolves once the subscription has ended for good — by `unsubscribe()`, the caller's
+   * `signal`, a terminal `complete`/`error` frame, a `"drop"` resume decision, a failed
+   * re-subscribe, or the client closing. Never rejects. Use it to release resources tied to the
+   * subscription (e.g. an abort listener of your own). The built-in clients always set it; it is
+   * optional only so that hand-written implementations of this interface stay valid.
+   */
+  readonly ended?: Promise<void>;
+}
+
+/** Creates the `ended` promise + its idempotent resolver (shared by WS / SSE / SignalR). */
+export function createEnded(): { ended: Promise<void>; end: () => void } {
+  let resolve!: () => void;
+  const ended = new Promise<void>((r) => {
+    resolve = r;
+  });
+  let done = false;
+  return {
+    ended,
+    end: () => {
+      if (done) return;
+      done = true;
+      resolve();
+    },
+  };
 }
 
 /** Optionen für den WebSocket-Client. */
@@ -183,6 +208,24 @@ interface PendingSubscribe {
   timer?: ReturnType<typeof setTimeout>;
   onCallerAbort?: () => void;
   callerSignal?: AbortSignal;
+  /** Fresh re-subscribe after a reconnect: the existing handle ref to re-point at the new id. */
+  ref?: SubscriptionRef;
+}
+
+/**
+ * Stable identity of one logical subscription across reconnects. A fresh re-subscribe (or a
+ * degraded resume) gets a new server `subscriptionId`; the public handle and the caller's
+ * `signal` listener read the CURRENT id through this ref, so `unsubscribe()`/abort keep working
+ * after a reconnect.
+ */
+interface SubscriptionRef {
+  sid: string;
+  /** Caller signal from `SubscribeOptions.signal` — aborting it unsubscribes. */
+  signal?: AbortSignal;
+  onAbort?: () => void;
+  /** `SleipnirSubscription.ended` + its resolver (called by {@link releaseRef}). */
+  ended: Promise<void>;
+  end: () => void;
 }
 
 interface ActiveSubscription {
@@ -194,6 +237,8 @@ interface ActiveSubscription {
   lastEventId: number;
   /** Phase R: per-subscribe resume policy override (null → fall back to the client-wide `onResume`). */
   resumePolicy?: ResumePolicy;
+  /** Stable handle identity (see {@link SubscriptionRef}). */
+  ref: SubscriptionRef;
 }
 
 /** Monotonic client-side id counter for unsubscribe requests (avoids id reuse). */
@@ -234,10 +279,10 @@ async function resolveDefaultFactory(): Promise<WsFactory> {
  * `call`/`callBatch` liefern die rohe Response (werfen nur bei Transport/Abbruch);
  * `callJson`/`callBinary` werfen bei logischem Nicht-2xx (Spiegel C#).
  *
- * **Known Limitation:** Der Server authentifiziert den WS-Upgrade nur über den
- * HTTP-Authorization-Header. Browser-WebSocket kann keine Header setzen —
- * authentifizierte Browser-WS-Calls brauchen serverseitige `?access_token=`-
- * Unterstützung (Roadmap) oder REST. Node (`ws`) sendet den Header korrekt.
+ * **Browser auth:** a browser WebSocket cannot set headers, so the bearer travels as
+ * `?access_token=`. The server honors it only with `SleipnirOptions.AcceptAccessTokenQuery`
+ * (opt-in; WS upgrade + SSE only). Cookie auth is the recommended browser path. Node (`ws`)
+ * sends the `Authorization` header.
  */
 export class SleipnirWebSocketClient {
   private readonly _baseUrl: string;
@@ -385,23 +430,33 @@ export class SleipnirWebSocketClient {
    * `subscribe` setzt `kind:"subscribe"` und (falls fehlt) eine `id`. Auf
    * Auto-Reconnect re-subscribed der Client automatisch mit demselben Request
    * (neue `subscriptionId`, gleiche `handlers`).
+   *
+   * `opts.signal`: aborting it before the subscribe response rejects with `CancelledError`;
+   * aborting it afterwards **unsubscribes** (same as `handle.unsubscribe()`), also across
+   * reconnects.
    */
   async subscribe<T>(
     req: SleipnirRequest,
     handlers: SubscribeHandlers<T>,
     opts?: SubscribeOptions,
   ): Promise<SleipnirSubscription> {
+    return this.subscribeInternal(req, handlers as SubscribeHandlers<unknown>, opts);
+  }
+
+  private async subscribeInternal(
+    req: SleipnirRequest,
+    handlers: SubscribeHandlers<unknown>,
+    opts: SubscribeOptions | undefined,
+    ref?: SubscriptionRef,
+  ): Promise<SleipnirSubscription> {
     if (this._disposed) throw new Error("SleipnirWebSocketClient: disposed.");
     if (!req.id) req.id = `${req.controller}.${req.method}`;
     const id = req.id;
     await this.connect();
 
-    const promise = this.registerPendingSubscribe(
-      id,
-      req,
-      handlers as SubscribeHandlers<unknown>,
-      opts,
-    );
+    const promise = this.registerPendingSubscribe(id, req, handlers, opts);
+    const pendingEntry = this._pendingSubscribes.get(id);
+    if (pendingEntry && ref) pendingEntry.ref = ref;
     try {
       const ws = this._ws;
       if (!ws || ws.readyState !== READY_OPEN) {
@@ -447,6 +502,52 @@ export class SleipnirWebSocketClient {
   /** Alias für {@link close} (Symmetrie zum REST-Client). */
   dispose(): void {
     this.close();
+  }
+
+  /**
+   * Replaces the connection with a fresh one (non-terminal) — e.g. after the app refreshed its
+   * credentials: the server authenticates a WebSocket once, at the upgrade, so a new bearer (or
+   * cookie) only takes effect on a new connection. The current socket is closed; calls and
+   * subscribes still in flight on it are rejected with a transport error (`code` 0), exactly as on
+   * a network drop. Active subscriptions are re-subscribed on the new socket per their
+   * {@link ResumePolicy} (default `"fresh"`), keeping their handles and `signal`s valid.
+   * State: `Reconnecting` → `Connected` (or `Disconnected` if the new connect fails).
+   */
+  async reconnect(): Promise<void> {
+    if (this._disposed) throw new Error("SleipnirWebSocketClient: disposed.");
+    this.stopReconnect();
+    const old = this._ws;
+    this._ws = undefined;
+    this._connectPromise = undefined;
+    if (old) {
+      // Retire the old socket silently: its close must not trigger the auto-reconnect loop.
+      old.onopen = null;
+      old.onmessage = null;
+      old.onclose = null;
+      old.onerror = null;
+      try {
+        old.close(1000, "client reconnect");
+      } catch {
+        // ignore
+      }
+    }
+    const err = new SleipnirError(0, "WebSocket reconnecting (connection replaced).");
+    this.rejectAllPending(err);
+    this.rejectAllPendingSubscribes(err);
+    this.setState(SleipnirConnectionState.Reconnecting);
+    try {
+      this._connectPromise = this.connectSlow().finally(() => {
+        this._connectPromise = undefined;
+      });
+      await this._connectPromise;
+    } catch (e) {
+      // A failed attempt whose socket closed has already handed over to the auto-reconnect loop
+      // (state stays Reconnecting); without one, the client is now disconnected.
+      if (!this._disposed && !this._reconnectPromise) this.setState(SleipnirConnectionState.Disconnected);
+      throw e;
+    }
+    this.setState(SleipnirConnectionState.Connected);
+    await this.resubscribeAll();
   }
 
   // --- Interna ---
@@ -687,6 +788,7 @@ export class SleipnirWebSocketClient {
   /** Terminal: alle aktiven Subscriptions auf onError setzen und verwerfen. */
   private cancelAllSubscriptions(err: Error): void {
     for (const [, entry] of this._subscriptions) {
+      releaseRef(entry.ref);
       try { entry.handlers.onError?.(err); } catch { /* Handler-Fehler nicht fatal */ }
     }
     this._subscriptions.clear();
@@ -699,7 +801,10 @@ export class SleipnirWebSocketClient {
    * serverseitig ohnehin mit der Connection gestorben).
    */
   private async unsubscribe(subscriptionId: string): Promise<void> {
-    if (!this._subscriptions.delete(subscriptionId)) return;
+    const entry = this._subscriptions.get(subscriptionId);
+    if (!entry) return;
+    this._subscriptions.delete(subscriptionId);
+    releaseRef(entry.ref);
     const ws = this._ws;
     if (ws && ws.readyState === READY_OPEN) {
       try {
@@ -737,6 +842,7 @@ export class SleipnirWebSocketClient {
       const decision = policy?.(ctx) ?? "fresh";
 
       if (decision === "drop") {
+        releaseRef(entry.ref);
         try { entry.handlers.onComplete?.(); } catch { /* handler error not fatal */ }
         continue;
       }
@@ -745,13 +851,15 @@ export class SleipnirWebSocketClient {
         if (decision === "resume") {
           await this.resubscribeResume(oldId, entry);
         } else {
-          // Fresh: reuse the public path, carrying the per-subscribe policy so a later reconnect
-          // still consults it. The cursor resets implicitly (new entry, lastEventId 0).
-          await this.subscribe<unknown>(entry.request, entry.handlers, {
+          // Fresh: the subscribe path, carrying the per-subscribe policy so a later reconnect
+          // still consults it, and the stable ref so the caller's handle/signal follow the new
+          // id. The cursor resets implicitly (new entry, lastEventId 0).
+          await this.subscribeInternal(entry.request, entry.handlers, {
             resumePolicy: entry.resumePolicy,
-          });
+          }, entry.ref);
         }
       } catch (err) {
+        releaseRef(entry.ref);
         const e = err instanceof Error ? err : new Error(String(err));
         try { entry.handlers.onError?.(e); } catch { /* handler error not fatal */ }
       }
@@ -853,9 +961,11 @@ export class SleipnirWebSocketClient {
       entry.handlers.onNext(obj.data);
     } else if (type === "complete") {
       this._subscriptions.delete(subscriptionId);
+      releaseRef(entry.ref);
       try { entry.handlers.onComplete?.(); } catch { /* Handler-Fehler nicht fatal */ }
     } else if (type === "error") {
       this._subscriptions.delete(subscriptionId);
+      releaseRef(entry.ref);
       const msg = typeof obj.message === "string" ? obj.message : "Subscription error";
       try { entry.handlers.onError?.(new Error(msg)); } catch { /* Handler-Fehler nicht fatal */ }
     }
@@ -865,6 +975,9 @@ export class SleipnirWebSocketClient {
   private handleSubscribeResponse(key: string, resp: SleipnirResponse): void {
     const pending = this._pendingSubscribes.get(key);
     if (!pending) return;
+    // Captured before dispose (which detaches the pre-ack abort listener): a caller signal keeps
+    // governing the subscription after the ack — aborting it unsubscribes.
+    const callerSignal = pending.callerSignal;
     this.disposePendingSubscribe(key);
     if (!resp.isSuccess) {
       // A failed resume re-subscribe must drop the pre-registered durable id so a later reconnect
@@ -889,27 +1002,53 @@ export class SleipnirWebSocketClient {
         entry.lastEventId = 0;
         this._subscriptions.delete(oldId);
       }
+      entry.ref.sid = sid;
       this._subscriptions.set(sid, entry);
-    } else {
-      this._subscriptions.set(sid, {
-        handlers: pending.handlers,
-        request: pending.request,
-        lastEventId: 0,
-        resumePolicy: pending.resumePolicy,
-      });
+      // A re-subscribe: the caller already holds its handle (backed by entry.ref); this one only
+      // completes the internal await.
+      pending.resolve(this.makeHandle(entry.ref));
+      return;
     }
+
+    // Fresh subscribe — a reconnect re-subscribe reuses the existing ref (the caller's handle and
+    // signal listener follow the new id); a first subscribe creates one.
+    const isResubscribe = pending.ref !== undefined;
+    const ref: SubscriptionRef = pending.ref ?? { sid, ...createEnded() };
+    ref.sid = sid;
+    this._subscriptions.set(sid, {
+      handlers: pending.handlers,
+      request: pending.request,
+      lastEventId: 0,
+      resumePolicy: pending.resumePolicy,
+      ref,
+    });
+    if (!isResubscribe && callerSignal) {
+      ref.signal = callerSignal;
+      ref.onAbort = () => void this.unsubscribe(ref.sid);
+      if (callerSignal.aborted) queueMicrotask(ref.onAbort);
+      else callerSignal.addEventListener("abort", ref.onAbort, { once: true });
+    }
+    pending.resolve(this.makeHandle(ref));
+  }
+
+  /** Public handle over a stable {@link SubscriptionRef}. */
+  private makeHandle(ref: SubscriptionRef): SleipnirSubscription {
     // Capture the subscription store so the live-cursor getter below can read the dedup
     // cursor without binding `this` (a getter in an object literal does not see the client).
     const store = this._subscriptions;
-    pending.resolve({
-      subscriptionId: sid,
+    return {
+      // Live id: follows a reconnect re-subscribe (new server id).
+      get subscriptionId() {
+        return ref.sid;
+      },
       // Live cursor: reads the dedup cursor from the active entry so a caller can snapshot
       // progress for a cross-transport resume after a transport switch.
       get lastEventId() {
-        return store.get(sid)?.lastEventId ?? 0;
+        return store.get(ref.sid)?.lastEventId ?? 0;
       },
-      unsubscribe: () => this.unsubscribe(sid),
-    });
+      unsubscribe: () => this.unsubscribe(ref.sid),
+      ended: ref.ended,
+    };
   }
 
   private dropUnmatched(text: string, key: string | undefined): void {
@@ -933,6 +1072,9 @@ export class SleipnirWebSocketClient {
     if (!this._closedByClient && !this._disposed && this._reconnect) {
       this.startReconnect();
     } else {
+      // No reconnect will follow: the server-side subscriptions died with the connection — end
+      // them (onError + `ended`) instead of leaving them dangling.
+      if (!this._disposed) this.cancelAllSubscriptions(new SleipnirError(0, "WebSocket connection closed."));
       this.setState(SleipnirConnectionState.Disconnected);
     }
   }
@@ -977,8 +1119,11 @@ export class SleipnirWebSocketClient {
           // weiter zum nächsten Backoff-Intervall (Zustand bleibt Reconnecting)
         }
       }
-      // Backoff erschöpft -> aufgeben.
-      if (!this._disposed) this.setState(SleipnirConnectionState.Disconnected);
+      // Backoff erschöpft -> aufgeben. Subscriptions can no longer be re-subscribed -> end them.
+      if (!this._disposed) {
+        this.cancelAllSubscriptions(new SleipnirError(0, "WebSocket reconnect gave up."));
+        this.setState(SleipnirConnectionState.Disconnected);
+      }
     })();
   }
 
@@ -987,6 +1132,14 @@ export class SleipnirWebSocketClient {
     this._reconnectAbort?.abort();
     this._reconnectPromise = undefined;
   }
+}
+
+/** Detaches a subscription's caller-signal listener (terminal end of the logical subscription). */
+function releaseRef(ref: SubscriptionRef): void {
+  if (ref.signal && ref.onAbort) ref.signal.removeEventListener("abort", ref.onAbort);
+  ref.signal = undefined;
+  ref.onAbort = undefined;
+  ref.end();
 }
 
 // --- Shared (gleichlautend mit rest.ts) ---

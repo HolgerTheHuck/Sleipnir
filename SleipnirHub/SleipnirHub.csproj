@@ -35,4 +35,10 @@
     <ProjectReference Include="..\SleipnirCore\SleipnirCore.csproj" />
   </ItemGroup>
 
+  <!-- The access_token query middleware (SleipnirHub.Auth) is internal; its query rewriting is
+       unit-tested directly. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="SleipnirTests" />
+  </ItemGroup>
+
 </Project>

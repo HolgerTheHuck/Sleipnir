@@ -132,6 +132,19 @@ so both `alias("ids")` and `alias("@ids")` yield `"@ids"`. (Pre-1.2.2 `alias`
 returned the bare name and the server's `ReplaceDependencyByAlias` never
 matched; fixed in 1.2.2.)
 
+The TS emitter additionally (1.5.0-preview):
+
+- emits contract **enums** as an `as const` object plus a same-named literal-union
+  type (`export const OrderState = { Open: 0, Shipped: 1 } as const;` +
+  `export type OrderState = (typeof OrderState)[keyof typeof OrderState];`) and
+  types every use site with it — the wire value stays the number. The JS / C# /
+  Python emitters keep the numeric scalar.
+- gives every **event method** an optional trailing `options`
+  (`SleipnirSubscribeOptions`: `signal`, `resumePolicy`, `timeout`, `headers`);
+  aborting `signal` ends the subscription.
+- keeps all DTO properties optional (`name?: T`) — discovery carries no
+  requiredness yet; nullability is honored (`T | null`).
+
 The C# and Python emitters mirror the same typed-batch runtime (`Alias` /
 `Arg<T>` / `Batch`) for their respective languages; the C# port is kept
 byte-for-byte in parity with the TS `--lang cs` snapshot by the

@@ -43,6 +43,9 @@ public class TransportTestFixture : IAsyncLifetime
             UseSignalR = true,
             UseMessagePack = true,
             MaximumParallelInvocationsPerClient = 100,
+            // Batch-cap for the transport gates (audit F5 — SignalR gate round-trip test);
+            // no integration test sends a bigger batch than this.
+            MaximumBatchSize = 50,
             RateLimitPermitLimit = 0 // aus (dev) -> keine Rate-Limit-Policy nötig
         });
 

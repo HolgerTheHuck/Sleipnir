@@ -62,20 +62,21 @@ namespace SleipnirHub.Hub
 
         public async Task<SleipnirResponse?> DoWork(SleipnirRequest request)
         {
-            var user = Context.UserIdentifier;
             return await service.InvokeDi(request, Context.GetHttpContext(), Context.ConnectionAborted);
         }
 
         public async Task<IEnumerable<SleipnirResponse>> DoWorkMany(SleipnirMultiRequest? request)
         {
-            if (request == null)
+            if (request?.Requests == null || request.Requests.Count == 0)
             {
                 return new List<SleipnirResponse>();
             }
-            if (request.Requests == null)
-            {
-                return new List<SleipnirResponse>();
-            }
+
+            // Batch-cap gate, modelled on the REST multi endpoint (audit F5): a comprehensible
+            // HubException instead of the invoker's InvalidOperationException backstop, and
+            // before any fan-out work is scheduled.
+            if (service.MaximumBatchSize > 0 && request.Requests.Count > service.MaximumBatchSize)
+                throw new HubException($"Batch exceeds MaximumBatchSize ({service.MaximumBatchSize}).");
 
             var result = await service.InvokeDi(
                 request.Requests,

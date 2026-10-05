@@ -1,5 +1,7 @@
 using FluentAssertions;
 using SleipnirClient.Sleipnir;
+using SleipnirCommon.Exceptions;
+using SleipnirCommon.Models;
 using SleipnirTests.Fixtures;
 using System.Text;
 using System.Text.Json;
@@ -75,6 +77,53 @@ public class SignalRTransportTests : IClassFixture<TransportTestFixture>
             responses[i]!.Id.Should().Be($"req{i}");
             responses[i]!.Data.Value.GetRawText().Should().Contain($"msg{i}");
         }
+    }
+
+    // Audit F5/R6: the hub batch path had no batch-size gate (only the invoker backstop)
+    // and 0% coverage. Round-trip through DoWorkMany over MessagePack.
+
+    [Fact]
+    public async Task DoWorkMany_WithinBatchCap_CorrelatesCorrectly()
+    {
+        var client = _fixture.CreateSignalrClient();
+        var batch = new SleipnirMultiRequest
+        {
+            Mode = ExecutionMode.Parallel,
+            Requests = Enumerable.Range(0, 5).Select(i =>
+                SleipnirCall.Init("TestInvoker", "Echo")
+                    .With($"msg{i}").Named($"req{i}").ToRequest()).ToList()
+        };
+
+        var responses = (await client.Call(batch))!;
+
+        var list = responses!.ToList();
+        for (var i = 0; i < 5; i++)
+        {
+            list[i]!.Code.Should().Be(200);
+            list[i]!.Id.Should().Be($"req{i}");
+            list[i]!.Data.Value.GetRawText().Should().Contain($"msg{i}");
+        }
+    }
+
+    [Fact]
+    public async Task DoWorkMany_AboveBatchCap_FailsWithHubException()
+    {
+        var client = _fixture.CreateSignalrClient();
+        var batch = new SleipnirMultiRequest
+        {
+            Mode = ExecutionMode.Parallel,
+            Requests = Enumerable.Range(0, 51).Select(i =>
+                SleipnirCall.Init("TestInvoker", "Echo")
+                    .With($"msg{i}").ToRequest()).ToList()
+        };
+
+        // The hub gate throws a HubException carrying the cap message (the client wraps
+        // it in SleipnirException with the HubException as the inner exception).
+        var act = async () => await client.Call(batch);
+
+        (await act.Should().ThrowAsync<SleipnirException>())
+            .WithInnerException<Exception>()
+            .Which.Message.Should().Contain("Batch exceeds MaximumBatchSize (50)");
     }
 
     [Fact]

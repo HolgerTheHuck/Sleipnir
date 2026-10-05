@@ -5,24 +5,28 @@ using SleipnirCommon.Models;
 namespace SleipnirClient.Sleipnir;
 
 /// <summary>
-/// In-Memory-Test-Double für <see cref="ISleipnirClient"/> (Phase 3, Schritt 5 — Client-Test-Doubles).
-/// Erlaubt Konsumenten, ihren Sleipnir-Client-Code zu unit-testen, ohne einen laufenden Server.
-/// Registriert Handler-Delegates pro <c>Controller.Method</c>; ein <see cref="Call"/> ruft den
-/// Handler synchron auf und gibt die Response zurück. <see cref="CallBinary"/> wird nicht
-/// unterstützt (wirft <see cref="NotSupportedException"/>). Siehe
-/// <c>docs/design/phase-3-events.md</c> Schritt 5.
+/// In-memory test double for <see cref="ISleipnirClient"/> (Phase 3, step 5 — client test doubles).
+/// Lets consumers unit-test their Sleipnir client code without a running server. Handlers are
+/// registered per <c>Controller.Method</c>; a <see cref="Call"/> invokes the handler synchronously
+/// and returns the response. <see cref="CallBinary"/> and event subscriptions are not supported
+/// (throw <see cref="NotSupportedException"/>). See <c>docs/design/phase-3-events.md</c> step 5.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Nicht für Produktion</b> — keine echte Verbindung, keine Serialisierung, keine Transports.
-/// Nur für Unit-Tests: der Konsument registriert Handler (z. B. <c>mock.On("Customer","GetById",
-/// req => SleipnirResults.Ok(new Customer{...}))</c>), und sein Client-Code, der
-/// <c>ISleipnirClient.Call</c> aufruft, wird gegen diese Handler getestet.
+/// <b>Not for production</b> — no real connection, no serialization, no transports. Unit tests
+/// only: the consumer registers handlers (e.g. <c>mock.On("Customer","GetById",
+/// req => SleipnirResults.Ok(new Customer{...}))</c>) and tests the client code that calls
+/// <c>ISleipnirClient.Call</c> against those handlers.
 /// </para>
 /// <para>
-/// Für typisierte generierte Clients: der generierte Client baut auf <c>ISleipnirClient</c> auf
-/// (oder einem <c>ISleipnirClient</c>-Mock). Eine Test-Instanz von <c>ISleipnirClient</c> (z. B. diese
-/// Klasse oder ein Moq-Setup) reicht, um generierte Client-Methoden zu testen.
+/// For typed generated clients: the generated client builds on <c>ISleipnirClient</c> (or an
+/// <c>ISleipnirClient</c> mock). A test <c>ISleipnirClient</c> instance (this class or a Moq setup)
+/// suffices to test generated client methods.
+/// </para>
+/// <para>
+/// <b>Batch semantics diverge from every real transport (audit F6):</b> <c>SleipnirMultiRequest.Mode</c>
+/// is ignored (requests always run sequentially in order), and <c>@alias</c> placeholders are not
+/// resolved. A real transport honors <c>Mode</c> and resolves aliases server-side.
 /// </para>
 /// </remarks>
 public sealed class SleipnirInMemoryClient : ISleipnirClient
@@ -91,13 +95,17 @@ public sealed class SleipnirInMemoryClient : ISleipnirClient
         return JsonSerializer.Deserialize<T>(response.DataBytes);
     }
 
-    public Task<IEnumerable<SleipnirResponse?>?> Call(SleipnirMultiRequest? request, CancellationToken ct = default)
+    public async Task<IEnumerable<SleipnirResponse?>?> Call(SleipnirMultiRequest? request, CancellationToken ct = default)
     {
-        if (request?.Requests == null) return Task.FromResult<IEnumerable<SleipnirResponse?>?>([]);
+        if (request?.Requests == null) return [];
+        // Limitation (audit F6 — documented, not fixed): batch semantics diverge from any real
+        // transport. `Mode` is IGNORED (requests always run sequentially in order, Serial-like),
+        // and `@alias` placeholders are NOT resolved (no dependency chaining). If a handler
+        // needs alias-driven arguments, register the handler against the resolved request.
         var results = new List<SleipnirResponse?>();
         foreach (var req in request.Requests)
-            results.Add(Call(req, ct).Result);
-        return Task.FromResult<IEnumerable<SleipnirResponse?>?>(results);
+            results.Add(await Call(req, ct));
+        return results;
     }
 
     public Task<byte[]?> CallBinary(SleipnirRequest? request, CancellationToken ct = default)

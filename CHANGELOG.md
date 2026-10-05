@@ -107,6 +107,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Parallel, Serial and the topological batches), including the alias-rebuilt request replicas,
   which dropped `BinaryData` on the copy.
 
+### Fixed — Server: SignalR batch-size gate (audit F5)
+
+- `DoWorkMany` now applies the `MaximumBatchSize` gate itself, modelled on the REST multi
+  endpoint: a comprehensible `HubException` before any fan-out work instead of the invoker's
+  `InvalidOperationException` backstop. A `DoWorkMany` round trip through the hub (MessagePack,
+  correlating responses) closes the 0 %-coverage gap on that path.
+
+### Fixed — Server: end-of-life ASP.NET 2.x dependency gone (audit S3)
+
+- `Sleipnir.Core` no longer pulls `Microsoft.AspNetCore.Http.Abstractions 2.3.0` (EOL since
+  2021) into every consumer's dependency graph — it uses
+  `<FrameworkReference Include="Microsoft.AspNetCore.App" />` like the other Sleipnir
+  projects already do. Verified during the 2026-09-13 audit: solution builds, suite green.
+
+### Fixed — `SleipnirInMemoryClient` honesty (audit F6)
+
+- The in-memory client's batch path no longer blocks on `.Result` (one thread hop per
+  batch request) and documents its honest semantics: `SleipnirMultiRequest.Mode` is ignored
+  (requests always run sequentially in order) and `@alias` placeholders are not resolved —
+  batch semantics diverge from every real transport, now stated on the class.
+
 ## [1.4.3] — 2026-09-02
 
 ### Added — Built-in Heimdall telemetry backend

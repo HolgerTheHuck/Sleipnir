@@ -18,8 +18,15 @@
     <PackageReference Include="JsonPath.Net" Version="2.1.1" />
     <PackageReference Include="MessagePack.Annotations" Version="3.1.8" />
     <PackageReference Include="Microsoft.AspNetCore.Authorization" Version="8.0.14" />
-    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- IHttpContext access (HttpContext, IStartupFilter plumbing) via the shared framework,
+       like SleipnirWebSocket / SleipnirServer / SleipnirDeveloperUi — not via the end-of-life
+       Microsoft.AspNetCore.Http.Abstractions 2.x package (audit S3), which no consumer should
+       keep in its dependency graph. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>

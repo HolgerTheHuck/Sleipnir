@@ -45,19 +45,23 @@ describe("emitTsClient — enum identity", () => {
     expect(types).not.toMatch(/\benum\s+\w+\s*\{/);
   });
 
-  it("types DTO properties with the enum type (nullability and arrays honored)", () => {
+  it("types DTO properties with the enum type (presence and arrays honored)", () => {
     const types = emitEnums()["api/types.ts"];
-    expect(types).toContain("  state?: OrderState;");
+    // Presence rule: non-nullable → required; nullable → `?: T | null`.
+    expect(types).toContain("  state: OrderState;");
     expect(types).toContain("  previousState?: OrderState | null;");
-    expect(types).toContain("  history?: OrderState[];");
-    expect(types).toContain("  priority?: Priority;");
+    expect(types).toContain("  history: OrderState[];");
+    expect(types).toContain("  priority: Priority;");
   });
 
-  it("states requiredness (not nullability) as the missing discovery information", () => {
+  it("states the presence rule (derived from nullability, not a separate wire fact)", () => {
     const types = emitEnums()["api/types.ts"];
-    expect(types).toContain("discovery carries no per-property requiredness yet");
-    expect(types).toContain("Nullability IS honored");
+    expect(types).toContain("presence-aware");
+    expect(types).toContain("required (always present on\n// the wire)");
+    expect(types).toContain("presence-optional");
+    expect(types).toContain("WhenWritingNull");
     expect(types).not.toContain("discovery carries no nullability");
+    expect(types).not.toContain("discovery carries no per-property requiredness");
   });
 
   it("types parameters, return types, event payloads and path records with the enum type", () => {
@@ -137,7 +141,7 @@ describe("emitTsClient — enum identity", () => {
     const tree = emitTsClient(buildEmitterInput(discovery, new NamingResolver()));
     const types = tree["api/types.ts"];
     expect(types).toContain('export const BStatus = {\n  Ok: 0,\n  "Not-Ok": 1,\n} as const;');
-    expect(types).toContain("export interface AStatus {\n  code?: BStatus;\n}");
+    expect(types).toContain("export interface AStatus {\n  code: BStatus;\n}");
     expect(tree["api/controllers.ts"]).toContain("a(): TypedCall<AStatus, AStatusPaths>");
     expect(tree["api/controllers.ts"]).toContain("b(): TypedCall<BStatus, BStatusPaths>");
   });

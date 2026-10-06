@@ -32,7 +32,7 @@ delegate to `ISleipnirCore` (registered as a singleton), which lives here.
 ## Install
 
 ```xml
-<PackageReference Include="Sleipnir.Core" Version="1.4.3" />
+<PackageReference Include="Sleipnir.Core" Version="1.5.0" />
 ```
 
 Targets `net8.0`. Depends on `Sleipnir.Common` and `JsonPath.Net` (for `@alias`

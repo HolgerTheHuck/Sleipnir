@@ -25,7 +25,7 @@
     <PackageReference Include="FluentAssertions" Version="6.12.1" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.13" />
     <PackageReference Include="Moq" Version="4.20.72" />
-    <PackageReference Include="coverlet.collector" Version="6.0.2" />
+    <PackageReference Include="coverlet.collector" Version="10.0.1" />
     <!-- The source-generator diagnostic test (SourceGeneratorDiagnosticsTests) references
          Sleipnir.SourceGenerator, which is a Roslyn generator and thus depends on Microsoft.CodeAnalysis.
          SleipnirTests loads the generator assembly to call CodegenSeam.TryEmit; the integration

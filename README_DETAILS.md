@@ -419,6 +419,26 @@ in all modes. Widening (`int`→`long`) is accepted in all modes. See
 
 Returned `SleipnirResponse` objects from controllers are **not** gated by `EnableDetailedErrors` — their `Code`/`Data`/`Error` pass through verbatim. Only the generic 500 path (an unexpected throw) hides details in production.
 
+### Typed business errors — `SleipnirResponse<T>`
+
+Returning the non-generic `SleipnirResponse` costs the result type: discovery sees `opaque`, and the generated clients type the payload as `unknown`. When a method should hand back a payload on success *and* a coded business error on failure, return the generic typed envelope instead:
+
+```csharp
+[SleipnirMethod("Login")]
+public SleipnirResponse<LoginResult> Login(string username, string password)
+    => CheckCredentials(username, password)
+        ? SleipnirResponse<LoginResult>.Ok(new LoginResult { /* … */ })
+        : SleipnirResponse<LoginResult>.Unauthorized("invalid credentials.");
+```
+
+The static factories mirror `SleipnirResults` (`Ok`, `NoContent`, `BadRequest`, `Unauthorized`, `Forbidden`, `NotFound`, `Conflict`, `InternalServerError`, plus `Fail(code, msg, …)` for custom codes). `Value` decodes the typed payload on the success path; error envelopes leave the data slot null and carry `error.message` like the non-generic path.
+
+What it buys you, and what stays the same:
+
+- **Discovery/codegen see `T`** — the generic envelope unwraps to its payload (the analogue of the `Task<T>` unwrap), so the generated TS client types `Login()` as `LoginResult` (and the wire `TypedResponse<LoginResult>` keeps `ok`/`code`/`error` for the failure branch), and the C# contract emits `Task<LoginResult?>`. The **non-generic** `SleipnirResponse` stays opaque (back-compat).
+- **Wire is identical** to a `SleipnirResults.Ok`/`.NotFound` response — same envelope keys and key order on every transport (REST/WS JSON and SignalR MessagePack); `@alias` dependency extraction still reads the payload.
+- Unlike `SleipnirResults`, the generic type has **no raw-JSON `Ok(string)` / binary `Ok(byte[])` overload** — `Ok` always means "serialize the payload". The error factories are named (`NotFound`, `Unauthorized`, …); the custom-code factory is `Fail(...)` — deliberately **not** `Error`, because a static `Error` would shadow the inherited `Error` property on every instance.
+
 ### Casing contract
 
 .NET and JavaScript handle casing differently, and Sleipnir sits between them. There are **three independent casing regimes**, each applying to a different part of the call:

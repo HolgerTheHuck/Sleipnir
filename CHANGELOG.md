@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Typed business-error envelope `SleipnirResponse<T>`** (`SleipnirCommon.Models`, server side
+  — NuGet `SleipnirCommon`/`SleipnirCore`/…): a sealed `SleipnirResponse` subclass with static
+  factories mirroring `SleipnirResults` (`Ok`/`NoContent`/`BadRequest`/`Unauthorized`/`Forbidden`/
+  `NotFound`/`Conflict`/`InternalServerError`, custom code via `Fail(...)`) and a typed `Value`
+  accessor. Controllers can now return e.g. `Task<SleipnirResponse<LoginResult>>` to hand back a
+  payload on success *and* a coded business error without losing the result type: discovery and
+  all generated clients see the payload type `T` (the generic envelope unwraps to it — the
+  analogue of the `Task<T>` unwrap), while `code` + `error.message` still ride the envelope.
+  Wire is byte-identical to a non-generic `SleipnirResults` response on every transport
+  (REST/WS JSON and SignalR MessagePack); the non-generic `SleipnirResponse` stays opaque in
+  discovery (back-compat). No raw-JSON `Ok(string)`/binary `Ok(byte[])` overload on the generic
+  type — `Ok` always serializes the payload.
+- **`SleipnirResponse` discovery doc note — `docs/discovery-schema.md`** and
+  `README_DETAILS.md` ("Typed business errors"): the unwrap rule, the `Fail`-vs-`Error`
+  naming rationale and the transport-invariance invariants.
+
+### Fixed
+
+- **`sleipnir-codegen` TS barrel** — the generated `api/index.ts` re-exports the two named
+  exports of `client.ts` that used to require importing past the barrel:
+  `export type { TypedResponse, SleipnirClientOptions } from "./client.js";`.
+
+### Changed
+
+- Codegen snapshots: all committed story01/story02/story03 TS/JS trees (4 capabilities each)
+  gained the barrel line; the Story-01 fixture dogfoods the typed envelope via
+  `Customer.GetByIdEnvelope` (`Task<SleipnirResponse<Customer>>`), pinning that the envelope
+  method emits `TypedCall<Customer, CustomerPaths>` with no opaque TODO (TS and C#) and that
+  the server-derived codegen golden still matches live discovery (`DiscoveryContractTests`).
+
 ## [1.5.0] — 2026-10-06
 
 ### Added — TS client (`sleipnir-client`): connection state, 401 hook, subscription lifecycle (U4)

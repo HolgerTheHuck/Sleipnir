@@ -145,6 +145,11 @@ Design rules:
 - `kind:"ref"` is used for **both** object types and enum types; the consumer resolves the
   key into `types` and reads `TypeMeta.kind` to know which. Enums therefore carry their
   members in exactly one place (`TypeMeta.members`).
+- The **generic typed envelope `SleipnirResponse<T>` never appears in the schema**: it is
+  unwrapped to its payload `T` at every usage site (the analogue of the `Task<T>` unwrap),
+  so a business-error method models as its payload type and the error branch (`data:null`
+  + `error.message` on the wire) is the clients' envelope concern (`TypedResponse<T>`,
+  `Task<T?>`). Only the **non-generic** `SleipnirResponse` appears as `opaque` — back-compat.
 
 ---
 

@@ -117,12 +117,12 @@ public static class SleipnirResults
     /// </summary>
     internal static SleipnirError BuildError(int code, string message,
         SleipnirErrorCategory category, string? details) => new()
-    {
-        Code = code,
-        Message = message,
-        Details = details,
-        Category = category,
-    };
+        {
+            Code = code,
+            Message = message,
+            Details = details,
+            Category = category,
+        };
 
     /// <summary>400 Bad Request — ungültige Parameter / Validierungsfehler.</summary>
     public static SleipnirResponse BadRequest(string message, string? details = null)

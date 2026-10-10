@@ -21,7 +21,7 @@ The SignalR transport and the server integration host for
 ## Install
 
 ```xml
-<PackageReference Include="Sleipnir.Hub" Version="1.5.0" />
+<PackageReference Include="Sleipnir.Hub" Version="1.6.0" />
 ```
 
 Targets `net8.0` (`Microsoft.NET.Sdk.Web`). Depends on `Sleipnir.Core` (→ `Sleipnir.Common`).

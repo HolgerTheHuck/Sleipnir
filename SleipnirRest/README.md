@@ -28,7 +28,7 @@ wire — see [JSONRPC_COMPAT.md](../JSONRPC_COMPAT.md).
 ## Install
 
 ```xml
-<PackageReference Include="Sleipnir.Rest" Version="1.5.0" />
+<PackageReference Include="Sleipnir.Rest" Version="1.6.0" />
 ```
 
 Targets `net8.0` (`Microsoft.NET.Sdk.Web`). Depends on `Sleipnir.Core` (→ `Sleipnir.Common`).

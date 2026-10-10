@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "svelte": "^5.0.0",
-    "sleipnir-client": "file:../../../templates/Sleipnir.Templates/nupkg/localfeed/sleipnir-client-1.5.0.tgz"
+    "sleipnir-client": "file:../../../templates/Sleipnir.Templates/nupkg/localfeed/sleipnir-client-1.6.0.tgz"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",

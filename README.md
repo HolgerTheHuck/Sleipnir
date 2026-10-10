@@ -218,13 +218,13 @@ Already have an ASP.NET Core project? Add the packages directly.
 **Server** — all transports + Developer UI:
 
 ```xml
-<PackageReference Include="Sleipnir.Server" Version="1.5.0" />
+<PackageReference Include="Sleipnir.Server" Version="1.6.0" />
 ```
 
 **C# client:**
 
 ```xml
-<PackageReference Include="Sleipnir.Client" Version="1.5.0" />
+<PackageReference Include="Sleipnir.Client" Version="1.6.0" />
 ```
 
 **TypeScript / JavaScript client:**
@@ -236,7 +236,7 @@ npm i sleipnir-client
 **Telemetry with built-in dashboard** — optional, replaces the Prometheus scrape with an embedded Heimdall backend (dashboard + PromQL API under `/otel`, no collector):
 
 ```xml
-<PackageReference Include="Sleipnir.Telemetry.Heimdall" Version="1.5.0" />
+<PackageReference Include="Sleipnir.Telemetry.Heimdall" Version="1.6.0" />
 ```
 
 **Typed client generation:**

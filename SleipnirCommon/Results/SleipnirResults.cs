@@ -30,7 +30,10 @@ public static class SleipnirResults
 {
     // camelCase + relaxed Encoder (wie der Invoker). ProblemDetails (RFC 7807) wird
     // kanonisch in CamelCase serialisiert; UnsafeRelaxed verhindert `"`-Escaping.
-    private static readonly JsonSerializerOptions CamelCaseJsonOptions = new()
+    // internal (not private): the generic typed envelope
+    // SleipnirCommon.Models.SleipnirResponse<T> deserializes with the SAME instance on
+    // both produce (Ok(T)) and consume (Value) sides, keeping the camelCase round-trip exact.
+    internal static readonly JsonSerializerOptions CamelCaseJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -104,14 +107,22 @@ public static class SleipnirResults
         {
             Code = code,
             Data = null,
-            Error = new SleipnirError
-            {
-                Code = code,
-                Message = message,
-                Details = details,
-                Category = category,
-            },
+            Error = BuildError(code, message, category, details),
         };
+
+    /// <summary>
+    /// Shared error-object construction for <see cref="Error(int, string, SleipnirErrorCategory, string?)"/>
+    /// and the generic typed envelope (<see cref="SleipnirCommon.Models.SleipnirResponse{T}.Error"/>),
+    /// so both paths never drift apart.
+    /// </summary>
+    internal static SleipnirError BuildError(int code, string message,
+        SleipnirErrorCategory category, string? details) => new()
+    {
+        Code = code,
+        Message = message,
+        Details = details,
+        Category = category,
+    };
 
     /// <summary>400 Bad Request — ungültige Parameter / Validierungsfehler.</summary>
     public static SleipnirResponse BadRequest(string message, string? details = null)

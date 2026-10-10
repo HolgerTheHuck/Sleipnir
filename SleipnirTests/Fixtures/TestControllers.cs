@@ -151,6 +151,27 @@ public class TestDto
 }
 
 /// <summary>
+/// Deterministic controller for the generic typed envelope
+/// SleipnirResponse&lt;T&gt; (Weg A with a typed error channel). Deliberately separate
+/// from TestInvokerController so its discovery/registration surface stays isolated;
+/// the wire state is identical to a SleipnirResults response (invoker pass-through
+/// catches the derived class via <c>is SleipnirResponse</c>).
+/// </summary>
+[SleipnirController("TestEnvelope")]
+public class TestEnvelopeController
+{
+    [SleipnirMethod("GetEnvelopeOr404")]
+    public Task<SleipnirResponse<TestDto>> GetEnvelopeOr404(int id)
+        => Task.FromResult(id == 99
+            ? SleipnirResponse<TestDto>.NotFound($"Customer '{id}' not found.")
+            : SleipnirResponse<TestDto>.Ok(new TestDto { Id = id, Name = "Found" }));
+
+    [SleipnirMethod("UnauthorizedEnvelope")]
+    public SleipnirResponse<TestDto> UnauthorizedEnvelope()
+        => SleipnirResponse<TestDto>.Unauthorized("invalid credentials.");
+}
+
+/// <summary>
 /// Controller with a dotted namespace, to map arbitrarily deep routing paths
 /// (Customer.Address.Contact) via the Controller field.
 /// </summary>
@@ -467,6 +488,11 @@ public class DiscoveryInferenceController
     [SleipnirMethod("ReturnFrameworkType")]
     public SleipnirResponse ReturnFrameworkType(int id)
         => SleipnirResults.Ok(new UnmarkedDto { Id = id, Name = "envelope" });
+
+    /// <summary>The generic typed envelope SleipnirResponse&lt;T&gt; → must unwrap to the payload (ref to UnmarkedDto), unlike rule 5.</summary>
+    [SleipnirMethod("ReturnEnvelope")]
+    public Task<SleipnirResponse<UnmarkedDto>> ReturnEnvelope(int id)
+        => Task.FromResult(SleipnirResponse<UnmarkedDto>.Ok(new UnmarkedDto { Id = id, Name = "envelope" }));
 
     /// <summary>Rule 2: own-assembly type with [SleipnirDataContract(Exclude = true)] → force-opaque.</summary>
     [SleipnirMethod("TakeExcluded")]

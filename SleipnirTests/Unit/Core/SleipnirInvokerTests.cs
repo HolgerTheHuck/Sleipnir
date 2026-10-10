@@ -1,5 +1,6 @@
 using FluentAssertions;
 using SleipnirCommon.Models;
+using SleipnirCommon.Results;
 using SleipnirCore.Attributes;
 using SleipnirCore.Services;
 using SleipnirTests.Fixtures;
@@ -28,6 +29,7 @@ public class SleipnirInvokerTests
         services.AddTransient<TestInvokerController>();
         services.AddTransient<NestedContactController>();
         services.AddTransient<DependencyChainController>();
+        services.AddTransient<TestEnvelopeController>();
         _serviceProvider = services.BuildServiceProvider();
 
         var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
@@ -36,6 +38,7 @@ public class SleipnirInvokerTests
         _invoker.Register<TestInvokerController>();
         _invoker.Register<NestedContactController>();
         _invoker.Register<DependencyChainController>();
+        _invoker.Register<TestEnvelopeController>();
     }
 
     // jsonValue ist entweder ein roher @alias-Platzhalter (C#-String ab "@") oder ein
@@ -475,6 +478,80 @@ public class SleipnirInvokerTests
         // Data bei Fehlern null; Message in Error.Message.
         response.Error!.Message.Should().Be("input must not be empty.");
         response.Error!.Details.Should().Be("ParameterName=input");
+    }
+
+    // --- Weg A auf dem generischen Typed Envelope (SleipnirResponse<T>) ----------
+    // Die abgeleitete Klasse muss durch denselben `is SleipnirResponse`-Pass-through
+    // reiten: wäre sie es nicht, würde das Envelope-Objekt selbst als Data eines
+    // versehentlichen 200 serialisiert (nested {code,data} — das Kernrisiko von S1).
+
+    [Fact]
+    public async Task InvokeDi_TypedEnvelope_Error_IsPassedThroughVerbatim()
+    {
+        var request = CreateRequest("TestEnvelope", "GetEnvelopeOr404", ("id", "99"));
+
+        var response = await _invoker.InvokeDi(request, null);
+
+        response!.Code.Should().Be(404);
+        response.IsSuccess.Should().BeFalse();
+        response.Data.Should().BeNull();
+        response.Error!.Code.Should().Be(404);
+        response.Error.Message.Should().Be("Customer '99' not found.");
+        response.Id.Should().Be("TestEnvelope.GetEnvelopeOr404");
+    }
+
+    [Fact]
+    public async Task InvokeDi_TypedEnvelope_Ok_IsPassedThroughVerbatim_And_Value_Decodes()
+    {
+        var request = CreateRequest("TestEnvelope", "GetEnvelopeOr404", ("id", "5"));
+
+        var response = await _invoker.InvokeDi(request, null);
+
+        response!.Code.Should().Be(200);
+        response.IsSuccess.Should().BeTrue();
+        response.Error.Should().BeNull();
+        response.Data.Value.GetRawText().Should().Contain("\"id\":5");
+        response.Data.Value.GetRawText().Should().Contain("\"name\":\"Found\"");
+
+        // The typed payload survives the round-trip through the framework.
+        var envelope = (SleipnirCommon.Models.SleipnirResponse<TestDto>)response;
+        envelope.Value!.Id.Should().Be(5);
+        envelope.Value.Name.Should().Be("Found");
+    }
+
+    [Fact]
+    public async Task InvokeDi_TypedEnvelope_Unauthorized_CarriesMessage()
+    {
+        var request = CreateRequest("TestEnvelope", "UnauthorizedEnvelope");
+
+        var response = await _invoker.InvokeDi(request, null);
+
+        response!.Code.Should().Be(401);
+        response.Error!.Category.Should().Be(SleipnirErrorCategory.Unauthenticated);
+        response.Error.Message.Should().Be("invalid credentials.");
+    }
+
+    /// <summary>
+    /// Dependency chaining on a typed-envelope producer: <c>$.id</c> must extract
+    /// from the inner payload data of the Ok envelope (the wire data slot holds the
+    /// payload; the envelope's own key order is never part of the extraction scope).
+    /// </summary>
+    [Fact]
+    public async Task DependencyChain_EnvelopeProducer_Also_ExposesAliasFromInnerData()
+    {
+        var producer = ChainRequest("s1", "TestEnvelope", "GetEnvelopeOr404",
+            new Dictionary<string, string> { { "aliasId", "$.id" } },
+            ("id", "7"));
+        var consumer = ChainRequest("s2", "DepChain", "EchoInt", ("value", "@aliasId"));
+
+        var responses = (await _invoker.InvokeDi(new[] { producer, consumer }, null)).ToList();
+
+        var byId = responses.ToDictionary(r => r!.Id ?? string.Empty);
+        byId["s1"].Code.Should().Be((int)HttpStatusCode.OK);
+        // Extracted from the inner payload, not from a nested envelope.
+        byId["s1"].ExposedDependencies!["aliasId"].Should().Be("7");
+        byId["s2"].Code.Should().Be((int)HttpStatusCode.OK);
+        byId["s2"].Data.Value.Deserialize<int>().Should().Be(7);
     }
 
     [Fact]

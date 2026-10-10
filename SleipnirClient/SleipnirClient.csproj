@@ -26,6 +26,7 @@
     <Compile Include="..\SleipnirCommon\MessagePack\JsonElementMessagePackFormatter.cs" Link="MessagePack\JsonElementMessagePackFormatter.cs" />
     <Compile Include="..\SleipnirCommon\MessagePack\JsonNodeMessagePackFormatter.cs" Link="MessagePack\JsonNodeMessagePackFormatter.cs" />
     <Compile Include="..\SleipnirCommon\MessagePack\SleipnirResponseMessagePackFormatter.cs" Link="MessagePack\SleipnirResponseMessagePackFormatter.cs" />
+    <Compile Include="..\SleipnirCommon\MessagePack\SleipnirResponseOfTMessagePackFormatter.cs" Link="MessagePack\SleipnirResponseOfTMessagePackFormatter.cs" />
   </ItemGroup>
 
   <ItemGroup>

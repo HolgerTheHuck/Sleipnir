@@ -113,7 +113,9 @@ namespace SleipnirCore.Services
             // Contract-assembly set = assemblies of all registered controllers. Types from these
             // assemblies are expanded by signature inference (Weg C); types from other assemblies
             // (BCL, Sleipnir framework envelopes, third-party) stay opaque unless [SleipnirDataContract]
-            // forces expansion. Computed once: the controller map does not change during a build.
+            // forces expansion. Exception: the generic typed envelope SleipnirResponse<T> unwraps
+            // to its payload in BuildTypeRef (see there); only the non-generic envelope hits rule 5.
+            // Computed once: the controller map does not change during a build.
             var contractAssemblies = _routeHandlers.Values
                 .Select(t => t.Assembly)
                 .Distinct()
@@ -212,6 +214,18 @@ namespace SleipnirCore.Services
             var underlying = Nullable.GetUnderlyingType(type);
             if (underlying != null)
                 return BuildTypeRef(underlying, true, ctx);
+
+            // Generic typed envelope SleipnirResponse<T> (and Task<SleipnirResponse<T>> via the
+            // caller-side Task unwrap) -> unwrap to the payload. Analogue of Nullable<T> above:
+            // one place, applies to returns, parameters and nested properties. The wire data slot
+            // holds the payload (errors keep data:null and carry code + error object) — the
+            // non-2xx branch is modelled CLIENT-side (TS `TypedResponse<T> = SleipnirResponse &
+            // { data: T | null }`, C# contracts `Task<T?>`), not by discovery nullability, so the
+            // payload ref keeps this occurrence's nullable (absent for Task returns, same as T
+            // inside Task<T> today). The NON-generic SleipnirResponse deliberately stays opaque
+            // (rule 5 below, back-compat).
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(SleipnirCommon.Models.SleipnirResponse<>))
+                return BuildTypeRef(type.GetGenericArguments()[0], nullable, ctx);
 
             // byte[] -> binary scalar (before array detection).
             if (type == typeof(byte[]))
@@ -372,6 +386,8 @@ namespace SleipnirCore.Services
         ///   3. [SleipnirDataContract] (bare) -> force-expand.
         ///   4. assembly in the contract-assembly set -> expand.
         ///   5. otherwise (foreign/BCL/Sleipnir envelope) -> opaque.
+        /// (The generic typed envelope SleipnirResponse&lt;T&gt; never reaches this classifier —
+        /// it is unwrapped to its payload earlier in BuildTypeRef.)
         /// </summary>
         private static bool IsExpandableType(Type type, HashSet<Assembly> contractAssemblies)
         {

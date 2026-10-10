@@ -35,6 +35,7 @@
     <Compile Remove="MessagePack\JsonElementMessagePackFormatter.cs" />
     <Compile Remove="MessagePack\JsonNodeMessagePackFormatter.cs" />
     <Compile Remove="MessagePack\SleipnirResponseMessagePackFormatter.cs" />
+    <Compile Remove="MessagePack\SleipnirResponseOfTMessagePackFormatter.cs" />
   </ItemGroup>
 
 </Project>

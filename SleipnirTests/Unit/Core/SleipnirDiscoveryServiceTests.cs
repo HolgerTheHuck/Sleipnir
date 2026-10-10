@@ -189,6 +189,31 @@ public class SleipnirDiscoveryServiceTests
         method.ReturnType.NativeName.Should().Be("SleipnirResponse");
     }
 
+    /// <summary>
+    /// Der generische Typed Envelope SleipnirResponse&lt;T&gt; wird auf den Payload entpackt
+    /// (analog zum Task-unwrap) — UnmarkedDto erscheint als ref, nicht als opaque
+    /// "SleipnirResponse". Der nicht-generische Envelope bleibt davon unberührt
+    /// (Regel-5-Test oben).
+    /// </summary>
+    [Fact]
+    public void GetDiscoveryInfo_Inference_GenericEnvelopeUnwrapsToPayloadRef()
+    {
+        var invoker = CreateInvoker<DiscoveryInferenceController>();
+        var discovery = invoker.GetDiscoveryInfo();
+
+        var method = discovery.Controllers[0].Methods.First(m => m.MethodName == "ReturnEnvelope");
+        // Payload expanded as a normal contract type (ref) — the envelope's own
+        // {code,data,error} shape is never part of discovery. Nullability follows the
+        // Task-return occurrence (absent), the same as any T inside Task<T> today.
+        method.ReturnType.Kind.Should().Be("ref");
+        method.ReturnType.Ref.Should().Be(typeof(UnmarkedDto).FullName);
+        method.ReturnType.NativeName.Should().BeNull();
+        method.ReturnType.Nullable.Should().NotHaveValue();
+
+        // The payload is registered as a standard contract type.
+        discovery.Types.Should().ContainKey(typeof(UnmarkedDto).FullName!);
+    }
+
     /// <summary>Regel 2: Own-Assembly-Typ mit [SleipnirDataContract(Exclude = true)] bleibt force-opaque.</summary>
     [Fact]
     public void GetDiscoveryInfo_Inference_ExcludeKeepsOwnAssemblyTypeOpaque()

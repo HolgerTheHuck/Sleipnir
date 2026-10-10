@@ -116,6 +116,12 @@ public sealed class JsonElementResolver : IFormatterResolver
         // (sonst JsonDocument-Baum + Re-Parse auf dem Server → Regression).
         if (typeof(T) == typeof(SleipnirResponse))
             return (IMessagePackFormatter<T>)(object)SleipnirResponseMessagePackFormatter.Instance;
+        // Generischer Typed Envelope SleipnirResponse<T>: der SignalR Result-Pfad löst den
+        // Formatter über den RUNTIME-Typ auf. Die abgeleitete Klasse trägt keine eigene
+        // MP-Metadaten — der Shim delegiert auf den Basenformatter (6-Element-Basis-Shape).
+        if (typeof(T).IsGenericType
+            && typeof(T).GetGenericTypeDefinition() == typeof(SleipnirCommon.Models.SleipnirResponse<>))
+            return (IMessagePackFormatter<T>)SleipnirResponseOfTFormatterResolver.GetShimInstance(typeof(T));
         return StandardResolver.Instance.GetFormatter<T>();
     }
 }

@@ -169,6 +169,9 @@ class CustomerClient:
     def get_by_id(self, customerId: int) -> SleipnirCall:
         return SleipnirCall("Customer", "GetById", {"customerId": customerId})
 
+    def get_by_id_envelope(self, customerId: int) -> SleipnirCall:
+        return SleipnirCall("Customer", "GetByIdEnvelope", {"customerId": customerId})
+
 class AddressClient:
     def __init__(self, owner: "SleipnirClient") -> None:
         self._owner = owner

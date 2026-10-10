@@ -22,12 +22,12 @@
 
 /**
  * @typedef {Object} Order
- * @property {number} customerId
  * @property {number} id
- * @property {string | null} [note]
- * @property {string} placedAt
+ * @property {number} customerId
  * @property {number} shippingAddressId
  * @property {string} status
+ * @property {string} placedAt
+ * @property {string | null} [note]
  */
 
 /**

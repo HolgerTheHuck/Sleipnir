@@ -47,23 +47,23 @@ class Article:
 
 @dataclass
 class Order:
-    customerId: int
     id: int
-    placedAt: str
+    customerId: int
     shippingAddressId: int
     status: str
+    placedAt: str
     note: Optional[str] = None
     @classmethod
     def from_dict(cls, d: dict) -> "Order":
         if d is None:
-            return cls(customerId=None, id=None, note=None, placedAt=None, shippingAddressId=None, status=None)  # type: ignore[arg-type]
-        customerId=d.get("customerId")
+            return cls(id=None, customerId=None, shippingAddressId=None, status=None, placedAt=None, note=None)  # type: ignore[arg-type]
         id=d.get("id")
-        note=d.get("note")
-        placedAt=d.get("placedAt")
+        customerId=d.get("customerId")
         shippingAddressId=d.get("shippingAddressId")
         status=d.get("status")
-        return cls(customerId=customerId, id=id, note=note, placedAt=placedAt, shippingAddressId=shippingAddressId, status=status)  # type: ignore[call-arg]
+        placedAt=d.get("placedAt")
+        note=d.get("note")
+        return cls(id=id, customerId=customerId, shippingAddressId=shippingAddressId, status=status, placedAt=placedAt, note=note)  # type: ignore[call-arg]
 
 @dataclass
 class Customer:

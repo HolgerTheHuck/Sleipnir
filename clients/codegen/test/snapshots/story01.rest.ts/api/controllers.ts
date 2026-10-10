@@ -53,6 +53,10 @@ export class CustomerClient {
   getById(customerId: number): TypedCall<Customer, CustomerPaths> {
     return new TypedCall<Customer, CustomerPaths>(this._build("Customer", "GetById").with({ customerId: customerId }));
   }
+
+  getByIdEnvelope(customerId: number): TypedCall<Customer, CustomerPaths> {
+    return new TypedCall<Customer, CustomerPaths>(this._build("Customer", "GetByIdEnvelope").with({ customerId: customerId }));
+  }
 }
 
 export class AddressClient {

@@ -73,6 +73,15 @@ export class CustomerClient {
     const call = this._build("Customer", "GetById").with({ customerId: customerId });
     return call;
   }
+
+  /**
+   * @param {number} customerId
+   * @returns {Promise<SleipnirResponse<Customer | null>>}
+   */
+  async getByIdEnvelope(customerId) {
+    const call = this._build("Customer", "GetByIdEnvelope").with({ customerId: customerId });
+    return call;
+  }
 }
 
 export class AddressClient {

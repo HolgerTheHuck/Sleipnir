@@ -146,6 +146,19 @@ public class CustomerController
         await StoryLatency.Wait();
         return Store.Customers.GetValueOrDefault(customerId);
     }
+
+    // Dogfood for the typed business-error envelope (SleipnirResponse<T>): the 404 branch
+    // carries code + error.message on the wire while discovery/codegen still see the
+    // Customer payload (the generic envelope unwraps to it). Wire shape is identical to
+    // GetById's response envelope.
+    [SleipnirMethod("GetByIdEnvelope")]
+    public async Task<SleipnirCommon.Models.SleipnirResponse<Customer>> GetByIdEnvelope(int customerId)
+    {
+        await StoryLatency.Wait();
+        return Store.Customers.TryGetValue(customerId, out var customer)
+            ? SleipnirCommon.Models.SleipnirResponse<Customer>.Ok(customer)
+            : SleipnirCommon.Models.SleipnirResponse<Customer>.NotFound($"Customer '{customerId}' not found.");
+    }
 }
 
 [SleipnirController("OrderLine")]

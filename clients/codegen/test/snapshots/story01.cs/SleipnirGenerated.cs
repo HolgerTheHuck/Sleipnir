@@ -47,18 +47,18 @@ namespace Sleipnir.Generated
 
     public class Order
     {
-        [JsonPropertyName("customerId")]
-        public int CustomerId { get; set; }
         [JsonPropertyName("id")]
         public int Id { get; set; }
-        [JsonPropertyName("note")]
-        public string? Note { get; set; }
-        [JsonPropertyName("placedAt")]
-        public DateTime PlacedAt { get; set; }
+        [JsonPropertyName("customerId")]
+        public int CustomerId { get; set; }
         [JsonPropertyName("shippingAddressId")]
         public int ShippingAddressId { get; set; }
         [JsonPropertyName("status")]
         public string Status { get; set; }
+        [JsonPropertyName("placedAt")]
+        public DateTime PlacedAt { get; set; }
+        [JsonPropertyName("note")]
+        public string? Note { get; set; }
     }
 
     public class Customer
@@ -208,6 +208,8 @@ namespace Sleipnir.Generated
     public sealed class CustomerClient
     {
         public Call GetById(Arg<int> customerId) => new Call(SleipnirCall.Init("Customer", "GetById").Param("customerId", customerId.ToWireValue()));
+
+        public Call GetByIdEnvelope(Arg<int> customerId) => new Call(SleipnirCall.Init("Customer", "GetByIdEnvelope").Param("customerId", customerId.ToWireValue()));
     }
 
     public sealed class AddressClient

@@ -58,29 +58,29 @@ export interface ArticleArrayPaths {
 
 export interface OrderPaths {
   "$": Order;
-  "$.customerId": number;
   "$.id": number;
-  "$.note": string | null;
-  "$.placedAt": string;
+  "$.customerId": number;
   "$.shippingAddressId": number;
   "$.status": string;
+  "$.placedAt": string;
+  "$.note": string | null;
 }
 
 export interface OrderArrayPaths {
   "$": Order[];
   "$[0]": Order;
-  "$[0].customerId": number;
   "$[0].id": number;
-  "$[0].note": string | null;
-  "$[0].placedAt": string;
+  "$[0].customerId": number;
   "$[0].shippingAddressId": number;
   "$[0].status": string;
-  "$[*].customerId": number[];
+  "$[0].placedAt": string;
+  "$[0].note": string | null;
   "$[*].id": number[];
-  "$[*].note": string | null[];
-  "$[*].placedAt": string[];
+  "$[*].customerId": number[];
   "$[*].shippingAddressId": number[];
   "$[*].status": string[];
+  "$[*].placedAt": string[];
+  "$[*].note": string | null[];
 }
 
 export interface CustomerPaths {

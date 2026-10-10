@@ -21,12 +21,12 @@ export interface Article {
 }
 
 export interface Order {
-  customerId: number;
   id: number;
-  note?: string | null;
-  placedAt: string;
+  customerId: number;
   shippingAddressId: number;
   status: string;
+  placedAt: string;
+  note?: string | null;
 }
 
 export interface Customer {

@@ -3,3 +3,4 @@ export * from "./types.js";
 export * from "./typed-call.js";
 export * from "./controllers.js";
 export { SleipnirClient } from "./client.js";
+export type { TypedResponse, SleipnirClientOptions } from "./client.js";

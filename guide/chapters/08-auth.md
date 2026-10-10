@@ -130,13 +130,17 @@ The invoker's `CheckAuthorisation` throws `UnauthorizedAccessException` (→ **4
 `ForbiddenAccessException` (→ **403**, `category: PermissionDenied`) when the user *is*
 authenticated but `IsInRole(role)` is false. `Login` itself is anonymous — you need a token
 to call anything authed, so the login can't require one. Bad credentials return a business
-`401` via `SleipnirResults.Unauthorized("invalid credentials")`, **not** a throw — the client
-gets a clear message, not a generic 500.
+`401` via `SleipnirResponse<LoginResult>.Unauthorized("invalid credentials")`, **not** a throw —
+the client gets a clear message, not a generic 500.
 
-> **Business errors return `SleipnirResponse`; unexpected failures throw.** `Login`'s
-> "invalid credentials" is a business outcome → `SleipnirResults.Unauthorized(...)`. A
-> signing-key misconfiguration is unexpected → throws → generic 500. See `CLAUDE.md` →
-> "Error Handling".
+> **Business errors return an envelope; unexpected failures throw.** `Login`'s "invalid
+> credentials" is a business outcome — `Login` returns the **typed business-error envelope**
+> `SleipnirResponse<LoginResult>`: the success branch is `.Ok(new LoginResult { … })`, the 401
+> branch is `.Unauthorized("invalid credentials")`. Because the generic envelope unwraps to its
+> payload in discovery, the generated TS client types `login(…)` as `TypedCall<LoginResult, …>`
+> (a plain `SleipnirResponse` return would leave it `unknown`) while the 401 still carries
+> `code` + `error.message`. A signing-key misconfiguration is unexpected → throws → generic 500.
+> See `CLAUDE.md` → "Error Handling" and `README_DETAILS.md` → "Typed business errors".
 
 ### The chain, now authed
 

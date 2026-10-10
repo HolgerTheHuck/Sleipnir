@@ -27,18 +27,20 @@ public class AccountController
         _http = http;
     }
 
-    // Anonymous: exchange credentials for a signed JWT. Bad credentials → a business 401
-    // (SleipnirResults.Unauthorized), NOT a throw — the client gets a clear error message,
-    // not a generic 500. See the "Return SleipnirResponse for business errors" rule.
+    // Anonymous: exchange credentials for a signed JWT. Bad credentials → a business 401,
+    // NOT a throw. Returns the typed business-error envelope (SleipnirResponse<T>): the 401
+    // branch carries code + error.message on the wire while discovery/codegen still see the
+    // LoginResult payload — the plain SleipnirResponse would make login unknown/void to the
+    // generated client. See the "Typed business errors — SleipnirResponse<T>" doc.
     [SleipnirMethod("Login")]
     [SleipnirDocumentation("Exchange username + password for a JWT bearer token. Try customer/customer or admin/admin. The token is sent back as Authorization: Bearer on subsequent calls.")]
-    public SleipnirResponse Login(string username, string password)
+    public SleipnirResponse<LoginResult> Login(string username, string password)
     {
         var token = _account.TryLogin(username, password, out var profile);
         if (token is null || profile is null)
-            return SleipnirResults.Unauthorized("invalid credentials");
+            return SleipnirResponse<LoginResult>.Unauthorized("invalid credentials");
 
-        return SleipnirResults.Ok(new LoginResult { Token = token, Profile = profile });
+        return SleipnirResponse<LoginResult>.Ok(new LoginResult { Token = token, Profile = profile });
     }
 
     // The first authed call: echo the caller's identity from HttpContext.User. Requires a

@@ -6,7 +6,7 @@
 // validity are compile-checked without a (structurally ambiguous) lookup over T.
 import { SleipnirCall, ExecutionMode } from "sleipnir-client";
 import type { SleipnirRequest, SleipnirMultiRequest, SleipnirResponse } from "sleipnir-client";
-import type { Holding, Order, PriceTick, Profile, Quote } from "./types.js";
+import type { Holding, LoginResult, Order, PriceTick, Profile, Quote } from "./types.js";
 
 export interface HoldingPaths {
   "$": Holding;
@@ -24,6 +24,27 @@ export interface HoldingArrayPaths {
   "$[*].averagePrice": number[];
   "$[*].quantity": number[];
   "$[*].symbol": string[];
+}
+
+export interface LoginResultPaths {
+  "$": LoginResult;
+  "$.profile": Profile;
+  "$.profile.role": string;
+  "$.profile.username": string;
+  "$.token": string;
+}
+
+export interface LoginResultArrayPaths {
+  "$": LoginResult[];
+  "$[0]": LoginResult;
+  "$[0].profile": Profile;
+  "$[0].profile.role": string;
+  "$[0].profile.username": string;
+  "$[0].token": string;
+  "$[*].profile": Profile[];
+  "$[*].profile.role": string[];
+  "$[*].profile.username": string[];
+  "$[*].token": string[];
 }
 
 export interface OrderPaths {

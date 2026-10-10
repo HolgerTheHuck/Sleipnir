@@ -165,18 +165,19 @@
     loggingIn = true;
     loginError = null;
     try {
-      // Account.Login returns the SleipnirResponse envelope; its data is { token, profile }. The
-      // generator emits `unknown` for a SleipnirResponse return type, so read the data by shape.
+      // Account.Login now returns the typed business-error envelope
+      // (SleipnirResponse<LoginResult>) — the generated client narrows `data` to
+      // LoginResult (no more `unknown`), while a wrong password still arrives as
+      // code 401 + error.message on the same envelope.
       const res = await client.call(client.account.login(loginUser, loginPass));
       if (res.code !== 200 || !res.data) {
         loginError = res.error?.message ?? `HTTP ${res.code}`;
         return;
       }
-      const payload = res.data as { token: string; profile: Profile };
-      profile = payload.profile;
+      profile = res.data.profile;
       // Arm every bundled backend with the bearer, then pin REST+SSE — the browser WS handshake
       // can't carry Authorization, so authed calls over `auto` (WS) would 401. REST+SSE can.
-      client.setBearer(payload.token);
+      client.setBearer(res.data.token);
       await client.useTransport("rest");
       transportLabel = "rest+sse (authed)";
       await loadHoldings();

@@ -3,8 +3,8 @@
 import { SleipnirCall } from "sleipnir-client";
 import type { SleipnirRequest, SubscribeHandlers, SleipnirSubscription, SleipnirSubscribeOptions } from "sleipnir-client";
 import { TypedCall } from "./typed-call.js";
-import type { Holding, Order, PriceTick, Profile, Quote } from "./types.js";
-import type { HoldingArrayPaths, OrderPaths, ProfilePaths, QuoteArrayPaths, QuotePaths, _BooleanPaths, _StringArrayPaths, _VoidPaths } from "./typed-call.js";
+import type { Holding, LoginResult, Order, PriceTick, Profile, Quote } from "./types.js";
+import type { HoldingArrayPaths, LoginResultPaths, OrderPaths, ProfilePaths, QuoteArrayPaths, QuotePaths, _BooleanPaths, _StringArrayPaths, _VoidPaths } from "./typed-call.js";
 
 export class AccountClient {
   /** @internal */ _build: (controller: string, method: string) => SleipnirCall;
@@ -12,9 +12,8 @@ export class AccountClient {
     this._build = build;
   }
   /** Exchange username + password for a JWT bearer token. Try customer/customer or admin/admin. The token is sent back as Authorization: Bearer on subsequent calls. */
-  // TODO: return type "SleipnirResponse" is an opaque framework/BCL type not modelled in discovery; emitted as unknown.
-  login(username: string, password: string): TypedCall<unknown, _VoidPaths> {
-    return new TypedCall<unknown, _VoidPaths>(this._build("Account", "Login").with({ username: username, password: password }));
+  login(username: string, password: string): TypedCall<LoginResult, LoginResultPaths> {
+    return new TypedCall<LoginResult, LoginResultPaths>(this._build("Account", "Login").with({ username: username, password: password }));
   }
 
   /** Return the caller's profile from the bearer token. Requires authentication (any role). */

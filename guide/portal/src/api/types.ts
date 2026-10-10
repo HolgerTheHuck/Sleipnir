@@ -10,6 +10,11 @@ export interface Holding {
   symbol: string;
 }
 
+export interface LoginResult {
+  profile: Profile;
+  token: string;
+}
+
 export interface Order {
   id: number;
   price: number;

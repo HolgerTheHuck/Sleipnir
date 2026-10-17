@@ -17,7 +17,7 @@ follows from treating the discovery JSON as the standard contract.
 ## Install
 
 ```xml
-<PackageReference Include="Sleipnir.Generator" Version="1.6.0" />
+<PackageReference Include="Sleipnir.Generator" Version="1.7.0" />
 <AdditionalFiles Include="contract.sleipnir.json" />
 ```
 

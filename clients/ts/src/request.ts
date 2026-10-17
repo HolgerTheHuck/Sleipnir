@@ -8,16 +8,28 @@ import type {
 } from "./types.js";
 
 /**
+ * `num` marker for a named entry: it binds by `parameterName` only and never takes part
+ * in the positional fallback (no method parameter has index -1, so every server version
+ * treats it as name-only). Mirrors C# `SleipnirParameter.NamedOnly`. Before, a named entry
+ * carried its insertion index, and a name the server no longer knew (a rename) was
+ * silently bound by position instead of failing.
+ */
+export const NAMED_ONLY = -1;
+
+/**
  * Builds the `params` field (array of SleipnirParameter with native `data` values)
  * from call arguments. Mirrors the C# SleipnirCall builder.
  *
- * - **Named** (Object): `{parameterName: key, data: value}`.
- *   Safe, position-independent binding (the server binds by parameter name).
+ * - **Named** (Object): `{parameterName: key, num: -1, data: value}`.
+ *   Name-only binding (`NAMED_ONLY`); an unknown name is a `400 Missing required parameter`.
  * - **Positional** (Array): `{parameterName: "param{i}", num: i, data: value}`.
  *   The server binds by name ("param{i}" never matches) and then falls back to `num`
  *   (PROTOCOL.md:60-66).
  *
- * `data` is the **native JSON value** (no JSON string anymore); `undefined` → `null`.
+ * `data` is the **native JSON value** (no JSON string anymore). An `undefined` value
+ * is **omitted** (the parameter is absent, so the server applies the C# default or
+ * `null` for a nullable parameter); positional indexes of the remaining values are kept.
+ * Pass `null` to send an explicit null.
  */
 export function buildParams(
   params: Record<string, unknown> | unknown[] | undefined,
@@ -25,25 +37,16 @@ export function buildParams(
   if (params == null) return [];
 
   if (Array.isArray(params)) {
-    return params.map((value, i) => ({
-      parameterName: `param${i}`,
-      num: i,
-      data: normalizeValue(value),
-    }));
+    const out: SleipnirParameter[] = [];
+    params.forEach((value, i) => {
+      if (value !== undefined) out.push({ parameterName: `param${i}`, num: i, data: value });
+    });
+    return out;
   }
 
-  const entries = Object.entries(params);
-  return entries.map(([key, value], i) => ({
-    parameterName: key,
-    num: i,
-    data: normalizeValue(value),
-  }));
-}
-
-/** Normalizes a parameter value: undefined → null (wire-consistent), otherwise native. */
-function normalizeValue(value: unknown): unknown {
-  if (value === undefined) return null;
-  return value;
+  return Object.entries(params)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => ({ parameterName: key, num: NAMED_ONLY, data: value }));
 }
 
 /** Builds a single SleipnirRequest. */

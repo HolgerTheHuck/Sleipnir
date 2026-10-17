@@ -1,6 +1,6 @@
 import { ExecutionMode } from "./types.js";
 import type { SleipnirMultiRequest, SleipnirParameter, SleipnirRequest } from "./types.js";
-import { toBase64 } from "./request.js";
+import { NAMED_ONLY, toBase64 } from "./request.js";
 
 /**
  * Fluent builder for a SleipnirRequest — mirror of the C# SleipnirCall.
@@ -45,8 +45,11 @@ export class SleipnirCall {
 
   /**
    * Adds named (Object) or positional (Array) parameters.
-   * - Object → `{parameterName: key, data: value}` (safe binding).
+   * - Object → `{parameterName: key, num: -1, data: value}` (name-only binding, `NAMED_ONLY`).
    * - Array  → `{parameterName: "param{i}", num: i, data: value}` (positional via `num`).
+   *
+   * An `undefined` value is omitted — the parameter is absent and the server applies the
+   * C# default (or `null` for a nullable parameter). Pass `null` for an explicit null.
    */
   with(params: Record<string, unknown> | unknown[]): this {
     if (Array.isArray(params)) {
@@ -124,21 +127,19 @@ export class SleipnirCall {
     return { requests, mode };
   }
 
+  // Both keep counting for skipped `undefined` values, so later positional entries keep
+  // their index.
   private pushNamed(name: string, value: unknown): void {
-    this._params.push({
-      parameterName: name,
-      num: this._num,
-      data: value === undefined ? null : value,
-    });
+    if (value !== undefined) {
+      this._params.push({ parameterName: name, num: NAMED_ONLY, data: value });
+    }
     this._num++;
   }
 
   private pushPositional(value: unknown): void {
-    this._params.push({
-      parameterName: `param${this._num}`,
-      num: this._num,
-      data: value === undefined ? null : value,
-    });
+    if (value !== undefined) {
+      this._params.push({ parameterName: `param${this._num}`, num: this._num, data: value });
+    }
     this._num++;
   }
 }

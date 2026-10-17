@@ -48,6 +48,7 @@ public class SleipnirWebSocketClientResumeTests
             public string? Controller;
             public string? Method;
             public string? ResponseSubscriptionId; // the subscriptionId the server returned
+            public string? ParamsJson;             // the params array as sent (raw JSON)
         }
 
         public void Start()
@@ -183,6 +184,8 @@ public class SleipnirWebSocketClientResumeTests
                     cap.SentSubscriptionId = sid.GetString();
                 if (root.TryGetProperty("lastEventId", out var leid) && leid.ValueKind == JsonValueKind.Number)
                     cap.SentLastEventId = leid.GetInt64();
+                if (root.TryGetProperty("params", out var ps))
+                    cap.ParamsJson = ps.GetRawText();
                 return true;
             }
             catch { return false; }
@@ -253,6 +256,26 @@ public class SleipnirWebSocketClientResumeTests
         obs.Values.Should().Equal(["a", "b"]);
 
         sub.Dispose();
+    }
+
+    [Fact]
+    public async Task Subscribe_PositionalArgs_CarryTheirIndex()
+    {
+        // arg{i} matches no parameter name, so the server binds by num — every arg used to be
+        // sent without an index (num 0), and only the first one bound.
+        await using var server = new ResumeWsServer();
+        server.Start();
+
+        await using var client = new SleipnirWebSocketClient(server.BaseUrl, autoReconnect: false);
+        await client.ConnectAsync();
+
+        using var sub = await client.SubscribeAsync<string>("C", "Tick", new object?[] { "BTC", 5 });
+        var capture = await server.Subscribes.Reader.ReadAsync();
+
+        var entries = JsonDocument.Parse(capture.ParamsJson!).RootElement.EnumerateArray()
+            .Select(e => (Name: e.GetProperty("parameterName").GetString(), Num: e.GetProperty("num").GetInt32()))
+            .ToList();
+        entries.Should().Equal(("arg0", 0), ("arg1", 1));
     }
 
     [Fact]

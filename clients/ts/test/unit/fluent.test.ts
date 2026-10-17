@@ -16,7 +16,7 @@ describe("SleipnirCall", () => {
     expect(req.dependencyMapping).toEqual({ newId: "$" });
     expect(req.binaryData).toBeNull();
     expect(req.params).toEqual([
-      { parameterName: "name", data: "Alice", num: 0 },
+      { parameterName: "name", data: "Alice", num: -1 },
     ]);
   });
 
@@ -32,11 +32,16 @@ describe("SleipnirCall", () => {
     ]);
   });
 
-  it("param() fügt benannten Parameter hinzu", () => {
+  it("param() adds a name-only parameter", () => {
     const req = SleipnirCall.init("C", "M").param("id", 42).toRequest();
     expect(req.params).toEqual([
-      { parameterName: "id", data: 42, num: 0 },
+      { parameterName: "id", data: 42, num: -1 },
     ]);
+  });
+
+  it("undefined values are omitted, positions of later entries stay stable", () => {
+    const req = SleipnirCall.init("C", "M").param("take", undefined).with([undefined, 7]).toRequest();
+    expect(req.params).toEqual([{ parameterName: "param2", data: 7, num: 2 }]);
   });
 
   it("withAlias(@x) fügt Platzhalter-Parameter hinzu", () => {

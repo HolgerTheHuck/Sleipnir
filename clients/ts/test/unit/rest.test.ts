@@ -53,7 +53,7 @@ describe("SleipnirRestClient", () => {
     expect(body.id).toBe("C.M");
     expect(body.dependencyMapping).toBeNull();
     expect(body.params).toEqual([
-      { parameterName: "id", data: 1, num: 0 },
+      { parameterName: "id", data: 1, num: -1 },
     ]);
   });
 

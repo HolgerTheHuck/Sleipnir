@@ -111,10 +111,13 @@ public sealed class SleipnirLinqClient
                 // Fallback: a bare value (no Arg<T> wrapper).
                 data = JsonSerializer.SerializeToNode(value, _jsonOpts);
             }
+            // Named from the contract's parameter name → name-only; positional only as the
+            // nameless fallback.
+            var name = paramInfos[i].Name;
             parameters.Add(new SleipnirParameter
             {
-                Num = i,
-                ParameterName = paramInfos[i].Name ?? $"param{i}",
+                Num = name != null ? SleipnirParameter.NamedOnly : i,
+                ParameterName = name ?? $"param{i}",
                 Data = data
             });
         }

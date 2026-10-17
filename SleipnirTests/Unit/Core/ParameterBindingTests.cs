@@ -185,6 +185,33 @@ public class ParameterBindingTests
     }
 
     [Fact]
+    public async Task NamedOnlyEntry_NeverBindsByPosition()
+    {
+        // The client's named entry for a parameter the server renamed (b -> c here: "bb" is the
+        // stale name) carries num -1 (SleipnirParameter.NamedOnly): it must fail loudly instead
+        // of being bound into b by position.
+        var response = await Call(Request("Pair",
+            new Entry("a", "1", SleipnirParameter.NamedOnly),
+            new Entry("bb", "2", SleipnirParameter.NamedOnly)));
+
+        response.Code.Should().Be((int)HttpStatusCode.BadRequest);
+        response.Error!.Message.Should().Be("Missing required parameter 'b' (type 'Int32') for 'Binding.Pair'.");
+    }
+
+    [Fact]
+    public async Task SleipnirCallParam_SendsNamedOnly_PositionalKeepsIndex()
+    {
+        var request = SleipnirClient.Sleipnir.SleipnirCall.Init("Binding", "Pair").Param("a", 1).With(2).ToRequest();
+        // SleipnirCall serializes with default (PascalCase) names; the server reads both casings.
+        var entries = request.Params!.AsArray()
+            .Select(e => (Name: e!["ParameterName"]!.GetValue<string>(), Num: e["Num"]!.GetValue<int>()))
+            .ToList();
+
+        entries.Should().Equal(("a", SleipnirParameter.NamedOnly), ("param1", 1));
+        (await Call(request)).Data!.Value.GetInt32().Should().Be(12);
+    }
+
+    [Fact]
     public async Task PositionalFallback_StillBindsUnmatchedNamesByNum()
     {
         // The fluent builder's param0/param1 shape (names match no parameter) binds by index.

@@ -968,7 +968,9 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
         if (args == null || args.Length == 0) return null;
         var list = new List<SleipnirParameter>(args.Length);
         for (int i = 0; i < args.Length; i++)
-            list.Add(new SleipnirParameter { ParameterName = $"arg{i}", Data = JsonSerializer.SerializeToNode(args[i], JsonOptions) });
+            // Positional: arg{i} never matches a parameter name, so the server binds by num —
+            // which must be the index (it defaulted to 0 for every arg, so only the first bound).
+            list.Add(new SleipnirParameter { Num = i, ParameterName = $"arg{i}", Data = JsonSerializer.SerializeToNode(args[i], JsonOptions) });
         return list;
     }
 

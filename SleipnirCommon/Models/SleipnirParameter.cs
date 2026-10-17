@@ -11,7 +11,16 @@ namespace SleipnirCommon.Models;
 public class SleipnirParameter
 {
     /// <summary>
-    /// Positional parameter index (used by client-side SleipnirCall builder).
+    /// <see cref="Num"/> marker for a named entry: it binds by <see cref="ParameterName"/> only
+    /// and never takes part in the positional fallback. No method parameter has index -1, so
+    /// every server version treats it as name-only. Without it a named entry whose name no
+    /// longer matches (a server-side rename) was silently bound by position instead of failing.
+    /// </summary>
+    public const int NamedOnly = -1;
+
+    /// <summary>
+    /// Positional parameter index — the fallback when <see cref="ParameterName"/> does not
+    /// bind. <see cref="NamedOnly"/> (-1) for named entries.
     /// </summary>
     [Key(0)]
     public int Num { get; set; }

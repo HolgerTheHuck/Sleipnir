@@ -309,7 +309,7 @@ internal static class Navigation
             if (existing.TryGetValue(wire, out var param))
                 param.Data = value;
             else
-                list.Add(new SleipnirParameter { Num = list.Count, ParameterName = wire, Data = value });
+                list.Add(new SleipnirParameter { Num = SleipnirParameter.NamedOnly, ParameterName = wire, Data = value });
         }
         state.RootSpec.Params = JsonSerializer.SerializeToNode(list, opts);
     }

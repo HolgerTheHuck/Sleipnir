@@ -163,6 +163,12 @@ class Pass {
       return;
     }
 
+    // Newly deprecated on the server: nothing breaks, but it is the first step of a removal.
+    if (typeof server.deprecated === "string" && client.deprecated == null) {
+      this.add("method-deprecated", "safe", route, null,
+        `Method '${route}' is deprecated on the server: ${server.deprecated}`);
+    }
+
     this.compareParameters(route, params(client), params(server));
 
     if (serverEvent) {

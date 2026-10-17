@@ -115,6 +115,7 @@ pull (Prometheus scrape) do not conflict (`CHANGELOG.md` §"Added — Observabil
 | `errorCount` | `snap.ErrorCount` |
 | `batchCount` | `snap.BatchCount` |
 | `uptimeMs` | `(long)(DateTimeOffset.UtcNow - registry.StartedAtUtc).TotalMilliseconds` (added by the endpoint, not on the snapshot type) |
+| `contracts` | `SleipnirClientContractRegistry.GetSnapshot(current)` (since 1.8.0, `null` without `AddSleipnir`): `{ current, clients: [{ contract, current, firstSeen, lastSeen, calls }], deprecatedCalls: [{ route, contract, firstSeen, lastSeen, calls }] }` — which contract hashes the callers were built against, and who still calls `[SleipnirDeprecated]` methods. Contract keys are the hash, or `unknown` (no header, hand-written client), `invalid` (malformed), `other` (beyond 64 tracked). See [CONTRACT_EVOLUTION.md §7](CONTRACT_EVOLUTION.md#7-who-is-still-out-there--contract-identity-at-runtime). |
 
 The `ObservabilitySnapshot` C# shape (`SleipnirConnectionRegistry.cs` →
 `ObservabilitySnapshot`) carries `ActiveConnections`/`ActiveSubscriptions`/
@@ -174,6 +175,8 @@ Meter-Name "Sleipnir").
 | `EventDroppedCounter` | `sleipnir.event.dropped` | Counter<long> | `{event}` |
 | `BatchFanOut` | `sleipnir.batch.fan_out` | Histogram<int> | `{request}` |
 | `BatchCount` | `sleipnir.batch.count` | Counter<long> | `{batch}` |
+| `ClientContractCalls` | `sleipnir.client.contract.calls` | Counter<long> | `{call}` — tags `sleipnir.contract` (hash prefix or unknown/invalid/other), `sleipnir.contract.current` |
+| `DeprecatedCalls` | `sleipnir.deprecated.calls` | Counter<long> | `{call}` — tags `rpc.route`, `sleipnir.contract` |
 | `_connectionsGauge` | `sleipnir.ws.connections` | ObservableGauge<int> | `{connection}` |
 | `_subscriptionsGauge` | `sleipnir.subscriptions.active` | ObservableGauge<int> | `{subscription}` |
 

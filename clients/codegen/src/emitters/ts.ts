@@ -491,10 +491,19 @@ function emitEventMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: 
     : "";
   const handlerParam = `handlers: SubscribeHandlers<${payloadType}>`;
   const optionsParam = `options?: SleipnirSubscribeOptions`;
-  const doc = m.documentation ? `  /** ${m.documentation} */\n` : "";
+  const doc = tsMethodDoc(m);
   return `${doc}  ${m.emittedName}(${[...params, handlerParam, optionsParam].join(", ")}): Promise<SleipnirSubscription> {
     return this._subscribe<${payloadType}>(this._build("${ctrl.name}", "${m.methodName}")${withCall}.toRequest(), handlers, options);
   }`;
+}
+
+/** JSDoc for a method: the documentation, plus `@deprecated` on its own line (TypeScript reads
+ * tags at line start only). Without a deprecation the single-line form is unchanged. */
+function tsMethodDoc(m: ResolvedMethod): string {
+  if (!m.deprecated) return m.documentation ? `  /** ${m.documentation} */\n` : "";
+  const lines = m.documentation ? [`   * ${m.documentation}`] : [];
+  lines.push(`   * @deprecated ${m.deprecated}`);
+  return `  /**\n${lines.join("\n")}\n   */\n`;
 }
 
 function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: NamingResolver): string {
@@ -513,7 +522,7 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
   const withCall = withEntries.length
     ? `.with({ ${withEntries.join(", ")} })`
     : "";
-  const doc = m.documentation ? `  /** ${m.documentation} */\n` : "";
+  const doc = tsMethodDoc(m);
   const todo = m.returnType.kind === "opaque" && !m.isVoid
     ? `  // TODO: return type "${m.returnType.nativeName ?? "?"}" is an opaque framework/BCL type not modelled in discovery; emitted as unknown.\n`
     : "";
@@ -570,6 +579,14 @@ function emitClient(input: EmitterInput, opts: EmitTsOptions): string {
   };
 `
     : "";
+  // Contract identity (CONTRACT_EVOLUTION.md §7): only for contracts that carry a hash.
+  const contractConst = input.contractHash
+    ? `/** Contract hash this client was generated from — sent on every request so the server can tell which contracts its callers were built against. */
+export const SLEIPNIR_CONTRACT_HASH = "${input.contractHash}";
+
+`
+    : "";
+  const contractOption = input.contractHash ? " contractHash: SLEIPNIR_CONTRACT_HASH," : "";
 
   return `// Auto-generated root Sleipnir client (capability: ${capability}). Compose with the sleipnir-client runtime.
 // Transport is selected at runtime via SleipnirTransportRouter: "auto" (default) probes WebSocket
@@ -605,12 +622,12 @@ export interface SleipnirClientOptions {
   defaultTransport?: SleipnirTransport;
 }
 
-export class SleipnirClient {
+${contractConst}export class SleipnirClient {
   private readonly _router: SleipnirTransportRouter;
 ${subscribeField}${accessors.join("\n")}
 
   constructor(baseUrl: string, options: SleipnirClientOptions = {}) {
-    this._router = new SleipnirTransportRouter({ baseUrl, capability: "${capability}", ...options });
+    this._router = new SleipnirTransportRouter({ baseUrl, capability: "${capability}",${contractOption} ...options });
     const build = (controller: string, method: string) => SleipnirCall.init(controller, method);
 ${inits.join("\n")}
   }

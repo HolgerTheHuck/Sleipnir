@@ -2,6 +2,7 @@ import { SleipnirError, CancelledError } from "./errors.js";
 import { ExecutionMode, SleipnirConnectionState } from "./types.js";
 import type { BearerProvider, SleipnirMultiRequest, SleipnirRequest, SleipnirResponse } from "./types.js";
 import { fromBase64, normalizeResponse, normalizeResponses } from "./request.js";
+import { withContractQuery } from "./contract.js";
 
 const READY_CONNECTING = 0;
 const READY_OPEN = 1;
@@ -183,6 +184,12 @@ export interface SleipnirWebSocketClientOptions {
    * behavior). Overridable per `subscribe` call via `SubscribeOptions.resumePolicy`.
    */
   onResume?: ResumePolicy;
+  /**
+   * The generated client's contract hash, sent as `?sleipnir-contract=` on connect so the server
+   * can count which contracts its callers were built against (CONTRACT_EVOLUTION.md §7). Set by
+   * the generated client via the router.
+   */
+  contractHash?: string;
 }
 
 interface PendingCall {
@@ -287,6 +294,7 @@ async function resolveDefaultFactory(): Promise<WsFactory> {
 export class SleipnirWebSocketClient {
   private readonly _baseUrl: string;
   private readonly _wsPath: string;
+  private readonly _contractHash?: string;
   private _bearer?: BearerProvider;
   private readonly _callTimeout?: number;
   private readonly _connectTimeout: number;
@@ -314,6 +322,7 @@ export class SleipnirWebSocketClient {
     }
     this._baseUrl = baseUrl.replace(/\/+$/, "");
     this._wsPath = (options.wsPath ?? "sleipnirws").replace(/^\/+|\/+$/g, "");
+    this._contractHash = options.contractHash;
     this._bearer = options.bearer;
     this._callTimeout = options.callTimeout;
     this._connectTimeout = options.connectTimeout ?? 15000;
@@ -610,7 +619,7 @@ export class SleipnirWebSocketClient {
     if (isBrowserWs && token) {
       url += `?access_token=${encodeURIComponent(token)}`;
     }
-    return url;
+    return withContractQuery(url, this._contractHash);
   }
 
   private sendAndAwait(

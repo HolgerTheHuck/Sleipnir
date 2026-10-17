@@ -69,6 +69,10 @@ namespace SleipnirHub.Extensions
             SleipnirCore.Tracing.SleipnirMetrics.SetConnectionRegistry(connectionRegistry);
             services.AddSingleton(connectionRegistry);
 
+            // Which contracts the callers were built against + deprecated-method calls
+            // (/observability "contracts", CONTRACT_EVOLUTION.md §7).
+            services.AddSingleton<SleipnirCore.Tracing.SleipnirClientContractRegistry>();
+
             // Phase R (resume, experimental): process-wide store of durable event
             // subscriptions for [SleipnirEvent(Resumable = true)] — keeps the IObservable
             // source alive across disconnects, buffers events, replays from lastEventId.
@@ -152,6 +156,9 @@ namespace SleipnirHub.Extensions
                     sp.GetService<Microsoft.Extensions.Logging.ILogger<SleipnirCore.Services.SleipnirInvoker>>()
                         ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SleipnirCore.Services.SleipnirInvoker>.Instance,
                     sp.GetService<IEnumerable<SleipnirCore.Services.ISleipnirInterceptor>>());
+
+                // Client-contract usage + deprecated-method calls (CONTRACT_EVOLUTION.md §7).
+                invoker.ClientContracts = sp.GetService<SleipnirCore.Tracing.SleipnirClientContractRegistry>();
 
                 // Enable detailed errors when explicitly requested or in Development.
                 var env = sp.GetService<Microsoft.Extensions.Hosting.IHostEnvironment>();

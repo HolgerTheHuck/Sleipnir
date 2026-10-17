@@ -45,6 +45,22 @@ namespace SleipnirClient.Sleipnir
             _apiPath = apiPath.Trim('/');
         }
 
+        /// <summary>
+        /// Contract hash the calling client was generated from, sent as header
+        /// <see cref="SleipnirContract.HeaderName"/> on every call (set by
+        /// <see cref="SleipnirTransportRouter"/> from <see cref="SleipnirRouterOptions.ContractHash"/>).
+        /// Per request, so a shared injected HttpClient is never mutated.
+        /// </summary>
+        public string? ContractHash { get; set; }
+
+        private Task<HttpResponseMessage> PostJsonAsync(string url, HttpContent content, CancellationToken ct)
+        {
+            var message = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+            if (!string.IsNullOrEmpty(ContractHash))
+                message.Headers.TryAddWithoutValidation(SleipnirContract.HeaderName, ContractHash);
+            return _httpClient.SendAsync(message, ct);
+        }
+
         public override async Task<SleipnirResponse?> Call(SleipnirRequest? request, CancellationToken ct = default)
         {
             if (request == null)
@@ -54,7 +70,7 @@ namespace SleipnirClient.Sleipnir
 
             var jsonData = JsonSerializer.Serialize(request, JsonOptions);
             var content = new StringContent(jsonData, Encoding.UTF8, "application/json");
-            var response = await _httpClient.PostAsync($"{_serverBase}{_apiPath}/json", content, ct);
+            var response = await PostJsonAsync($"{_serverBase}{_apiPath}/json", content, ct);
 
             // Bytes statt String lesen — SleipnirResponseParser macht EINEN Pass über die
             // Wire-Bytes (ID, Envelope, T zusammen) statt drei Parses mit JsonDocument-Baum.
@@ -92,7 +108,7 @@ namespace SleipnirClient.Sleipnir
 
             var jsonData = JsonSerializer.Serialize(request, JsonOptions);
             var content = new StringContent(jsonData, Encoding.UTF8, "application/json");
-            var response = await _httpClient.PostAsync($"{_serverBase}{_apiPath}/json/multi", content, ct);
+            var response = await PostJsonAsync($"{_serverBase}{_apiPath}/json/multi", content, ct);
             var responseBytes = await response.Content.ReadAsByteArrayAsync(ct);
             if (!response.IsSuccessStatusCode)
             {

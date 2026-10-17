@@ -76,3 +76,15 @@ describe("emitPyClient (golden against story01 snapshot)", () => {
     expect(tree["client.py"]).toContain('return {"requests": [c.to_request() for c in self._calls], "mode": 1}');
   });
 });
+describe("emitPyClient — contract identity + deprecation", () => {
+  const py = Object.values(emitPyClient(buildEmitterInput(readFixture("story01"), new NamingResolver()))).join("\n");
+
+  it("sends the contract hash as Sleipnir-Contract", () => {
+    expect(py).toMatch(/SLEIPNIR_CONTRACT_HASH = "sha256:[0-9a-f]{64}"/);
+    expect(py).toContain('h["Sleipnir-Contract"] = SLEIPNIR_CONTRACT_HASH');
+  });
+
+  it("notes a deprecation in the method docstring", () => {
+    expect(py).toContain('"""Deprecated: Use Article.GetByIds."""');
+  });
+});

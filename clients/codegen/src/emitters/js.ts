@@ -121,11 +121,17 @@ function emitEventMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: 
   const params = m.parameters.map((p) => toCamelCase(p.name));
   const withEntries = m.parameters.map((p) => `${p.name}: ${toCamelCase(p.name)}`);
   const withCall = withEntries.length ? `.with({ ${withEntries.join(", ")} })` : "";
-  const doc = m.documentation ? `   * ${m.documentation}\n` : "";
+  const doc = jsMethodDoc(m);
   return `  /**\n${doc}${paramDocs.join("\n")}\n   * @param {SubscribeHandlers<${payloadType}>} handlers\n   * @returns {Promise<SleipnirSubscription>}\n   */
   async ${m.emittedName}(${[...params, "handlers"].join(", ")}) {
     return this._subscribe(this._build("${ctrl.name}", "${m.methodName}")${withCall}.toRequest(), handlers);
   }`;
+}
+
+/** The documentation and `@deprecated` lines of a method's JSDoc block. */
+function jsMethodDoc(m: ResolvedMethod): string {
+  return (m.documentation ? `   * ${m.documentation}\n` : "")
+    + (m.deprecated ? `   * @deprecated ${m.deprecated}\n` : "");
 }
 
 function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: NamingResolver): string {
@@ -139,7 +145,7 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
   const withEntries = m.parameters.map((p) => `${p.name}: ${toCamelCase(p.name)}`);
   const withCall = withEntries.length ? `.with({ ${withEntries.join(", ")} })` : "";
   const returns = m.isVoid ? "" : `   * @returns {Promise<SleipnirResponse<${retType} | null>>}\n`;
-  const doc = m.documentation ? `   * ${m.documentation}\n` : "";
+  const doc = jsMethodDoc(m);
   return `  /**\n${doc}${paramDocs.join("\n")}\n${returns}   */
   async ${m.emittedName}(${params.join(", ")}) {
     const call = this._build("${ctrl.name}", "${m.methodName}")${withCall};
@@ -179,6 +185,14 @@ function emitClient(input: EmitterInput, opts: EmitJsOptions): string {
   const subscribeAssign = events
     ? `  this._subscribe = (req, handlers) => this._router.subscribe(req, handlers);\n`
     : "";
+  // Contract identity (CONTRACT_EVOLUTION.md §7): only for contracts that carry a hash.
+  const contractConst = input.contractHash
+    ? `/** Contract hash this client was generated from — sent on every request so the server can tell which contracts its callers were built against. */
+export const SLEIPNIR_CONTRACT_HASH = "${input.contractHash}";
+
+`
+    : "";
+  const contractOption = input.contractHash ? " contractHash: SLEIPNIR_CONTRACT_HASH," : "";
 
   return `// Auto-generated root Sleipnir client (JS, capability: ${capability}).
 // Transport is selected at runtime via SleipnirTransportRouter: "auto" (default) probes
@@ -186,14 +200,14 @@ function emitClient(input: EmitterInput, opts: EmitJsOptions): string {
 import { SleipnirCall, SleipnirTransportRouter } from "sleipnir-client";
 ${imports}
 
-export class SleipnirClient {
+${contractConst}export class SleipnirClient {
   /**
    * @param {string} baseUrl
    * @param {object} [options] per-backend options (rest/ws/sse/signalr) + shared bearer,
    *   callTimeout, probeTimeout, defaultTransport. Passed to SleipnirTransportRouter.
    */
   constructor(baseUrl, options = {}) {
-    this._router = new SleipnirTransportRouter({ baseUrl, capability: "${capability}", ...options });
+    this._router = new SleipnirTransportRouter({ baseUrl, capability: "${capability}",${contractOption} ...options });
     const build = (controller, method) => SleipnirCall.init(controller, method);
 ${subscribeAssign}${inits.join("\n")}
   }

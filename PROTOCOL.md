@@ -171,6 +171,20 @@ Batch of multiple requests in one roundtrip.
 > When `mode = 1` (Serial) and any request has `dependencyMapping`, the server
 > performs topological sorting and executes in dependency-aware batches.
 
+### Client contract identity (since 1.8.0, optional)
+
+A client generated from a contract with a `contractHash` identifies it on every request, outside
+the envelope (the envelope is unchanged):
+
+| Transport | Carrier |
+|---|---|
+| REST (`/json`, `/json/multi`), SSE (`/events/…`) | header `Sleipnir-Contract: sha256:<hex>` |
+| WebSocket, SignalR | query parameter `?sleipnir-contract=sha256:<hex>` on the connect (browsers cannot set upgrade headers) |
+
+The server only counts it (per contract, and per deprecated route) — it never rejects a request
+because of it; absent or malformed values count as `unknown` / `invalid`. See
+[CONTRACT_EVOLUTION.md §7](CONTRACT_EVOLUTION.md#7-who-is-still-out-there--contract-identity-at-runtime).
+
 ---
 
 ## Status Codes

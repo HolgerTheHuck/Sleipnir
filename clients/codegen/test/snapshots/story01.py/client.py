@@ -155,6 +155,10 @@ class ArticleClient:
     def get_by_ids(self, articleIds: list[int]) -> SleipnirCall:
         return SleipnirCall("Article", "GetByIds", {"articleIds": articleIds})
 
+    """Deprecated: Use Article.GetByIds."""
+    def get_many(self, articleIds: list[int]) -> SleipnirCall:
+        return SleipnirCall("Article", "GetMany", {"articleIds": articleIds})
+
 class OrderClient:
     def __init__(self, owner: "SleipnirClient") -> None:
         self._owner = owner
@@ -178,6 +182,10 @@ class AddressClient:
 
     def get_by_id(self, addressId: int) -> SleipnirCall:
         return SleipnirCall("Address", "GetById", {"addressId": addressId})
+
+# Contract hash this client was generated from - sent as Sleipnir-Contract on every request.
+SLEIPNIR_CONTRACT_HASH = "sha256:6540975bc36aa1d41594600217db6fb6dc4d04a21f2fdcfde15896642422c529"
+
 
 class SleipnirClient:
     """Root generated Sleipnir client. Async; backed by httpx.
@@ -266,4 +274,5 @@ class SleipnirClient:
         h = {"Content-Type": "application/json"}
         if self._bearer:
             h["Authorization"] = f"Bearer {self._bearer}"
+        h["Sleipnir-Contract"] = SLEIPNIR_CONTRACT_HASH
         return h

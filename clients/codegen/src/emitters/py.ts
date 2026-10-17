@@ -132,6 +132,15 @@ from .types import ${input.types.length ? input.types.map((t) => t.emittedName).
   const runtime = RUNTIME_TEMPLATE;
   const controllerClasses = input.controllers.map((c) => emitControllerClass(c, resolver)).join("\n\n");
   const accessors = input.controllers.map((c) => `        self.${snakeCase(c.name)} = ${c.className}(self)`);
+  // Contract identity (CONTRACT_EVOLUTION.md §7): only for contracts that carry a hash.
+  const contractConst = input.contractHash
+    ? `# Contract hash this client was generated from - sent as Sleipnir-Contract on every request.
+SLEIPNIR_CONTRACT_HASH = "${input.contractHash}"
+
+
+`
+    : "";
+  const contractHeader = input.contractHash ? `        h["Sleipnir-Contract"] = SLEIPNIR_CONTRACT_HASH\n` : "";
 
   return `${header}
 ${urlHint}${imports}
@@ -140,7 +149,7 @@ ${urlHint}${imports}
 ${runtime}
 ${controllerClasses}
 
-class SleipnirClient:
+${contractConst}class SleipnirClient:
     """Root generated Sleipnir client. Async; backed by httpx.
 
     Use \`call\` / \`call_typed\` for a single call, \`call_batch\` for a
@@ -222,7 +231,7 @@ ${accessors.join("\n")}
         h = {"Content-Type": "application/json"}
         if self._bearer:
             h["Authorization"] = f"Bearer {self._bearer}"
-        return h
+${contractHeader}        return h
 `;
 }
 
@@ -381,7 +390,8 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
         )`;
   }
   const paramDict = m.parameters.map((p) => `"${p.name}": ${p.name}`).join(", ");
-  const doc = m.documentation ? `    """${m.documentation}"""\n` : "";
+  const docText = [m.documentation, m.deprecated ? `Deprecated: ${m.deprecated}` : null].filter(Boolean).join(" ");
+  const doc = docText ? `    """${docText}"""\n` : "";
   const todo = m.returnType.kind === "opaque" && !m.isVoid
     ? `    # TODO: return type "${m.returnType.nativeName ?? "?"}" is an opaque framework/BCL type not modelled in discovery.\n`
     : "";

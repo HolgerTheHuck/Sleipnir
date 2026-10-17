@@ -148,6 +148,12 @@ export interface SleipnirResponse {
 export interface DiscoveryInfo {
   /** Schema version (additive-only). See docs/discovery-schema.md §11. */
   discoveryVersion: string;
+  /**
+   * Identity of this contract (`sha256:<hex>` over its canonical form; documentation, examples and
+   * deprecation notes excluded). Generated clients embed it and send it back so the server can
+   * tell which contracts its callers were built against. Absent from servers before 1.8.0.
+   */
+  contractHash?: string;
   controllers: ControllerMeta[];
   types: Record<string, TypeMeta>;
 }
@@ -162,6 +168,8 @@ export interface MethodMeta {
   returnType: TypeRef;
   parameters: ParameterMeta[];
   documentation?: string | null;
+  /** `[SleipnirDeprecated]` message; absent when the method is not deprecated. */
+  deprecated?: string | null;
 }
 
 export interface ParameterMeta {

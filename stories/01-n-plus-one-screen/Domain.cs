@@ -184,6 +184,13 @@ public class ArticleController
         await StoryLatency.Wait();
         return Store.GetManyArticles(articleIds);
     }
+
+    // Dogfood for contract evolution (CONTRACT_EVOLUTION.md §4, "rename a method"): the old name
+    // stays as a deprecated forward — generated clients mark it @deprecated / [Obsolete], the server
+    // counts its calls per client contract (sleipnir.deprecated.calls) — until nobody calls it.
+    [SleipnirMethod("GetMany")]
+    [SleipnirDeprecated("Use Article.GetByIds.")]
+    public Task<List<Article>> GetMany(List<int> articleIds) => GetByIds(articleIds);
 }
 
 [SleipnirController("Address")]

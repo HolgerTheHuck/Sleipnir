@@ -198,6 +198,9 @@ namespace Sleipnir.Generated
     public sealed class ArticleClient
     {
         public Call GetByIds(Arg<List<int>> articleIds) => new Call(SleipnirCall.Init("Article", "GetByIds").Param("articleIds", articleIds.ToWireValue()));
+
+        [System.Obsolete("Use Article.GetByIds.")]
+        public Call GetMany(Arg<List<int>> articleIds) => new Call(SleipnirCall.Init("Article", "GetMany").Param("articleIds", articleIds.ToWireValue()));
     }
 
     public sealed class OrderClient
@@ -226,12 +229,15 @@ namespace Sleipnir.Generated
     /// colliding with the global SleipnirClient namespace.</summary>
     public sealed class SleipnirGeneratedClient
     {
+        /// <summary>Contract hash this client was generated from — sent on every request so the server can tell which contracts its callers were built against.</summary>
+        public const string ContractHash = "sha256:6540975bc36aa1d41594600217db6fb6dc4d04a21f2fdcfde15896642422c529";
+
         private readonly ISleipnirClient _client;
 
         /// <summary>Construct with a <see cref="SleipnirTransportRouter"/> bundling the codegen
         /// capability (<c>all</c>); defaultTransport=auto (WebSocket → REST+SSE fallback).</summary>
         public SleipnirGeneratedClient(string baseUrl) : this(new SleipnirTransportRouter(
-            new SleipnirRouterOptions { BaseUrl = baseUrl, Capability = SleipnirBundleCapability.All })) { }
+            new SleipnirRouterOptions { BaseUrl = baseUrl, Capability = SleipnirBundleCapability.All, ContractHash = ContractHash })) { }
 
         /// <summary>Construct with a custom <see cref="ISleipnirClient"/> (e.g. a pre-configured
         /// <see cref="SleipnirTransportRouter"/>, a specific backend, or <c>SleipnirInMemoryClient</c>

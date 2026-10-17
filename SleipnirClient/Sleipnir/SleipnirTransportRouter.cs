@@ -58,6 +58,14 @@ public sealed class SleipnirRouterOptions
     public ResumePolicy? ResumePolicy { get; init; }
     /// <summary>Optional injected HttpClient for the REST backend (shared-connection reuse).</summary>
     public HttpClient? RestHttpClient { get; init; }
+    /// <summary>
+    /// Contract hash the client was generated from (the discovery's <c>contractHash</c>; the generated
+    /// <c>SleipnirGeneratedClient</c> sets it). Sent on every request — header
+    /// <see cref="SleipnirContract.HeaderName"/> on REST/SSE, query <see cref="SleipnirContract.QueryName"/>
+    /// on the WebSocket/SignalR connect — so the server can tell which contracts its callers were
+    /// built against (CONTRACT_EVOLUTION.md §7).
+    /// </summary>
+    public string? ContractHash { get; init; }
 }
 
 /// <summary>
@@ -96,17 +104,21 @@ public class SleipnirTransportRouter : SleipnirClientBase, IAsyncDisposable
         _probeTimeout = opts.ProbeTimeout ?? TimeSpan.FromMilliseconds(1500);
         var bearer = opts.Bearer;
 
+        // Contract hash: header on REST/SSE, query on the WS/SignalR connect (carried by the path —
+        // both clients build their connect URL from it, query included).
+        var contractHash = opts.ContractHash;
         if (HasBackend(Capability, "rest"))
-            _rest = new SleipnirRestJsonClient(opts.BaseUrl, opts.RestHttpClient, opts.ApiPath, opts.CallTimeout);
+            _rest = new SleipnirRestJsonClient(opts.BaseUrl, opts.RestHttpClient, opts.ApiPath, opts.CallTimeout) { ContractHash = contractHash };
         if (HasBackend(Capability, "ws"))
-            _ws = new SleipnirWebSocketClient(opts.BaseUrl, webSocket: null, opts.WsPath,
+            _ws = new SleipnirWebSocketClient(opts.BaseUrl, webSocket: null, SleipnirContract.WithQuery(opts.WsPath, contractHash),
                 opts.CallTimeout, logger: null, autoReconnect: true, reconnectDelays: opts.ReconnectDelays,
                 socketFactory: null, onStateChanged: null, resumePolicy: opts.ResumePolicy);
         if (HasBackend(Capability, "sse"))
             _sse = new SleipnirSseClient(opts.BaseUrl, httpClient: null, opts.ApiPath, bearer,
-                reconnect: true, reconnectDelays: opts.ReconnectDelays, onResume: opts.ResumePolicy);
+                reconnect: true, reconnectDelays: opts.ReconnectDelays, onResume: opts.ResumePolicy)
+            { ContractHash = contractHash };
         if (HasBackend(Capability, "signalr"))
-            _signalr = new SleipnirSignalrClient(opts.BaseUrl, bearer, opts.HubPath);
+            _signalr = new SleipnirSignalrClient(opts.BaseUrl, bearer, SleipnirContract.WithQuery(opts.HubPath, contractHash));
 
         // A non-auto default resolves immediately; "auto" is probed lazily on first use.
         if (opts.DefaultTransport != SleipnirTransport.Auto)

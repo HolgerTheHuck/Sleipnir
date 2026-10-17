@@ -24,6 +24,7 @@
 import { SleipnirError, CancelledError } from "./errors.js";
 import { ExecutionMode, SleipnirConnectionState } from "./types.js";
 import { createEnded } from "./websocket.js";
+import { withContractQuery } from "./contract.js";
 import type {
   BearerProvider,
   SleipnirMultiRequest,
@@ -118,6 +119,12 @@ export interface SleipnirSignalrClientOptions {
   onResume?: ResumePolicy;
   /** Injectable factory (tests). Default: dynamic-import `@microsoft/signalr` builder. */
   hubFactory?: SignalrHubFactory;
+  /**
+   * The generated client's contract hash, sent as `?sleipnir-contract=` on the hub URL (negotiate +
+   * connect) so the server can count which contracts its callers were built against
+   * (CONTRACT_EVOLUTION.md §7). Set by the generated client via the router.
+   */
+  contractHash?: string;
   /**
    * Observer for connection state changes (mirror of the WS client's `onStateChanged`):
    * `Connecting` on `connect()`, `Connected` once started / reconnected, `Reconnecting` while
@@ -270,7 +277,7 @@ export class SleipnirSignalrClient {
     // Join baseUrl + hubPath without a double slash.
     const base = baseUrl.replace(/\/+$/, "");
     const path = hubPath.startsWith("/") ? hubPath : `/${hubPath}`;
-    this._hubUrl = base + path;
+    this._hubUrl = withContractQuery(base + path, opts.contractHash);
     this._bearer = opts.bearer;
     this._callTimeout = opts.callTimeout ?? 0;
     this._onResume = opts.onResume;

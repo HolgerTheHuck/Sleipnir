@@ -408,11 +408,11 @@ namespace SleipnirCore.Services
             {
                 var controllerType = GetControllerType(request.Controller);
                 if (controllerType == null)
-                    return SleipnirSubscribeResult.Fail(BadRequest($"Controller '{request.Controller}' not found.", HttpStatusCode.NotFound));
+                    return SleipnirSubscribeResult.Fail(ControllerNotFound(request.Controller));
 
                 string key = $"{request.Controller}_{request.Method}";
                 if (!_invokeCache.TryGetValue(key, out var invokeInfo))
-                    return SleipnirSubscribeResult.Fail(BadRequest($"Method '{request.Method}' not found on controller '{request.Controller}'."));
+                    return SleipnirSubscribeResult.Fail(MethodNotFound(request.Controller, request.Method));
 
                 // An event method is subscribable; a call method is not. Reject before auth/bind/
                 // invoke so a mis-targeted subscribe never executes the call method as a side effect.
@@ -427,11 +427,12 @@ namespace SleipnirCore.Services
                 catch (ForbiddenAccessException) { return SleipnirSubscribeResult.Fail(Forbidden()); }
 
                 // Parameter binden (wie Calls).
-                var parameters = BuildParameters(request?.Params, invokeInfo.MethodInfo!.GetParameters(), ct);
+                var parameters = BuildParameters(request.Params, invokeInfo.MethodInfo!.GetParameters(),
+                    $"{request.Controller}.{request.Method}", ct);
                 if (parameters.Items == null) return SleipnirSubscribeResult.Fail(parameters.Response!);
 
                 // Binary-Params (symmetrisch zu Calls, falls ein Event mal byte[]-Params braucht).
-                InjectBinaryParameters(parameters.Items!, invokeInfo.MethodInfo.GetParameters(), request?.BinaryData);
+                InjectBinaryParameters(parameters.Items!, invokeInfo.MethodInfo.GetParameters(), request.BinaryData);
 
                 // Controller via DI resolved + kompilierten Delegate aufrufen (wie ExecuteMethod).
                 using var scope = _serviceScopeFactory.CreateScope();
@@ -499,11 +500,11 @@ namespace SleipnirCore.Services
         {
             var controllerType = GetControllerType(controller);
             if (controllerType == null)
-                return BadRequest($"Controller '{controller}' not found.", HttpStatusCode.NotFound);
+                return ControllerNotFound(controller);
 
             string key = $"{controller}_{method}";
             if (!_invokeCache.TryGetValue(key, out var invokeInfo))
-                return BadRequest($"Method '{method}' not found on controller '{controller}'.");
+                return MethodNotFound(controller, method);
 
             if (!invokeInfo.IsEvent)
                 return BadRequest(
@@ -530,11 +531,11 @@ namespace SleipnirCore.Services
             {
                 var controllerType = GetControllerType(request.Controller);
                 if (controllerType == null)
-                    return BadRequest($"Controller '{request.Controller}' not found.", HttpStatusCode.NotFound);
+                    return ControllerNotFound(request.Controller);
 
                 string key = $"{request.Controller}_{request.Method}";
                 if (!_invokeCache.TryGetValue(key, out var invokeInfo))
-                    return BadRequest($"Method '{request.Method}' not found on controller '{request.Controller}'.");
+                    return MethodNotFound(request.Controller, request.Method);
 
                 // An event method is subscribable only (kind:"subscribe"); a plain call to it
                 // is a client misuse. Reject with an actionable 400 instead of attempting to
@@ -558,7 +559,8 @@ namespace SleipnirCore.Services
                 }
 
                 // Im Single-Call ohne Dependencies brauchen wir keine Alias-Auflösung:
-                var parameters = BuildParameters(request?.Params, invokeInfo.MethodInfo!.GetParameters(), ct);
+                var parameters = BuildParameters(request.Params, invokeInfo.MethodInfo!.GetParameters(),
+                    $"{request.Controller}.{request.Method}", ct);
                 if (parameters.Items == null) return parameters.Response;
 
                 // Inject binary data for byte[] parameters
@@ -1580,12 +1582,12 @@ namespace SleipnirCore.Services
             var controllerType = GetControllerType(request.Controller);
             if (controllerType == null)
                 return new AuthDecision(null, null, TraceCallError(request,
-                    BadRequest($"Controller '{request.Controller}' not found.", HttpStatusCode.NotFound)));
+                    ControllerNotFound(request.Controller)));
 
             string key = $"{request.Controller}_{request.Method}";
             if (!_invokeCache.TryGetValue(key, out var invokeInfo))
                 return new AuthDecision(null, null, TraceCallError(request,
-                    BadRequest($"Method '{request.Method}' not found on controller '{request.Controller}'.")));
+                    MethodNotFound(request.Controller, request.Method)));
 
             // An event method is subscribable only (kind:"subscribe"); a plain call to it is a
             // client misuse. Reject with an actionable 400 instead of an opaque 500 at serialize
@@ -1635,7 +1637,8 @@ namespace SleipnirCore.Services
             Activity.Current = activity;
             try
             {
-                var parameters = BuildParameters(request.Params, invokeInfo.MethodInfo!.GetParameters(), ct);
+                var parameters = BuildParameters(request.Params, invokeInfo.MethodInfo!.GetParameters(),
+                    $"{request.Controller}.{request.Method}", ct);
                 // BuildParameters liefert bei Fehler (Cap überschritten, Duplikat-Name,
                 // falscher Typ, ungültiges JSON) (Items: null, Response: BadRequest). Der
                 // Vergleich `== default` ((null,null)) fängt (null, BadRequest) NICHT ab —
@@ -1753,9 +1756,14 @@ namespace SleipnirCore.Services
 
         #region Parameter-Bau und Validierung
 
+        /// <param name="route">
+        /// <c>Controller.Method</c> of the call — named in every 400 so a caller can tell which
+        /// call of a batch failed.
+        /// </param>
         private (object?[]? Items, SleipnirResponse? Response) BuildParameters(
             JsonNode? paramsNode,
             ParameterInfo[] methodParams,
+            string route,
             CancellationToken ct)
         {
             try
@@ -1763,7 +1771,9 @@ namespace SleipnirCore.Services
                 // Parameter-Liste aus dem nativen Params-JsonArray (Einträge mit
                 // parameterName/num/data, data ist nativer JsonNode). Direkter Durchlauf
                 // statt Deserialize<List<SleipnirParameter>>(string) — kein String-Roundtrip.
-                var entries = new List<(string Name, int Num, JsonNode? Data)>();
+                // HasData separates an explicit JSON null (data: null) from an absent data
+                // field: JsonNode represents both as C# null.
+                var entries = new List<(string Name, int Num, JsonNode? Data, bool HasData)>();
                 if (paramsNode is JsonArray arr)
                 {
                     foreach (var entry in arr)
@@ -1777,6 +1787,7 @@ namespace SleipnirCore.Services
                         var numNode = eo["num"] ?? eo["Num"];
                         if (numNode is JsonValue nv && nv.TryGetValue<int>(out var ni))
                             num = ni;
+                        bool hasData = eo.ContainsKey("data") || eo.ContainsKey("Data");
                         var data = eo["data"] ?? eo["Data"];
                         // @@-Escape (AliasGrammar): ein String-Wert "@@x" ist das Literal
                         // "@x". Das Unescape passiert HIER — zentral für alle Pfade
@@ -1787,20 +1798,20 @@ namespace SleipnirCore.Services
                         {
                             data = JsonValue.Create(AliasGrammar.Unescape(ds));
                         }
-                        entries.Add((name, num, data));
+                        entries.Add((name, num, data, hasData));
                     }
                 }
 
                 // Nach Parameternamen indizieren. Doppelte Namen als BadRequest melden,
                 // statt über ToDictionary eine unbehandelte Exception auszulösen.
-                var byName = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
-                foreach (var (name, _, data) in entries)
+                var byName = new Dictionary<string, (JsonNode? Data, bool HasData)>(StringComparer.Ordinal);
+                foreach (var (name, _, data, hasData) in entries)
                 {
                     if (string.IsNullOrEmpty(name))
                         continue;
                     if (byName.ContainsKey(name))
-                        return (null, BadRequest($"Duplicate parameter name '{name}'."));
-                    byName[name] = data;
+                        return (null, BadRequest($"Duplicate parameter name '{name}' for '{route}'."));
+                    byName[name] = (data, hasData);
                 }
 
                 // Parameter ohne CancellationToken in der Reihenfolge der Methodensignatur.
@@ -1809,6 +1820,8 @@ namespace SleipnirCore.Services
                 var nonTokenParams = methodParams
                     .Where(p => p.ParameterType != typeof(CancellationToken))
                     .ToArray();
+                var paramNames = new HashSet<string>(
+                    nonTokenParams.Where(p => p.Name != null).Select(p => p.Name!), StringComparer.Ordinal);
 
                 var parameters = new object?[methodParams.Length];
                 foreach (var param in methodParams)
@@ -1822,74 +1835,129 @@ namespace SleipnirCore.Services
                     string name = param.Name ?? $"param{param.Position}";
 
                     // 1. Bindung nach Parameternamen (bevorzugt).
-                    bool matched = byName.TryGetValue(name, out var jsonValue);
+                    bool matched = byName.TryGetValue(name, out var named);
+                    var (jsonValue, hasData) = named;
 
                     // 2. Positions-Fallback: über Num, falls kein Name gepasst hat.
                     //    byte[]-Parameter werden hier ausgespart, da sie nachträglich über
                     //    InjectBinaryParameters aus SleipnirRequest.BinaryData gefüllt werden.
+                    //    An entry whose name belongs to another parameter of this method is
+                    //    already bound by name — without an explicit num (default 0) it would
+                    //    otherwise bind the same value a second time into the first parameter.
                     if (!matched && param.ParameterType != typeof(byte[]))
                     {
                         int positionalIndex = Array.IndexOf(nonTokenParams, param);
                         foreach (var e in entries)
                         {
-                            if (e.Num == positionalIndex)
+                            if (e.Num == positionalIndex && !paramNames.Contains(e.Name))
                             {
                                 jsonValue = e.Data;
+                                hasData = e.HasData;
                                 matched = true;
                                 break;
                             }
                         }
                     }
 
-                    if (matched)
+                    if (!matched || !hasData)
                     {
-                        try
-                        {
-                            // jsonValue ist ein nativer JsonNode (oder null bei fehlendem
-                            // data-Feld). Ein JSON-null-Wert ist ein nicht-null JsonNode und
-                            // wird hier deserialisiert (→ null für Ref-Typen, 400 für nicht-
-                            // nullable Werttypen); ein fehlendes data-Feld ist C#-null → Default.
-                            if (jsonValue != null)
-                            {
-                                parameters[param.Position] =
-                                    JsonSerializer.Deserialize(jsonValue, param.ParameterType,
-                                        _jsonSerializerOptions);
-                            }
-                        }
-                        catch (Exception)
-                        {
-                            return (null, BadRequest($"Parameter '{name}' cannot be converted to type '{param.ParameterType.Name}'."));
-                        }
-
-                        // Kardinalitäts-Cap auf Collection-Parametern (Top-Level). Schützt
-                        // vor Riesen-Arrays, die insb. beim @alias-Whole-Collection-Passthrough
-                        // serverseitig erzeugt werden (Body-Size-Limits greifen dort nicht).
-                        // string ausnehmen (ist IEnumerable<char>); byte[] wird via
-                        // InjectBinaryParameters gefüllt und ist keine Kardinalitäts-Frage.
-                        if (MaxParameterArrayLength > 0
-                            && parameters[param.Position] is not string and not byte[]
-                            && parameters[param.Position] is ICollection colParam
-                            && colParam.Count > MaxParameterArrayLength)
-                        {
+                        // Omitted parameter (or an entry without a data field): the C# default
+                        // value, null for a nullable parameter — otherwise a 400 naming it. A
+                        // non-nullable value type used to end as a NullReferenceException in the
+                        // compiled delegate (generic 500), and a silent default(T) hid caller bugs.
+                        if (!TryGetOmittedValue(param, out var omitted))
                             return (null, BadRequest(
-                                $"Parameter '{name}' exceeds MaxParameterArrayLength " +
-                                $"({MaxParameterArrayLength}; is {colParam.Count}). " +
-                                "Paginate or raise the cap (0 = unlimited)."));
-                        }
+                                $"Missing required parameter '{name}' (type '{param.ParameterType.Name}') for '{route}'."));
+                        parameters[param.Position] = omitted;
+                        continue;
                     }
-                    else
+
+                    if (jsonValue == null)
                     {
-                        // Falls der Parameter fehlt, den Default-Wert verwenden
-                        parameters[param.Position] = GetDefault(param.ParameterType);
+                        // Explicit JSON null: fine for reference types and Nullable<T>; a
+                        // non-nullable value type would fail in the compiled delegate (500).
+                        if (param.ParameterType.IsValueType && Nullable.GetUnderlyingType(param.ParameterType) == null)
+                            return (null, BadRequest(
+                                $"Parameter '{name}' of '{route}' does not accept null (type '{param.ParameterType.Name}')."));
+                        continue;
+                    }
+
+                    try
+                    {
+                        parameters[param.Position] =
+                            JsonSerializer.Deserialize(jsonValue, param.ParameterType,
+                                _jsonSerializerOptions);
+                    }
+                    catch (Exception)
+                    {
+                        return (null, BadRequest(
+                            $"Parameter '{name}' of '{route}' cannot be converted to type '{param.ParameterType.Name}' " +
+                            $"(received JSON {DescribeJsonKind(jsonValue)})."));
+                    }
+
+                    // Kardinalitäts-Cap auf Collection-Parametern (Top-Level). Schützt
+                    // vor Riesen-Arrays, die insb. beim @alias-Whole-Collection-Passthrough
+                    // serverseitig erzeugt werden (Body-Size-Limits greifen dort nicht).
+                    // string ausnehmen (ist IEnumerable<char>); byte[] wird via
+                    // InjectBinaryParameters gefüllt und ist keine Kardinalitäts-Frage.
+                    if (MaxParameterArrayLength > 0
+                        && parameters[param.Position] is not string and not byte[]
+                        && parameters[param.Position] is ICollection colParam
+                        && colParam.Count > MaxParameterArrayLength)
+                    {
+                        return (null, BadRequest(
+                            $"Parameter '{name}' of '{route}' exceeds MaxParameterArrayLength " +
+                            $"({MaxParameterArrayLength}; is {colParam.Count}). " +
+                            "Paginate or raise the cap (0 = unlimited)."));
                     }
                 }
                 return (parameters, null);
             }
             catch (Exception)
             {
-                return (null, BadRequest("Error processing request parameters."));
+                return (null, BadRequest($"Error processing request parameters for '{route}'."));
             }
         }
+
+        /// <summary>
+        /// The value bound to a parameter the request did not carry. Optional are: a declared C#
+        /// default value, <c>Nullable&lt;T&gt;</c>, a reference type that is NRT-nullable or
+        /// NRT-oblivious (no annotation context — the previous null binding is kept), and
+        /// <c>byte[]</c> (filled from <c>BinaryData</c> afterwards). Everything else is required:
+        /// returns <c>false</c>. Matches the discovery presence rule (non-nullable = required).
+        /// Only reached for omitted parameters, so the per-call NullabilityInfoContext is off the
+        /// hot path (the context is not thread-safe and therefore not shared).
+        /// </summary>
+        private static bool TryGetOmittedValue(ParameterInfo param, out object? value)
+        {
+            var type = param.ParameterType;
+            if (param.HasDefaultValue)
+            {
+                var dv = param.DefaultValue;
+                value = dv == null || dv == DBNull.Value || dv == Missing.Value ? GetDefault(type) : dv;
+                return true;
+            }
+
+            value = null;
+            if (type == typeof(byte[]) || Nullable.GetUnderlyingType(type) != null)
+                return true;
+            if (type.IsValueType)
+                return false;
+            try
+            {
+                return new NullabilityInfoContext().Create(param).WriteState != NullabilityState.NotNull;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private static string DescribeJsonKind(JsonNode node) => node.GetValueKind() switch
+        {
+            JsonValueKind.True or JsonValueKind.False => "boolean",
+            var kind => kind.ToString().ToLowerInvariant(),
+        };
 
 
         /// <summary>
@@ -1911,7 +1979,7 @@ namespace SleipnirCore.Services
                 }
             }
         }
-        private object? GetDefault(Type type)
+        private static object? GetDefault(Type type)
         {
             return type.IsValueType ? Activator.CreateInstance(type) : null;
         }
@@ -2363,6 +2431,49 @@ namespace SleipnirCore.Services
 
         private SleipnirResponse BadRequest(string message, HttpStatusCode code = HttpStatusCode.BadRequest)
             => CreateError((int)code, message, CategoryFor((int)code));
+
+        // Routing misses. The message prefixes ("Controller '…'" / "Method '…'") are load-bearing:
+        // the JSON-RPC adapter maps them to -32601. The hint (registered names, case-insensitive
+        // near miss, stale-build note) is appended only with EnableDetailedErrors — in Production
+        // it would enumerate the API surface past a discovery endpoint that sits behind auth.
+
+        private SleipnirResponse ControllerNotFound(string controller)
+        {
+            var message = $"Controller '{controller}' not found.";
+            if (EnableDetailedErrors)
+                message += RouteHint(controller, _routeHandlers.Keys, "Registered controllers");
+            return BadRequest(message, HttpStatusCode.NotFound);
+        }
+
+        private SleipnirResponse MethodNotFound(string controller, string method)
+        {
+            var message = $"Method '{method}' not found on controller '{controller}'.";
+            if (EnableDetailedErrors && GetControllerType(controller) is { } controllerType)
+            {
+                // ReflectedType guards the key prefix: controllers "a" and "a_b" share "a_".
+                var prefix = controller + "_";
+                var known = _invokeCache
+                    .Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal)
+                                 && kv.Value.MethodInfo.ReflectedType == controllerType)
+                    .Select(kv => kv.Key[prefix.Length..]);
+                message += RouteHint(method, known, "Available methods");
+            }
+            return BadRequest(message);
+        }
+
+        private static string RouteHint(string requested, IEnumerable<string> known, string label)
+        {
+            var names = known.OrderBy(n => n, StringComparer.Ordinal).ToList();
+            var nearMiss = names.FirstOrDefault(n => string.Equals(n, requested, StringComparison.OrdinalIgnoreCase));
+            if (nearMiss != null)
+                return $" Did you mean '{nearMiss}'? Names are case-sensitive.";
+
+            const int max = 25;
+            var list = names.Count == 0
+                ? "none"
+                : string.Join(", ", names.Take(max)) + (names.Count > max ? $", … ({names.Count - max} more)" : "");
+            return $" {label}: {list}. If it was added recently, the running server may be a stale build.";
+        }
 
         // Erfolg: strukturierter Ergebniswert in Data (roh, ein Pass — kein Double-Wrapping).
         // Der Bulk-Pfad nutzt Ok(byte[]) mit rohen UTF-8-Bytes (DataBytes); Data bleibt

@@ -76,7 +76,7 @@ project directory is picked up automatically:
 ```xml
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
-    <PackageReference Include="Sleipnir.Server.Codegen" Version="1.6.0" />
+    <PackageReference Include="Sleipnir.Server.Codegen" Version="1.7.0" />
   </ItemGroup>
 </Project>
 ```
@@ -86,14 +86,20 @@ target `AfterTargets="Build"` that regenerates the discovery in-process and drif
 
 ### 1.2 Generate the contract the first time
 
-On the first build there is no committed contract yet, so the export tool **writes one** and exits
-clean (exit 0). Commit it:
+There is no committed contract yet, so the gate has nothing to check against — a plain
+`dotnet build` warns `SLEIPNIRCG001` ("the contract drift gate is inactive") and changes nothing.
+Create the file with one regen build, then commit it:
 
 ```bash
-dotnet build                              # creates contract.sleipnir.json
+SLEIPNIR_REGEN_GOLDEN=1 dotnet build      # "created committed contract at 'contract.sleipnir.json'"
 git add contract.sleipnir.json
 git commit -m "chore: add Sleipnir contract"
 ```
+
+(PowerShell: `$env:SLEIPNIR_REGEN_GOLDEN='1'; dotnet build`.) Not creating the file on a plain
+build is deliberate: a project that references the package without being a Sleipnir server would
+otherwise fail the build on an empty contract. Such a project sets
+`<SleipnirContractEnabled>false</SleipnirContractEnabled>`.
 
 From now on every `dotnet build` regenerates the discovery from the built assembly and compares it
 to the committed `contract.sleipnir.json`. They match → build succeeds. They differ → **build fails**.
@@ -139,8 +145,8 @@ collisions, no locked files). The target only translates the tool's exit code in
 
 | Property / env | Default | Purpose |
 |---|---|---|
-| `SleipnirContractFile` | `contract.sleipnir.json` if it exists in the project dir | Path to the contract (project-relative or absolute). Set explicitly to use a different name/location. |
-| `SleipnirContractEnabled` | `true` | Set `false` to opt the project out (e.g. a library that transitively references the package but is not a server). |
+| `SleipnirContractFile` | `contract.sleipnir.json` if it exists in the project dir — or, with `SLEIPNIR_REGEN_GOLDEN=1`, even if it does not (bootstrap) | Path to the contract (project-relative or absolute). Set explicitly to use a different name/location. Unset (no file, no regen) → warning `SLEIPNIRCG001`, gate inactive. |
+| `SleipnirContractEnabled` | `true` | Set `false` to opt the project out (e.g. a library that references the package but is not a server) — also silences `SLEIPNIRCG001`. |
 | `SleipnirExportToolDll` | `$(MSBuildThisFileDirectory)..\tasks\net8.0\Sleipnir.Server.Codegen.dll` | Path to the export tool dll. The NuGet default is right for published consumption; for in-repo `ProjectReference` dev, set it to the built tool output (see §4). |
 | `SLEIPNIR_REGEN_GOLDEN` (env) | unset | Set to `1` to regenerate the committed contract instead of failing on drift. |
 
@@ -160,9 +166,9 @@ Reference the generator (as an analyzer) and the Sleipnir client runtime, and dr
   </PropertyGroup>
   <ItemGroup>
     <!-- The runtime the generated stubs call (SleipnirRestJsonClient, ISleipnirClient, SleipnirCall, ...). -->
-    <PackageReference Include="Sleipnir.Client" Version="1.6.0" />
+    <PackageReference Include="Sleipnir.Client" Version="1.7.0" />
     <!-- The source generator: loaded as an analyzer, emits SleipnirGenerated.cs at compile time. -->
-    <PackageReference Include="Sleipnir.Generator" Version="1.6.0"
+    <PackageReference Include="Sleipnir.Generator" Version="1.7.0"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
@@ -352,6 +358,21 @@ REST + WebSocket + SSE so `auto` (the runtime default) can probe WebSocket and f
 `null`/`undefined` when not bundled), and `useTransport()`/`UseTransportAsync()` switches the active
 transport at runtime. Python ships REST only (no Python WS/SSE runtime yet), so `--transport` is
 rejected for `--lang py`.
+
+**TypeScript / JavaScript / Python clients use the same committed contract.** The server half of
+this guide (§1) is not C#-specific: point `sleipnir-gen` at the committed file instead of a live
+discovery URL, and gate the committed client tree with `--selfcheck`:
+
+```bash
+npx sleipnir-gen --lang ts --discovery ../MyApp.Api/contract.sleipnir.json --out src/api
+npx sleipnir-gen --lang ts --discovery ../MyApp.Api/contract.sleipnir.json --out src/api --selfcheck  # CI, exit 4 on drift
+```
+
+That decouples client generation from the app lifecycle (no server has to run, nothing can be
+generated against a stale build) and gives the same two-sided chain as the C# path: a server
+change fails the server build until the contract is regenerated; the regenerated contract fails
+the client `--selfcheck` until the client is regenerated. Generating from
+`--discovery https://…/api/sleipnir/discovery` stays available for ad-hoc use.
 
 ---
 

@@ -49,9 +49,10 @@ $npmPin = @{
     Replace = "`${1}`${2}$NpmVersion`${4}"
 }
 # localfeed artifact: the version lives in the FILENAME (file:...sleipnir-client-1.0.0.tgz).
+# It is the npm tarball, so it follows the npm version, not the NuGet lockstep.
 $tgzPin = @{
     Pattern = '(sleipnir-[a-z-]+-)\d+\.\d+\.\d+(\.tgz)'
-    Replace = "`${1}$Version`${2}"
+    Replace = "`${1}$NpmVersion`${2}"
 }
 # Central version stamp: Directory.Build.props carries the assembly/package <Version> for
 # all 14 packable projects. Missing from this list once, it drifted (published 1.4.3

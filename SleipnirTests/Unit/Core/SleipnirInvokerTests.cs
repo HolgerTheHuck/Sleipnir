@@ -799,9 +799,11 @@ public class SleipnirInvokerTests
     }
 
     [Fact]
-    public async Task InvokeDi_MissingParameter_UsesDefault()
+    public async Task InvokeDi_MissingRequiredParameter_Returns400NamingParameterAndRoute()
     {
-        // Arrange: Add(int a, int b) — only `a` supplied; `b` defaults to 0.
+        // Arrange: Add(int a, int b) — only `a` supplied. `b` is a non-nullable value type without
+        // a C# default, so it is required (it used to bind a silent 0). Full omission matrix:
+        // ParameterBindingTests.
         var request = CreateRequest("TestInvoker", "Add", ("a", "3"));
 
         // Act
@@ -809,8 +811,8 @@ public class SleipnirInvokerTests
 
         // Assert
         response.Should().NotBeNull();
-        response!.Code.Should().Be((int)HttpStatusCode.OK);
-        response.Data.Value.GetRawText().Should().Be("3");
+        response!.Code.Should().Be((int)HttpStatusCode.BadRequest);
+        response.Error!.Message.Should().Be("Missing required parameter 'b' (type 'Int32') for 'TestInvoker.Add'.");
     }
 
     [Fact]

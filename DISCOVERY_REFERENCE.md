@@ -188,6 +188,25 @@ overridden.
   `[SleipnirDataContract]` → force-expand; assembly-in-set → expand; otherwise
   opaque.
 
+### Opaque usages are reported, not silent
+
+The common trap: a controller in `MyApp.Api` returns a domain type from `MyApp.Core`
+(another assembly) — discovery reports it `opaque`, and every generated client types
+it `unknown` / `object` / `Any`. Two diagnostics name each usage site (return, parameter,
+event payload, contract-type property):
+
+- **Server startup** — `UseSleipnir` logs one warning (category `Sleipnir`):
+  `Sleipnir discovery: 2 contract usage(s) are opaque — generated clients see them as
+  unknown/object: Run.Execute → return: IngestionSummary; …`
+  (`SleipnirCore/Services/Helper/DiscoveryOpaqueScan.cs`).
+- **Client generation** — `sleipnir-gen` prints the same list on stderr
+  (`clients/codegen/src/core/opaque.ts`); `--stdout` output stays clean.
+
+Fixes, in order of preference: map the type to a DTO in the API project (the wire
+contract then *is* the controller layer); or mark the foreign type
+`[SleipnirDataContract]` to force-expand it. A non-generic `SleipnirResponse` return stays
+opaque by design — return `SleipnirResponse<T>` to keep the payload type.
+
 ---
 
 ## 5. The `[SleipnirDataContract]` override

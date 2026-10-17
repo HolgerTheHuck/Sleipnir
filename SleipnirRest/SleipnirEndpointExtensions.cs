@@ -3,6 +3,8 @@ using SleipnirCore.Tracing;
 using SleipnirCore.Model.Messages.Mex;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
+using SleipnirCommon.Results;
+using SleipnirCore.Services.Helper;
 using SleipnirRest.JsonRpc;
 
 namespace SleipnirRest
@@ -48,10 +50,16 @@ namespace SleipnirRest
             }
 
             group.MapPost("/json", async (
-                SleipnirRequest request, ISleipnirCore sleipnirService, HttpContext httpContext, CancellationToken ct) =>
+                ISleipnirCore sleipnirService, HttpContext httpContext, CancellationToken ct) =>
             {
                 try
                 {
+                    var (request, error) = await ReadEnvelopeAsync<SleipnirRequest>(httpContext, ct);
+                    if (error != null)
+                        return error;
+                    if (request == null)
+                        return TransportError(StatusCodes.Status400BadRequest, "Request is empty.");
+
                     var result = await sleipnirService.InvokeDi(request, httpContext, ct);
                     return Results.Ok(result);
                 }
@@ -60,19 +68,24 @@ namespace SleipnirRest
                     return Results.Json(new { title = "Request cancelled.", status = 499 },
                         statusCode: 499);
                 }
-            });
+            }).Accepts<SleipnirRequest>("application/json");
 
             group.MapPost("/json/multi", async (
-                SleipnirMultiRequest? request, ISleipnirCore sleipnirService, HttpContext httpContext, CancellationToken ct) =>
+                ISleipnirCore sleipnirService, HttpContext httpContext, CancellationToken ct) =>
             {
-                if (request?.Requests is null || request.Requests.Count == 0)
-                    return Results.BadRequest("Request is empty.");
-                // Batch-Cap-Gate (North-Bound-Härtung): früher 400 statt Fan-Out-DoS.
-                // Quelle ist ISleipnirCore (SleipnirOptions → Invoker → Interface → Transporte).
-                if (sleipnirService.MaximumBatchSize > 0 && request.Requests.Count > sleipnirService.MaximumBatchSize)
-                    return Results.BadRequest($"Batch exceeds MaximumBatchSize ({sleipnirService.MaximumBatchSize}).");
                 try
                 {
+                    var (request, error) = await ReadEnvelopeAsync<SleipnirMultiRequest>(httpContext, ct);
+                    if (error != null)
+                        return error;
+                    if (request?.Requests is null || request.Requests.Count == 0)
+                        return TransportError(StatusCodes.Status400BadRequest, "Request is empty.");
+                    // Batch-Cap-Gate (North-Bound-Härtung): früher 400 statt Fan-Out-DoS.
+                    // Quelle ist ISleipnirCore (SleipnirOptions → Invoker → Interface → Transporte).
+                    if (sleipnirService.MaximumBatchSize > 0 && request.Requests.Count > sleipnirService.MaximumBatchSize)
+                        return TransportError(StatusCodes.Status400BadRequest,
+                            $"Batch exceeds MaximumBatchSize ({sleipnirService.MaximumBatchSize}).");
+
                     var result = await sleipnirService.InvokeDi(request.Requests, httpContext, request.Mode, ct);
                     return Results.Ok(result);
                 }
@@ -81,7 +94,7 @@ namespace SleipnirRest
                     return Results.Json(new { title = "Request cancelled.", status = 499 },
                         statusCode: 499);
                 }
-            });
+            }).Accepts<SleipnirMultiRequest>("application/json");
 
             group.MapGet("/discovery", (ISleipnirCore sleipnirService, HttpContext httpContext) =>
             {
@@ -167,6 +180,49 @@ namespace SleipnirRest
             }
 
             return group;
+        }
+
+        /// <summary>
+        /// Reads the request envelope from the body. Replaces Minimal-API parameter binding, whose
+        /// failure is a bare 400 (Production) or an exception page (Development): a malformed
+        /// envelope gets a Sleipnir error body naming the JSON path (<see cref="RequestEnvelopeError"/>).
+        /// Content-type check (415) and JSON options (ConfigureHttpJsonOptions) are those of the
+        /// binding — <c>ReadFromJsonAsync</c> resolves the same options.
+        /// </summary>
+        private static async Task<(T? Envelope, IResult? Error)> ReadEnvelopeAsync<T>(
+            HttpContext httpContext, CancellationToken ct) where T : class
+        {
+            if (!httpContext.Request.HasJsonContentType())
+                return (null, Results.StatusCode(StatusCodes.Status415UnsupportedMediaType));
+            try
+            {
+                return (await httpContext.Request.ReadFromJsonAsync<T>(ct), null);
+            }
+            catch (JsonException ex)
+            {
+                return (null, TransportError(StatusCodes.Status400BadRequest, RequestEnvelopeError.Describe(ex)));
+            }
+            catch (BadHttpRequestException ex)
+            {
+                // Kestrel's body rejections (e.g. 413 over the RequestSizeLimit) — its message is
+                // about the body itself, never server state.
+                return (null, TransportError(ex.StatusCode, ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// A transport-level rejection (before the invoker runs) as a regular Sleipnir error body
+        /// — <c>code</c> + <c>error.message</c> — under the matching HTTP status.
+        /// </summary>
+        private static IResult TransportError(int statusCode, string message)
+        {
+            var category = statusCode switch
+            {
+                StatusCodes.Status400BadRequest => SleipnirErrorCategory.InvalidArgument,
+                StatusCodes.Status413PayloadTooLarge => SleipnirErrorCategory.ResourceExhausted,
+                _ => SleipnirErrorCategory.None,
+            };
+            return Results.Json(SleipnirResults.Error(statusCode, message, category), statusCode: statusCode);
         }
     }
 }

@@ -50,7 +50,7 @@ public class WebSocketCorrelationTests : IClassFixture<TransportTestFixture>
         var root = await SendRawAndReceiveAsync("{ this is not valid json }");
 
         root.GetProperty("code").GetInt32().Should().Be(400);
-        root.GetProperty("error").GetProperty("message").GetString().Should().NotBeNullOrEmpty();
+        root.GetProperty("error").GetProperty("message").GetString().Should().StartWith("Invalid request envelope");
         // Pre-fix the message hid in `data` as a string; post-fix it travels in error.message
         // and `data` is null (SleipnirException reads Error.Message, never data).
         root.GetProperty("data").ValueKind.Should().Be(JsonValueKind.Null,

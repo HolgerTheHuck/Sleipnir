@@ -16,12 +16,42 @@ that JSON back into a typed surface on the client.
 ```bash
 # CLI (global tool, optional — `npx` works too)
 npm i -g sleipnir-codegen
-# or ad-hoc:
+# from the server's committed contract (recommended for committed clients — see below):
+npx sleipnir-gen --lang ts --discovery ../MyApp.Api/contract.sleipnir.json --out src/api
+# … or ad-hoc from a running server:
 npx sleipnir-gen --lang ts --discovery https://localhost:5001/api/sleipnir/discovery --out src/api
 
 # Programmatic (build tool, DevUI, custom emitter)
 npm i -D sleipnir-codegen
 ```
+
+## Which discovery source?
+
+| You are building … | `--discovery` | Why |
+|---|---|---|
+| **A client you commit** (the normal case) | the server's committed `contract.sleipnir.json` | No running server needed and never generated against a stale build — codegen is decoupled from the app lifecycle. The server keeps the file current: the [`Sleipnir.Server.Codegen`](https://www.nuget.org/packages/Sleipnir.Server.Codegen) NuGet package regenerates it on every server build and **fails the build on drift**. |
+| A one-off script, exploration | a live URL (`https://…/api/sleipnir/discovery`) | Quick — but the client follows whichever build happens to run. |
+
+The committed-contract loop, set up once:
+
+```bash
+# server: add the drift gate and create the contract (commit contract.sleipnir.json)
+dotnet add MyApp.Api package Sleipnir.Server.Codegen
+SLEIPNIR_REGEN_GOLDEN=1 dotnet build MyApp.Api
+
+# client: generate from the file, and gate the committed client in CI (exit 4 on drift)
+npx sleipnir-gen --lang ts --discovery ../MyApp.Api/contract.sleipnir.json --out src/api
+npx sleipnir-gen --lang ts --discovery ../MyApp.Api/contract.sleipnir.json --out src/api --selfcheck
+```
+
+A server change now fails the server build until the contract is regenerated; the
+regenerated file then fails the client `--selfcheck` until the client is regenerated.
+End-to-end walkthrough: [CODEGEN_ONBOARDING.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/CODEGEN_ONBOARDING.md).
+
+`sleipnir-gen` warns on stderr when the discovery contains **opaque** types — types the
+server could not model (typically a domain type declared outside the controller
+assemblies). They are emitted as `unknown` / `object` / `Any`; map them to DTOs in the API
+project.
 
 The generator depends on [`sleipnir-client`](https://www.npmjs.com/package/sleipnir-client)
 for the TS/JS runtime — the generated `SleipnirClient` wires up a

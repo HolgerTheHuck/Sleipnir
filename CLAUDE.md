@@ -101,6 +101,8 @@ All transports deserialize the incoming `SleipnirRequest`/`SleipnirMultiRequest`
 
 Parameters are sent as `SleipnirParameter[]` (name+data pairs), matched by parameter name. `CancellationToken` is injected automatically. `byte[]` parameters receive raw binary from `SleipnirRequest.BinaryData`.
 
+**Omitted parameters** (`BuildParameters` → `TryGetOmittedValue`): declared C# default → that value; `Nullable<T>`/NRT-nullable/NRT-oblivious reference → `null`; otherwise required → `400 Missing required parameter 'x' (type 'T') for 'Controller.Method'.` (the discovery presence rule). Explicit JSON `null` into a non-nullable value type → `400 … does not accept null`. The positional `num` fallback skips entries whose name binds another parameter. Every binding `400` names `Controller.Method`; routing misses add a near-miss/known-names hint only with `EnableDetailedErrors`. Malformed REST/WS envelopes → `RequestEnvelopeError.Describe` (JSON path + position); the REST `/json` + `/json/multi` endpoints read the body themselves (`ReadEnvelopeAsync`) instead of Minimal-API binding, so transport-level rejections are HTTP 4xx with a regular Sleipnir error body. `UseSleipnir` logs opaque contract-type usages once at startup (`DiscoveryOpaqueScan`); `sleipnir-gen` warns on stderr for the same.
+
 `SleipnirResponse` carries `Code` (HTTP-like status), `Data` (JSON result), `Content` (binary), `ExposedDependencies` (for chaining), and `SleipnirError` on failure. Clients throw `SleipnirException` on non-2xx responses.
 
 ### Error Handling

@@ -190,7 +190,7 @@ the project directory is picked up automatically:
 ```xml
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
-    <PackageReference Include="Sleipnir.Server.Codegen" Version="1.6.0" />
+    <PackageReference Include="Sleipnir.Server.Codegen" Version="1.7.0" />
   </ItemGroup>
 </Project>
 ```
@@ -200,11 +200,14 @@ the project directory is picked up automatically:
 
 #### Generate the contract the first time
 
-On the first build there is no committed contract yet, so the export tool **writes one** and
-exits clean (exit 0). Commit it:
+Without a committed contract the gate is inactive: a plain `dotnet build` warns `SLEIPNIRCG001`
+and creates nothing (a non-server project referencing the package would otherwise fail on an
+empty contract — such a project sets `SleipnirContractEnabled=false`). One regen build creates the
+file (`SleipnirContractFile` defaults to `contract.sleipnir.json` when `SLEIPNIR_REGEN_GOLDEN=1`);
+the export tool writes a missing file and exits 0. Commit it:
 
 ```bash
-dotnet build                              # creates contract.sleipnir.json
+SLEIPNIR_REGEN_GOLDEN=1 dotnet build      # "created committed contract at 'contract.sleipnir.json'"
 git add contract.sleipnir.json
 git commit -m "chore: add Sleipnir contract"
 ```
@@ -276,9 +279,9 @@ Reference the generator (as an analyzer) and the Sleipnir client runtime, and dr
   </PropertyGroup>
   <ItemGroup>
     <!-- The runtime the generated stubs call (SleipnirRestJsonClient, ISleipnirClient, SleipnirCall, ...). -->
-    <PackageReference Include="Sleipnir.Client" Version="1.6.0" />
+    <PackageReference Include="Sleipnir.Client" Version="1.7.0" />
     <!-- The source generator: loaded as an analyzer, emits SleipnirGenerated.cs at compile time. -->
-    <PackageReference Include="Sleipnir.Generator" Version="1.6.0"
+    <PackageReference Include="Sleipnir.Generator" Version="1.7.0"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>

@@ -92,7 +92,7 @@ Step 3 has exactly four outcomes. They are the contract.
 | Fragment → Parameter | Runtime behavior | Response |
 |---|---|---|
 | **Compatible** — same JSON kind, or object→object with overlapping properties | Binds normally | **2xx** |
-| **Cross-kind scalar** — JSON number into `string`, JSON string into `int`, bool into number, object/array into scalar | `System.Text.Json` throws | **400** `Parameter 'X' cannot be converted to type 'Y'.` |
+| **Cross-kind scalar** — JSON number into `string`, JSON string into `int`, bool into number, object/array into scalar | `System.Text.Json` throws | **400** `Parameter 'X' of 'Controller.Method' cannot be converted to type 'Y' (received JSON string).` |
 | **object → object, missing property** | Duck-typed: overlapping props bind case-insensitively, **extra** provider props ignored, **missing** props silently defaulted (value types → `0`/`false`/`DateTime.MinValue`, reference types → `null`) | **2xx** (silent default) — **Weak** only; **Strict** turns the top-level missing case into a 400 (alias params); **Paranoid** turns *every* missing property — at any depth, in any parameter including literals — into a 400 (see §7) |
 | **Unresolved** — JsonPath matched 0 nodes, or no prior request exposed that alias | No value to bind | **400** `Unresolved dependencies: alias.` (Serial / dangling-alias path). On the **topological** path, a provider that fails or does not expose is caught *before* this point — see [§9](#9-provider-failure--dependent-propagation). |
 

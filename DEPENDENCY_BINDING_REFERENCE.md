@@ -86,7 +86,7 @@ possible (`DEPENDENCY_BINDING.md §"2. The four outcomes"`,
 | Outcome | HTTP | Cause |
 |---------|------|-------|
 | **Compatible** | 2xx | The fragment's JSON kind matches the parameter type. Widening (`int`→`long`) is accepted silently (`DEPENDENCY_BINDING.md §"What is accepted silently"`). |
-| **Cross-kind scalar** | 400 | `Parameter 'X' cannot be converted to type 'Y'.` — a scalar of the wrong kind (number↔string) with no `AllowReadingFromString`, so `"42"`→`int` and `42`→`string` are both rejected (`DEPENDENCY_BINDING.md §"What is rejected"`). |
+| **Cross-kind scalar** | 400 | `Parameter 'X' of 'Controller.Method' cannot be converted to type 'Y' (received JSON string).` — a scalar of the wrong kind (number↔string) with no `AllowReadingFromString`, so `"42"`→`int` and `42`→`string` are both rejected (`DEPENDENCY_BINDING.md §"What is rejected"`). |
 | **object → object missing property** | 2xx silent default (Weak) / 400 (Strict top-level, Paranoid every depth) | Duck-typed: a missing value-type property silently defaults to `0`/`false`/`DateTime.MinValue` (the insidious case); a missing reference property → `null`; a kind mismatch on an *overlapping* property → 400. |
 | **Unresolved** | 400 | `Unresolved dependencies: alias.` — no provider exposes the alias, or the JsonPath matched nothing. |
 
@@ -372,7 +372,7 @@ singleton in one block (`SleipnirHub/Extensions/SleipnirServiceCollectionExtensi
 | `MaxResultElementCount` | `int` | 10000 | `MaxResultElementCount` | Caps materialized collections + `IAsyncEnumerable` early-stop. Invoker `SleipnirInvoker.cs → MaxResultElementCount`; enforced `SleipnirInvoker.cs → ReturnResponse` and `SleipnirInvoker.cs → AsyncEnumerableConsumer.Consume` (413 / `ResultCardinalityExceededException`). |
 
 > **Cardinality-cap 400 message** (`SleipnirInvoker.cs → BuildParameters`):
-> `Parameter '{name}' exceeds MaxParameterArrayLength ({MaxParameterArrayLength}; is {colParam.Count}). Paginate or raise the cap (0 = unlimited).`
+> `Parameter '{name}' of '{route}' exceeds MaxParameterArrayLength ({MaxParameterArrayLength}; is {colParam.Count}). Paginate or raise the cap (0 = unlimited).`
 
 **North-bound hardening** (`BEST_PRACTICES.md §"1.1 Authenticate upstream"`)
 recommends lowering `MaxDependencyPathLength = 128` and
@@ -416,7 +416,7 @@ non-blocking inline warnings + a summary box) are described in
   camelCase wire document; use `$.id`. The dependent gets the propagation 400
   `… did not expose '@cid'.` (`SleipnirTests/Unit/Core/AliasBindingTests.cs → Alias_JsonPath_PascalCase_DoesNotMatch`).
 - **Cross-kind scalar → 400.** No `AllowReadingFromString`, so `"42"`→`int`
-  and `42`→`string` both reject with `Parameter 'X' cannot be converted to type 'Y'.`
+  and `42`→`string` both reject with `Parameter 'X' of 'Controller.Method' cannot be converted to type 'Y' (received JSON …).`
   (`DEPENDENCY_BINDING.md §"2. The four outcomes"` / `§"What is rejected"`).
 - **Missing value-type property → silent default (Weak).** The insidious case:
   a consumer `int Active` absent from the fragment binds `0`, no error. Use
@@ -438,7 +438,7 @@ non-blocking inline warnings + a summary box) are described in
 - **Unresolved (Serial):** `Unresolved dependencies: {alias1, alias2, …}` (`SleipnirInvoker.cs → ResolveParameterValues`)
 - **Propagation:** see §7 table.
 - **Cycle:** `Cycle detected in dependencies. Involved requests: …` (graph builder, `SleipnirCore/Services/Helper/DependencyGraphBuilder.cs → SortByDependencyBatches`); topological executor wraps as `Circular dependency detected in request batch.` (`SleipnirInvoker.cs → ExecuteInDependencyBatches`).
-- **Cardinality cap:** `Parameter '{name}' exceeds MaxParameterArrayLength ({MaxParameterArrayLength}; is {count}). …` (`SleipnirInvoker.cs → BuildParameters`); result cardinality → 413 (`SleipnirInvoker.cs → ReturnResponse`).
+- **Cardinality cap:** `Parameter '{name}' of '{route}' exceeds MaxParameterArrayLength ({MaxParameterArrayLength}; is {count}). …` (`SleipnirInvoker.cs → BuildParameters`); result cardinality → 413 (`SleipnirInvoker.cs → ReturnResponse`).
 
 ### Reconnect/authorization note
 

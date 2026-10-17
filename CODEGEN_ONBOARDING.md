@@ -148,6 +148,10 @@ collisions, no locked files). The target only translates the tool's exit code in
 | `SleipnirContractFile` | `contract.sleipnir.json` if it exists in the project dir — or, with `SLEIPNIR_REGEN_GOLDEN=1`, even if it does not (bootstrap) | Path to the contract (project-relative or absolute). Set explicitly to use a different name/location. Unset (no file, no regen) → warning `SLEIPNIRCG001`, gate inactive. |
 | `SleipnirContractEnabled` | `true` | Set `false` to opt the project out (e.g. a library that references the package but is not a server) — also silences `SLEIPNIRCG001`. |
 | `SleipnirExportToolDll` | `$(MSBuildThisFileDirectory)..\tasks\net8.0\Sleipnir.Server.Codegen.dll` | Path to the export tool dll. The NuGet default is right for published consumption; for in-repo `ProjectReference` dev, set it to the built tool output (see §4). |
+| `SleipnirContractBaseline` | empty (off) | **Compatibility gate:** the contract deployed clients were built against — a file or `git:<ref>` (e.g. `git:v1.7.0`). Breaking changes against it fail the build. See [CONTRACT_EVOLUTION.md](CONTRACT_EVOLUTION.md). |
+| `SleipnirBreakingChanges` | `error` | `warn` reports breaking changes without failing. |
+| `SleipnirContractRollbackCheck` | `false` | Also check current clients against the baseline server. |
+| `SleipnirContractCompatReport` | empty | Path for the JSON compatibility report. |
 | `SLEIPNIR_REGEN_GOLDEN` (env) | unset | Set to `1` to regenerate the committed contract instead of failing on drift. |
 
 ---
@@ -331,6 +335,20 @@ dotnet test  SleipnirTests/SleipnirTests.csproj -c Release --no-build
 
 Do **not** set `SLEIPNIR_REGEN_GOLDEN` in CI — that would silently rewrite the contract instead of
 failing. Regeneration is a developer action that produces a commit; CI only verifies.
+
+The drift gate answers *"is the committed contract current?"*. The **compatibility gate** answers
+the second question — *"can the clients built against the last release still talk to this
+server?"* — and is one property away:
+
+```xml
+<SleipnirContractBaseline>git:v1.7.0</SleipnirContractBaseline>
+```
+
+A breaking change (a required parameter added, a response property removed, a renamed method, …)
+then fails the build with warnings `SLEIPNIRCG003` naming each site. A `git:<ref>` baseline needs
+the ref in the CI clone (`actions/checkout` with `fetch-depth: 0`). Client-side pipelines run the
+same rules with `sleipnir-gen diff --base base.json --head contract.sleipnir.json`. Rules, recipes
+and the JSON report: [CONTRACT_EVOLUTION.md](CONTRACT_EVOLUTION.md).
 
 The repo's own CI (`.github/workflows/build.yml`) does exactly this, and additionally packs
 `Sleipnir.Generator` and `Sleipnir.Server.Codegen` on tagged releases.

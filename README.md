@@ -335,6 +335,7 @@ Single-file references that put all knobs, parameters, failure modes, and diagno
 | Reference | What it covers |
 |----------|----------------|
 | [`CODEGEN_REFERENCE.md`](CODEGEN_REFERENCE.md) | Build-time contract loop, `contract.sleipnir.json`, Path A (.NET `Sleipnir.Server.Codegen` + Roslyn `Sleipnir.Generator`) and Path B (`sleipnir-gen` Node CLI), all CLI parameters, emitter output shapes, drift gate |
+| [`CONTRACT_EVOLUTION.md`](CONTRACT_EVOLUTION.md) | Which contract changes break deployed clients (breaking / soft / safe, input vs output), recipes for safe evolution, the compatibility gate (`SleipnirContractBaseline`, `sleipnir-gen diff`) |
 | [`TRANSPORT_REFERENCE.md`](TRANSPORT_REFERENCE.md) | REST / WebSocket / SignalR / SSE-over-REST endpoints, wire formats, `SleipnirTransportRouter` auto/fallback, client backends, `--transport` capability semantics |
 | [`EVENTS_REFERENCE.md`](EVENTS_REFERENCE.md) | `[SleipnirEvent]`, `IObservable<T>`, ephemeral/durable subscriptions, `EventFrame` wire (event/complete/error), backpressure strategies, cross-transport resume (`Last-Event-Id`) |
 | [`DEPENDENCY_BINDING_REFERENCE.md`](DEPENDENCY_BINDING_REFERENCE.md) | `@alias` chaining, JsonPath extraction, Weak/Strict/Paranoid binding modes, casing regimes, provider-failure propagation |

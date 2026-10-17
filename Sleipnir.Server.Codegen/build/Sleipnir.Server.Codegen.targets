@@ -36,6 +36,11 @@
          target only ran when the file already existed, so the very first SLEIPNIR_REGEN_GOLDEN=1
          build was a silent no-op. -->
     <SleipnirContractFile Condition="'$(SleipnirContractFile)' == '' AND '$(SleipnirRegen)' == 'true'">contract.sleipnir.json</SleipnirContractFile>
+    <!-- Compatibility gate (opt-in, CONTRACT_EVOLUTION.md): the contract deployed clients were built
+         against — a file path or git:<ref> (e.g. git:v1.7.0 = this project's contract file as of that
+         tag). Empty = off. -->
+    <SleipnirBreakingChanges Condition="'$(SleipnirBreakingChanges)' == ''">error</SleipnirBreakingChanges>
+    <SleipnirContractRollbackCheck Condition="'$(SleipnirContractRollbackCheck)' == ''">false</SleipnirContractRollbackCheck>
   </PropertyGroup>
 
   <!-- Referenced, enabled, but no contract configured: say so instead of skipping silently. -->
@@ -51,23 +56,31 @@
 
     <PropertyGroup>
       <_SleipnirRegenArg Condition="'$(SleipnirRegen)' == 'true'">--regen</_SleipnirRegenArg>
+      <_SleipnirCompatArgs Condition="'$(SleipnirContractBaseline)' != ''">--baseline &quot;$(SleipnirContractBaseline)&quot; --breaking $(SleipnirBreakingChanges)</_SleipnirCompatArgs>
+      <_SleipnirCompatArgs Condition="'$(SleipnirContractBaseline)' != '' AND '$(SleipnirContractRollbackCheck)' == 'true'">$(_SleipnirCompatArgs) --rollback</_SleipnirCompatArgs>
+      <_SleipnirCompatArgs Condition="'$(SleipnirContractBaseline)' != '' AND '$(SleipnirContractCompatReport)' != ''">$(_SleipnirCompatArgs) --compat-report &quot;$(SleipnirContractCompatReport)&quot;</_SleipnirCompatArgs>
     </PropertyGroup>
 
     <!-- IgnoreExitCode=true so <Exec> never fails the build itself; the exit code is translated
          into a build <Error> below (a custom message is clearer than the raw Exec failure). The
-         tool's stdout (pass / drift diff / regen confirmation) is echoed to the build log. -->
-    <Exec Command="dotnet &quot;$(SleipnirExportToolDll)&quot; --assembly &quot;$(TargetPath)&quot; --contract &quot;$(SleipnirContractFile)&quot; $(_SleipnirRegenArg)"
+         tool's stdout (pass / drift diff / regen confirmation) is echoed to the build log; its
+         compatibility findings are canonical warnings (SLEIPNIRCG002 soft, SLEIPNIRCG003 breaking,
+         SLEIPNIRCG004 baseline unavailable), which Exec forwards as build warnings. -->
+    <Exec Command="dotnet &quot;$(SleipnirExportToolDll)&quot; --assembly &quot;$(TargetPath)&quot; --contract &quot;$(SleipnirContractFile)&quot; $(_SleipnirRegenArg) $(_SleipnirCompatArgs)"
           IgnoreExitCode="true"
           WorkingDirectory="$(MSBuildProjectDirectory)">
       <Output TaskParameter="ExitCode" PropertyName="SleipnirExportExitCode" />
     </Exec>
 
-    <!-- Exit codes from the tool: 0 = ok / regenerated, 1 = drift detected, 2 = tool error. -->
+    <!-- Exit codes from the tool: 0 = ok / regenerated, 1 = drift detected, 2 = tool error,
+         3 = breaking contract change against the baseline (SleipnirBreakingChanges=error). -->
     <Error Condition="'$(SleipnirExportExitCode)' == '1'"
            Text="Sleipnir contract drift detected: the committed $(SleipnirContractFile) does not match the server's runtime discovery. See the regenerated-vs-committed diff above. If the change is intentional, regenerate with: SLEIPNIR_REGEN_GOLDEN=1 dotnet build (bash) — PowerShell: $env:SLEIPNIR_REGEN_GOLDEN='1'; dotnet build — cmd: set SLEIPNIR_REGEN_GOLDEN=1 &amp;&amp; dotnet build. Then regenerate the clients from the same file: TS/JS/Python via sleipnir-gen --discovery $(SleipnirContractFile); C# (Sleipnir.Generator) picks it up on its next build." />
     <Error Condition="'$(SleipnirExportExitCode)' == '2'"
            Text="Sleipnir export tool error (not a contract drift). See the tool output above." />
-    <Error Condition="'$(SleipnirExportExitCode)' != '0' AND '$(SleipnirExportExitCode)' != '1' AND '$(SleipnirExportExitCode)' != '2'"
+    <Error Condition="'$(SleipnirExportExitCode)' == '3'"
+           Text="Breaking Sleipnir contract change against the baseline '$(SleipnirContractBaseline)' — clients built against it would fail (warnings SLEIPNIRCG003 above). Keep the change compatible (CONTRACT_EVOLUTION.md: optional parameters, additive outputs, Controller.v2 for a real break), move the baseline once the break is released, or set SleipnirBreakingChanges=warn to accept it." />
+    <Error Condition="'$(SleipnirExportExitCode)' != '0' AND '$(SleipnirExportExitCode)' != '1' AND '$(SleipnirExportExitCode)' != '2' AND '$(SleipnirExportExitCode)' != '3'"
            Text="Sleipnir export tool returned unexpected exit code '$(SleipnirExportExitCode)'. See the tool output above." />
   </Target>
 

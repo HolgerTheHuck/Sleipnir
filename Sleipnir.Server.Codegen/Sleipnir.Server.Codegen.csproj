@@ -41,6 +41,10 @@
   <ItemGroup>
     <ProjectReference Include="..\SleipnirCore\SleipnirCore.csproj" />
     <ProjectReference Include="..\SleipnirCommon\SleipnirCommon.csproj" />
+    <!-- Contract compatibility engine (ContractCompatibility), shared with the TS port via the
+         clients/codegen/test/fixtures/compat spec. Not packable on its own: `dotnet publish` puts
+         the dll into tasks/net8.0 with the rest of the tool's closure. -->
+    <ProjectReference Include="..\Sleipnir.Codegen.Core\Sleipnir.Codegen.Core.csproj" />
   </ItemGroup>
 
   <!-- Pack the build/ targets into the nupkg so PackageReference auto-imports them. -->

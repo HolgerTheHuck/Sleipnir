@@ -53,6 +53,21 @@ build then drift-checks against it. Until the file exists, each build warns
 Sleipnir server sets `<SleipnirContractEnabled>false</SleipnirContractEnabled>`; another file
 location goes into `<SleipnirContractFile>`.
 
+## Compatibility gate — protect deployed clients
+
+The drift gate keeps the file current. Name a **baseline** — the contract the clients in the
+field were built against — and the same build also refuses breaking changes against it:
+
+```xml
+<SleipnirContractBaseline>git:v1.7.0</SleipnirContractBaseline>  <!-- or a file path -->
+```
+
+Every difference is classified as breaking / soft / safe (warnings `SLEIPNIRCG003` /
+`SLEIPNIRCG002`); a breaking one fails the build unless `SleipnirBreakingChanges=warn`.
+`SleipnirContractRollbackCheck=true` also checks the new clients against the old server,
+`SleipnirContractCompatReport=<path>` writes a JSON report. Rules and recipes:
+[CONTRACT_EVOLUTION.md](../CONTRACT_EVOLUTION.md).
+
 ## Where it fits
 
 This tool *produces* the contract that `Sleipnir.Generator` (C#) consumes at compile time,

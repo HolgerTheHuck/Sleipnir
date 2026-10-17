@@ -14,13 +14,20 @@
 // in this repo, so the server's [SleipnirController] references bind to the already-loaded SleipnirCore;
 // an AssemblyResolve hook additionally probes the server's output directory for any deps the tool
 // itself does not bring.
+//
+// With --baseline it additionally runs the contract compatibility check (CONTRACT_EVOLUTION.md):
+// the regenerated contract against the one deployed clients were built against (a file or
+// git:<ref>). Changes print as canonical MSBuild warnings (SLEIPNIRCG002 soft, SLEIPNIRCG003
+// breaking); with --breaking error (default) a breaking change exits 3.
 using System.Collections;
+using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Sleipnir.Codegen.Core;
 using SleipnirCore.Attributes;
 using SleipnirCore.Model.Messages.Mex;
 using SleipnirCore.Services;
@@ -32,6 +39,7 @@ internal static class Program
     private const int ExitOk = 0;
     private const int ExitDrift = 1;
     private const int ExitError = 2;
+    private const int ExitBreaking = 3;
 
     private static int Main(string[] args)
     {
@@ -66,6 +74,11 @@ internal static class Program
 
         var regeneratedJson = JsonSerializer.Serialize(discovery, DiscoverySerialization.Options).Trim();
 
+        // Compatibility against the baseline is independent of the drift verdict: it compares what
+        // the server serves now with what deployed clients were built against. A drift (exit 1)
+        // still takes precedence in the exit code — regenerate first, then the gate applies.
+        var compatExit = CheckCompatibility(opts, regeneratedJson);
+
         // No committed contract yet: write it and succeed (first-time wiring).
         if (!File.Exists(opts.ContractPath))
         {
@@ -74,7 +87,7 @@ internal static class Program
             Console.WriteLine("[sleipnir-export] Commit it: every later build fails when the server drifts from it. " +
                               $"Generate clients from this file, not a live URL: sleipnir-gen --discovery {opts.ContractPath} (TS/JS/Python), " +
                               "or Sleipnir.Generator (C#).");
-            return ExitOk;
+            return compatExit;
         }
 
         var committedJson = File.ReadAllText(opts.ContractPath).Trim();
@@ -90,7 +103,7 @@ internal static class Program
         if (JsonNode.DeepEquals(regenNode, committedNode) && !opts.Regen)
         {
             Console.WriteLine($"[sleipnir-export] drift-check passed: '{opts.ContractPath}' matches runtime discovery.");
-            return ExitOk;
+            return compatExit;
         }
 
         if (opts.Regen)
@@ -100,11 +113,91 @@ internal static class Program
             // canonical form. Content-equal is not shape-equal: regen migrates the file.
             File.WriteAllText(opts.ContractPath, regeneratedJson);
             Console.WriteLine($"[sleipnir-export] regenerated committed contract at '{opts.ContractPath}'.");
-            return ExitOk;
+            return compatExit;
         }
 
         ReportDrift(regenNode, committedNode, opts);
         return ExitDrift;
+    }
+
+    /// <summary>
+    /// The compatibility gate: baseline (file or <c>git:&lt;ref&gt;</c>) vs. the regenerated contract.
+    /// Prints the report — soft/breaking changes as canonical MSBuild warnings, so they reach the
+    /// IDE error list — and returns <see cref="ExitBreaking"/> for a breaking change under
+    /// <c>--breaking error</c>. The MSBuild target turns that into the build error; printing
+    /// canonical <c>error</c> lines instead would fail the Exec task before the target can report a
+    /// drift alongside.
+    /// </summary>
+    private static int CheckCompatibility(Options opts, string currentJson)
+    {
+        if (string.IsNullOrEmpty(opts.Baseline))
+            return ExitOk;
+
+        var baselineJson = LoadBaseline(opts.Baseline!, opts.ContractPath, out var failure);
+        if (baselineJson == null)
+        {
+            Console.WriteLine($"{opts.ContractPath} : warning SLEIPNIRCG004 : contract baseline '{opts.Baseline}' is unavailable ({failure}) - the compatibility check was skipped.");
+            return ExitOk;
+        }
+
+        var report = ContractCompatibility.Compare(baselineJson, currentJson, opts.Rollback);
+        if (opts.CompatReportPath != null)
+            File.WriteAllText(opts.CompatReportPath, report.ToJson());
+
+        Console.WriteLine($"[sleipnir-export] contract compatibility against '{opts.Baseline}': " +
+                          $"{report.Breaking} breaking, {report.Soft} soft, {report.Safe} safe.");
+        foreach (var c in report.Changes)
+        {
+            var direction = c.Direction == ContractCompatibility.Rollback ? ", rollback" : "";
+            if (c.Severity == ContractCompatibility.Safe)
+            {
+                Console.WriteLine($"  safe  {c.Site}  [{c.Id}]  {c.Message}");
+                continue;
+            }
+            var code = c.Severity == ContractCompatibility.Breaking ? "SLEIPNIRCG003" : "SLEIPNIRCG002";
+            Console.WriteLine($"{opts.ContractPath} : warning {code} : [{c.Severity}{direction}] {c.Site} ({c.Id}): {c.Message}");
+        }
+
+        return report.Breaking > 0 && opts.BreakingPolicy != "warn" ? ExitBreaking : ExitOk;
+    }
+
+    /// <summary>The baseline contract text, from a file or <c>git:&lt;ref&gt;</c> (the contract
+    /// file as of that ref, via <c>git show &lt;ref&gt;:./&lt;path&gt;</c> from the project dir).</summary>
+    private static string? LoadBaseline(string spec, string contractPath, out string failure)
+    {
+        failure = "";
+        if (!spec.StartsWith("git:", StringComparison.Ordinal))
+        {
+            if (File.Exists(spec))
+                return File.ReadAllText(spec);
+            failure = "file not found";
+            return null;
+        }
+
+        var gitRef = spec.Substring("git:".Length);
+        var relative = Path.GetRelativePath(Directory.GetCurrentDirectory(), Path.GetFullPath(contractPath)).Replace('\\', '/');
+        var psi = new ProcessStartInfo("git", $"show \"{gitRef}:./{relative}\"")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        try
+        {
+            using var git = Process.Start(psi)!;
+            var stdout = git.StandardOutput.ReadToEnd();
+            var stderr = git.StandardError.ReadToEnd();
+            git.WaitForExit();
+            if (git.ExitCode == 0)
+                return stdout;
+            failure = "git: " + (stderr.Split('\n').FirstOrDefault(l => l.Trim().Length > 0)?.Trim() ?? $"exit {git.ExitCode}");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            failure = "git could not be started: " + ex.Message;
+            return null;
+        }
     }
 
     /// <summary>Load the server assembly, reflect all [SleipnirController] types, build a SleipnirInvoker
@@ -302,6 +395,14 @@ internal static class Program
         /// <summary>When set, an OpenAPI 3.1 document is exported alongside the drift-check (P3.1 spike).</summary>
         public string? OpenApiPath { get; init; }
         public OpenApiExporter.Options OpenApi { get; init; } = new();
+        /// <summary>Compatibility baseline: a contract file or <c>git:&lt;ref&gt;</c>. Null = gate off.</summary>
+        public string? Baseline { get; init; }
+        /// <summary><c>error</c> (default: breaking changes exit 3) or <c>warn</c>.</summary>
+        public string BreakingPolicy { get; init; } = "error";
+        /// <summary>Also check current clients against the baseline server.</summary>
+        public bool Rollback { get; init; }
+        /// <summary>Write the JSON compatibility report here (CI artifact / PR comment).</summary>
+        public string? CompatReportPath { get; init; }
     }
 
     private static Options? ParseArgs(string[] args)
@@ -311,6 +412,10 @@ internal static class Program
         string? openApi = null;
         string? openApiTitle = null;
         string? openApiServer = null;
+        string? baseline = null;
+        string? compatReport = null;
+        var breaking = "error";
+        var rollback = false;
         var regen = false;
         for (var i = 0; i < args.Length; i++)
         {
@@ -319,6 +424,10 @@ internal static class Program
                 case "--assembly": assembly = Next(args, ref i); break;
                 case "--contract": contract = Next(args, ref i); break;
                 case "--regen": regen = true; break;
+                case "--baseline": baseline = Next(args, ref i); break;
+                case "--breaking": breaking = Next(args, ref i) ?? "error"; break;
+                case "--rollback": rollback = true; break;
+                case "--compat-report": compatReport = Next(args, ref i); break;
                 case "--openapi": openApi = Next(args, ref i); break;
                 case "--openapi-title": openApiTitle = Next(args, ref i); break;
                 case "--openapi-server": openApiServer = Next(args, ref i); break;
@@ -333,8 +442,17 @@ internal static class Program
             PrintHelp();
             return null;
         }
+        if (breaking != "error" && breaking != "warn")
+        {
+            Console.Error.WriteLine($"[sleipnir-export] --breaking must be 'error' or 'warn', got '{breaking}'.");
+            return null;
+        }
         return new Options(assembly!, contract!, regen)
         {
+            Baseline = string.IsNullOrWhiteSpace(baseline) ? null : baseline,
+            BreakingPolicy = breaking,
+            Rollback = rollback,
+            CompatReportPath = string.IsNullOrWhiteSpace(compatReport) ? null : compatReport,
             OpenApiPath = openApi,
             OpenApi = new OpenApiExporter.Options
             {
@@ -357,6 +475,10 @@ internal static class Program
         Console.Error.WriteLine("  --openapi <path>         Also export an OpenAPI 3.1 document (P3.1 spike).");
         Console.Error.WriteLine("  --openapi-title <text>   Info title for the OpenAPI document (default: Sleipnir API).");
         Console.Error.WriteLine("  --openapi-server <url>   Server base URL recorded in the OpenAPI document.");
-        Console.Error.WriteLine("Exit codes: 0 = ok / regenerated, 1 = drift detected, 2 = tool error.");
+        Console.Error.WriteLine("  --baseline <file|git:ref> Compatibility check against the contract deployed clients were built against.");
+        Console.Error.WriteLine("  --breaking <error|warn>  Breaking changes fail (exit 3, default) or only warn.");
+        Console.Error.WriteLine("  --rollback               Also check current clients against the baseline server.");
+        Console.Error.WriteLine("  --compat-report <path>   Write the JSON compatibility report.");
+        Console.Error.WriteLine("Exit codes: 0 = ok / regenerated, 1 = drift detected, 2 = tool error, 3 = breaking contract change.");
     }
 }

@@ -12,7 +12,7 @@
     <!-- MessagePack ist schon im Stack (SignalR-Kanal nutzt es); hier explizit, damit die
          MessagePackSerializer-API im Spike direkt verfügbar ist. Google.Protobuf kommt
          transitiv via Grpc.AspNetCore aus dem Sleipnir-Projekt. -->
-    <PackageReference Include="MessagePack" Version="3.1.8" />
+    <PackageReference Include="MessagePack" Version="3.1.12" />
   </ItemGroup>
 
   <ItemGroup>

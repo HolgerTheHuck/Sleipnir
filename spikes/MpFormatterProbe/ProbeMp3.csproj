@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MessagePack" Version="3.1.8" />
+    <PackageReference Include="MessagePack" Version="3.1.12" />
   </ItemGroup>
 
   <!-- Siehe ProbeMp2.csproj: SDK globbt die .cs-Files für beide Projekte. -->

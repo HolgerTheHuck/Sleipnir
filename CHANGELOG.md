@@ -5,7 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — 1.8.0 (contract evolution)
+## [1.8.0] — 2026-10-17
+
+Ships on both channels: NuGet (`Sleipnir.*` lockstep) and npm (`sleipnir-client`,
+`sleipnir-codegen`). Contract evolution for long-running projects:
+[CONTRACT_EVOLUTION.md](CONTRACT_EVOLUTION.md) says which changes break deployed clients, the
+compatibility gate checks it in the build against a baseline (`SleipnirContractBaseline`,
+`sleipnir-gen diff`), and the contract identity (`contractHash`, `[SleipnirDeprecated]`,
+`/observability` → `contracts`) shows which clients are still in the field. Everything is opt-in
+or additive except the client fix for named parameters (behavior change, migration note below).
 
 ### Added — contract compatibility gate ([CONTRACT_EVOLUTION.md](CONTRACT_EVOLUTION.md))
 

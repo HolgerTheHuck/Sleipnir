@@ -25,11 +25,12 @@ import { dirname, join, resolve, isAbsolute, normalize } from "node:path";
 import { loadDiscovery, assertDiscoveryShape, DiscoveryShapeError } from "../core/discovery.js";
 import { NamingResolver } from "../core/naming.js";
 import { buildEmitterInput } from "../core/model.js";
+import { findOpaqueSites, formatOpaqueWarning } from "../core/opaque.js";
 import { emitTsClient } from "../emitters/ts.js";
 import { emitJsClient } from "../emitters/js.js";
 import { emitCsClient } from "../emitters/cs.js";
 import { emitPyClient } from "../emitters/py.js";
-import { selfcheck } from "./selfcheck.js";
+import { selfcheck, selfcheckDriftHint } from "./selfcheck.js";
 
 /** Canonical bundle-capability (which backends the generated client bundles). */
 type Capability = "rest" | "ws" | "all" | "signalr";
@@ -145,6 +146,10 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
+  // Opaque types compile fine but reach the consumer as unknown/object/Any — say so now,
+  // not at the first property access. stderr only: --stdout output stays clean.
+  process.stderr.write(formatOpaqueWarning(findOpaqueSites(discoveryRaw)));
+
   const resolver = new NamingResolver();
   const input = buildEmitterInput(discoveryRaw, resolver);
   const files = emitForLang(args.lang, input, args.baseUrl, capability);
@@ -163,7 +168,8 @@ async function main(): Promise<void> {
     }
     stderr(
       `sleipnir-gen: selfcheck found ${result.drift.length} drifted file${result.drift.length === 1 ? "" : "s"} ` +
-      `(of ${result.total} generated) — regenerate with \`sleipnir-gen --lang ${args.lang} --discovery <src> --out <dir>${args.capability ? " --transport " + args.capability : ""}\`.`);
+      `(of ${result.total} generated) — regenerate with \`sleipnir-gen --lang ${args.lang} --discovery ${args.discovery} --out ${args.out}${args.capability ? " --transport " + args.capability : ""}\`.`);
+    stderr(selfcheckDriftHint(args.discovery));
     process.exit(4);
   }
 

@@ -14,14 +14,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MessagePack" Version="3.1.8" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.28" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Protocols.MessagePack" Version="8.0.28" />
+    <PackageReference Include="MessagePack" Version="3.1.12" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.32" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Protocols.MessagePack" Version="8.0.32" />
   </ItemGroup>
 
-  <!-- JsonElement-Formatter + SleipnirResponse-Formatter gegen die hier referenced
-       MessagePack-Version (3.1.8). Source geteilt mit SleipnirHub (dort 2.5.x transitiv).
-       Bewiesen in spikes/MpFormatterProbe/. -->
+  <!-- JsonElement formatter + SleipnirResponse formatter compiled against the MessagePack
+       version referenced here (3.1.x). Source shared with SleipnirHub (2.5.x transitive there).
+       Proven in spikes/MpFormatterProbe/. -->
   <ItemGroup>
     <Compile Include="..\SleipnirCommon\MessagePack\JsonElementMessagePackFormatter.cs" Link="MessagePack\JsonElementMessagePackFormatter.cs" />
     <Compile Include="..\SleipnirCommon\MessagePack\JsonNodeMessagePackFormatter.cs" Link="MessagePack\JsonNodeMessagePackFormatter.cs" />

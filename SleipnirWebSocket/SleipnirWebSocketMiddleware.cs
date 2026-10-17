@@ -4,6 +4,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using SleipnirCommon;
 using SleipnirCore.Services;
+using SleipnirCore.Services.Helper;
 using SleipnirCore.Tracing;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -330,7 +331,7 @@ public class SleipnirWebSocketMiddleware
             _logger?.LogWarning(ex, "Failed to parse WebSocket message as JSON.");
             // id is null here — a malformed request cannot be correlated. Send the frame so a
             // non-C# client (which manages its own matching) still gets a structured error.
-            await SendErrorAsync(subscriptions, 400, "Invalid JSON in request.", id);
+            await SendErrorAsync(subscriptions, 400, RequestEnvelopeError.Describe(ex), id);
         }
         catch (Exception ex)
         {

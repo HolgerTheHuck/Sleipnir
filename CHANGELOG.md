@@ -5,6 +5,122 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] — 2026-10-17
+
+Ships on both channels: NuGet (`Sleipnir.*` lockstep) and npm (`sleipnir-client`,
+`sleipnir-codegen`). Security patch for the SignalR/MessagePack advisories published after
+1.6.0, plus first-integration feedback from a consumer team (2026-10-16): actionable errors
+before your controller runs, and the codegen capabilities made visible where the pain hits.
+**Breaking — deliberate exception to [STABILITY.md](STABILITY.md) §3.6 ("Defaults do not
+tighten in 1.x"):** an omitted non-nullable parameter without a C# default is now a `400`
+instead of a silent `default(T)`. Shipped in a minor on purpose: the silent default hid caller
+bugs, the rule equals the discovery presence rule every generated client already follows, and a
+permissive opt-out would keep the trap alive. See the migration note below.
+`sleipnir-client` 1.7.0 carries no code change (version alignment for the codegen train).
+
+### Security
+
+- **Patched SignalR / MessagePack dependencies** (advisories published 2026-10-13/15, after
+  1.6.0):
+  - `Microsoft.AspNetCore.SignalR.Common` 8.0.28 → **8.0.32** (transitive) — **High**,
+    CVE-2026-70159 / GHSA-334f-vvp4-7g6p (ASP.NET Core denial of service).
+  - `Microsoft.AspNetCore.SignalR.Protocols.MessagePack` 8.0.28 → **8.0.32** (`Sleipnir.Hub`,
+    `Sleipnir.Client`) — Moderate, CVE-2026-92707 / GHSA-86xp-94pg-8r6r (denial of service).
+  - `Microsoft.AspNetCore.SignalR.Client` 8.0.28 → **8.0.32** (`Sleipnir.Client`) — pulls the
+    patched `SignalR.Common`.
+  - `MessagePack` 2.5.302 → **2.5.307** (`Sleipnir.Hub` floor) and 3.1.8 → **3.1.12**
+    (`Sleipnir.Client`) — Moderate, GHSA-qhrr-8q5h-9q3h (nested arrays can exceed buffer length
+    limits); `MessagePack.Annotations` aligned to 3.1.12.
+- `dotnet list package --vulnerable --include-transitive` is clean for every project in the
+  solution (the build no longer reports NU1902/NU1903).
+
+### Changed — Server: omitted parameters are validated (**breaking**, see above)
+
+- **A parameter the request does not carry** (no entry, or an entry without `data`) binds its
+  declared C# default value, `null` when nullable (`int?`, `string?`, or a reference type without
+  nullable annotations), `byte[]` from `binaryData` as before — and is otherwise **required**:
+  `400 Missing required parameter 'b' (type 'Int32') for 'Calc.Add'.` Previously an omitted
+  value type silently bound `default(T)` — `0`, not the declared default, so the documented
+  "defaulted parameters may be optional" (`docs/discovery-schema.md` §8) did not hold — and an
+  omitted non-nullable reference bound `null`. The rule is the discovery presence rule
+  (non-nullable = required) that generated clients already follow, so generated clients are
+  unaffected. **Migration:** a hand-written caller that relied on omitting a non-nullable
+  parameter now gets a `400` — send the value, or declare a C# default / make it nullable.
+- **Explicit `"data": null` for a non-nullable value type** is a `400` (`Parameter 'b' of
+  'Calc.Add' does not accept null (type 'Int32').`) — it used to reach the compiled delegate as
+  `null` and fail as a `NullReferenceException`, i.e. a generic `500`. Same for a data-less entry.
+- **Positional fallback no longer re-binds a named entry.** An entry without `num` counts as
+  `num: 0`; a request carrying only `b` used to bind it by name into `b` *and* positionally into
+  the first parameter (`Add(2, 2)`). Entries whose name matches another parameter are now skipped
+  by the fallback; the fluent builder's `param0`/`param1` shape binds by index as before.
+- **REST transport-level `400`s carry a regular Sleipnir error body.** `/json/multi`'s
+  `Request is empty.` / `Batch exceeds MaximumBatchSize (…).` used to be a bare JSON string; they
+  are now `{ "code": 400, "error": { "message": … , "category": "InvalidArgument" } }` under the
+  same HTTP `400`.
+
+### Added — actionable error messages
+
+- **Malformed or wrong-typed request envelope** (REST body, WebSocket frame) → a Sleipnir `400`
+  naming the JSON path and position: `{"id":1,…}` → `Invalid request envelope at '$.id' (line 1,
+  byte 7): The JSON value could not be converted to System.String.` REST used to answer with
+  Minimal-API binding's bare `400` (Production) or the developer exception page with a stack trace
+  (Development); WebSocket said `Invalid JSON in request.` A non-JSON `Content-Type` stays `415`.
+  (`SleipnirCore/Services/Helper/RequestEnvelopeError.cs`; the REST endpoints read the envelope
+  themselves, `Accepts<…>` metadata kept.)
+- **Binding `400`s name the call:** `Parameter 'b' of 'Calc.Add' cannot be converted to type
+  'Int32' (received JSON string).` (was `Parameter 'b' cannot be converted to type 'Int32'.`),
+  same `of 'Controller.Method'` / `for 'Controller.Method'` suffix on the duplicate-name and
+  cardinality-cap messages — in a batch the failing call is identifiable from the message alone.
+- **Routing misses with `EnableDetailedErrors`** (Development default) append a hint: a
+  case-insensitive near miss (`Did you mean 'Runs'? Names are case-sensitive.`) or the registered
+  names plus `If it was added recently, the running server may be a stale build.` Off in
+  Production (it would enumerate the API surface past an authenticated discovery endpoint). The
+  `Controller '…'` / `Method '…'` prefixes (JSON-RPC `-32601` mapping) are unchanged.
+- **Opaque contract types are reported.** A return / parameter / event payload / property type
+  discovery cannot model (typically a domain type from another assembly) reached every generated
+  client as `unknown` without any hint. `UseSleipnir` now logs one startup warning listing the
+  sites (`Run.Execute → return: IngestionSummary`), and `sleipnir-gen` prints the same list on
+  stderr (`--stdout` output stays clean). Fix: a DTO in the API project, `[SleipnirDataContract]`,
+  or `SleipnirResponse<T>` instead of the non-generic envelope.
+  (`SleipnirCore/Services/Helper/DiscoveryOpaqueScan.cs`, `clients/codegen/src/core/opaque.ts`.)
+
+### Fixed — `Sleipnir.Server.Codegen`: the drift gate no longer skips silently on first use
+
+- The target only ran when `contract.sleipnir.json` already existed, so the first
+  `SLEIPNIR_REGEN_GOLDEN=1` build was a silent no-op and bootstrapping required reading the
+  `.targets` XML. Now `SLEIPNIR_REGEN_GOLDEN=1` creates the default contract file
+  (`created committed contract at 'contract.sleipnir.json'` + what to do next), and a referenced
+  but unconfigured project warns **`SLEIPNIRCG001`** ("the contract drift gate is inactive", with
+  the bootstrap command; `SleipnirContractEnabled=false` silences it). A plain build still never
+  creates the file — a non-server project would fail on an empty contract.
+- `CODEGEN_ONBOARDING.md` / `CODEGEN_REFERENCE.md` claimed a plain first `dotnet build` creates the
+  contract; corrected.
+- The drift `<Error>` now also names the client side (`sleipnir-gen --discovery <contract>` /
+  `Sleipnir.Generator`).
+
+### Changed — `sleipnir-codegen` CLI (npm 1.7.0)
+
+- `--selfcheck` drift (exit 4) prints the concrete regenerate command (the actual `--discovery` and
+  `--out` instead of `<src>`/`<dir>`) plus a hint: from a live URL it points at the committed
+  contract + `Sleipnir.Server.Codegen`; from a file it says who keeps that file current.
+- Opaque-type warning on stderr (see above).
+
+### Docs
+
+- The committed-contract path is now the first path a consumer meets: `GETTING_STARTED.md` §8
+  ("Generate a typed client — from the committed contract"), a "Which discovery source?" section in
+  the `sleipnir-codegen` npm README (the file first, the URL for ad-hoc use), the TS/JS/Python path
+  in `CODEGEN_ONBOARDING.md` §6, and a "First run" section in the `Sleipnir.Server.Codegen` README.
+- `ERROR_CATALOG.md` §1.1 (request-validation messages), `PROTOCOL.md` (omitted-parameter rule,
+  transport-level `400` body), `DISCOVERY_REFERENCE.md` §4 (opaque usages are reported),
+  `EVENTS_REFERENCE.md` §2 (where `Observable` lives: `System.Reactive` / `System.Reactive.Linq`).
+
+### Fixed — release tooling
+
+- `scripts/bump-versions.ps1` stamped the **NuGet** version into the localfeed `.tgz` file names,
+  which are npm tarballs — with `-NpmVersion` differing from `-Version` the samples pointed at a
+  non-existent `sleipnir-client-<nuget-version>.tgz`. The tarball pin now follows `-NpmVersion`.
+
 ## [1.6.0] — 2026-10-10
 
 ### Added

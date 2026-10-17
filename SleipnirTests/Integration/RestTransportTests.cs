@@ -160,8 +160,49 @@ public class RestTransportTests : IClassFixture<WebApplicationFactory<Program>>
         // Act
         var response = await _client.PostAsync("/api/sleipnir/json/multi", CreateJsonContent(multiRequest));
 
-        // Assert
+        // Assert: transport-level rejections carry a regular Sleipnir error body.
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        body["code"]!.GetValue<int>().Should().Be(400);
+        body["error"]!["message"]!.GetValue<string>().Should().Be("Request is empty.");
+    }
+
+    [Theory]
+    [InlineData("/api/sleipnir/json", """{"id":1,"controller":"TestInvoker","method":"Add"}""", "$.id")]
+    [InlineData("/api/sleipnir/json/multi", """{"requests":[{"id":1,"controller":"TestInvoker","method":"Add"}]}""", "$.requests[0].id")]
+    public async Task EnvelopeTypeMismatch_Returns400NamingTheJsonPath(string path, string json, string jsonPath)
+    {
+        // A hand-written envelope with a wrong-typed field used to get the framework's bare 400
+        // (Production) or exception page (Development) instead of an actionable Sleipnir error.
+        var response = await _client.PostAsync(path, new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        body["code"]!.GetValue<int>().Should().Be(400);
+        body["error"]!["category"]!.GetValue<string>().Should().Be("InvalidArgument");
+        body["error"]!["message"]!.GetValue<string>().Should()
+            .StartWith($"Invalid request envelope at '{jsonPath}'")
+            .And.Contain("could not be converted to System.String");
+    }
+
+    [Fact]
+    public async Task MalformedJson_Returns400WithSleipnirErrorBody()
+    {
+        var response = await _client.PostAsync("/api/sleipnir/json",
+            new StringContent("{ not json", Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        body["error"]!["message"]!.GetValue<string>().Should().StartWith("Invalid request envelope");
+    }
+
+    [Fact]
+    public async Task NonJsonContentType_Returns415()
+    {
+        var response = await _client.PostAsync("/api/sleipnir/json",
+            new StringContent("""{"controller":"TestInvoker","method":"Add"}""", Encoding.UTF8, "text/plain"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
     }
 
     [Fact]

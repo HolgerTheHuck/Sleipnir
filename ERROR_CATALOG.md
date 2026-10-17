@@ -39,6 +39,29 @@ Stable within 1.x. Defined in [`SleipnirCommon/Results/SleipnirErrorCodes.cs`](S
 **Stability:** the numbers and their meanings are fixed within 1.x (STABILITY.md §1.4). A
 future error taxonomy extension layers *categories* on top, it does not renumber existing codes.
 
+### 1.1 Request-validation messages (before your controller runs)
+
+Every framework-generated `400`/`404` names what failed and where. Codes and categories are
+stable; message text is diagnostic and may be refined — match on `code`/`category`, never on
+the text. Exception: the routing prefixes `Controller '…'` / `Method '…'` are load-bearing for
+the JSON-RPC `-32601` mapping (§5).
+
+| Situation | Code | `error.message` |
+|---|---|---|
+| Malformed / wrong-typed request envelope (REST body, WebSocket frame) | 400 | `Invalid request envelope at '$.id' (line 1, byte 7): The JSON value could not be converted to System.String.` — REST answers with HTTP `400` and this regular error body; a non-JSON `Content-Type` is HTTP `415` |
+| Parameter omitted, non-nullable, no C# default | 400 | `Missing required parameter 'b' (type 'Int32') for 'Calc.Add'.` |
+| Explicit `null` for a non-nullable value type | 400 | `Parameter 'b' of 'Calc.Add' does not accept null (type 'Int32').` |
+| Value of the wrong JSON kind | 400 | `Parameter 'b' of 'Calc.Add' cannot be converted to type 'Int32' (received JSON string).` |
+| Duplicate `parameterName` | 400 | `Duplicate parameter name 'b' for 'Calc.Add'.` |
+| Unknown controller | 404 | `Controller 'Calk' not found.` |
+| Unknown method | 400 | `Method 'add' not found on controller 'Calc'.` |
+
+With `EnableDetailedErrors` (on by default in Development) the routing misses carry a hint:
+a case-insensitive near miss (`Did you mean 'Add'? Names are case-sensitive.`) or the
+registered names (`Available methods: Add, Divide. If it was added recently, the running
+server may be a stale build.`). The hint is off in Production — it would enumerate the API
+surface past a discovery endpoint that sits behind authentication.
+
 ---
 
 ## 2. Semantic categories (`SleipnirErrorCategory`)

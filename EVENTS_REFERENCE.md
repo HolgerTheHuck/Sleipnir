@@ -120,6 +120,14 @@ public IObservable<Message> Subscribe(int chatId, CancellationToken ct) => ...;
 `CancellationToken` is injected automatically like a call method's; method
 arguments bind by name like calls.
 
+> **Where `Observable` lives.** Sleipnir itself only needs the BCL interface
+> `System.IObservable<T>`. The operators most event methods use — `Observable.Create`,
+> `.Select`, `.Where`, `Subject<T>` — come from **Rx.NET**: add the
+> [`System.Reactive`](https://www.nuget.org/packages/System.Reactive) package and
+> `using System.Reactive.Linq;` (operators, `Observable`) /
+> `using System.Reactive.Subjects;` (`Subject<T>`). Without it the compiler reports
+> `CS0103: The name 'Observable' does not exist in the current context`.
+
 ### Example — the guide's runnable event
 
 `guide/server/Controllers/PriceFeedController.cs` → `PriceFeedController.Ticks`:

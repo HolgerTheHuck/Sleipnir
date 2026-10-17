@@ -67,7 +67,21 @@ Method parameter within `params`.
 > If the name does not match, it falls back to the positional `num` index (counting
 > non-`CancellationToken` parameters). This is what lets a fluent client send arguments
 > positionally without knowing the server-side parameter names. `byte[]` parameters
-> are never bound positionally — they are injected from `binaryData`.
+> are never bound positionally — they are injected from `binaryData`. An entry whose
+> `parameterName` matches another parameter of the method is never bound a second time
+> positionally (an entry without `num` counts as `num: 0`).
+>
+> **Omitted parameters.** A parameter the request does not carry (no entry, or an entry
+> without a `data` field) binds its declared C# default value (`int take = 20` → `20`),
+> `null` when it is nullable (`int?`, `string?`, or a reference type compiled without
+> nullable annotations), and is otherwise **required**: `400 Missing required parameter
+> 'b' (type 'Int32') for 'Calc.Add'.` — the same rule as the discovery presence rule
+> (non-nullable = required). An explicit `"data": null` is accepted for reference types
+> and `Nullable<T>`; for a non-nullable value type it is `400 Parameter 'b' of
+> 'Calc.Add' does not accept null (type 'Int32').` (Previously an omitted value type
+> silently bound `default(T)` — `0`, not the declared default — and a data-less entry or
+> explicit `null` for a value type failed as a generic `500`.) `CancellationToken` is
+> never required; it is injected.
 >
 > `data` is a **native JSON value**, not a JSON string. Example: `42` (number),
 > `"hello"` (string), `true` (boolean), `{"id":1,"name":"Alice"}` (object),
@@ -169,7 +183,12 @@ JSON-RPC carries its error object inside an HTTP 200. WebSocket and SignalR pass
 
 Real HTTP/WebSocket status codes are only used for **transport-level** failures
 that happen before or outside a method invocation (e.g. `400` for a malformed
-request body, `429` from the rate limiter, `499` for a cancelled request).
+request body, `429` from the rate limiter, `499` for a cancelled request). The REST
+body of such a `400` is still a regular `SleipnirResponse` error (`code` +
+`error.message`) that names the offending JSON path — e.g. `{"id":1,…}` (a number where
+`id` is a string) → `Invalid request envelope at '$.id' (line 1, byte 7): The JSON value
+could not be converted to System.String.`; the WebSocket error frame carries the same
+message. A non-JSON `Content-Type` on REST is `415`.
 
 | Code | Meaning |
 |------|---------|
@@ -348,9 +367,9 @@ CLR type is enforced at the second step by `System.Text.Json`:
 
    | Situation | Server result |
    |---|---|
-   | **Cross-kind mismatch** — a JSON number into a `string` parameter, a JSON string into an `int`, a bool into a number, an object into a scalar, an array into a scalar | `400` — `Parameter 'X' cannot be converted to type 'Y'.` `System.Text.Json` throws; the invoker catches and returns `BadRequest`. Because `AllowReadingFromString` is off, `"42"`→`int` and `42`→`string` are **both** rejected — no string/number coercion. |
+   | **Cross-kind mismatch** — a JSON number into a `string` parameter, a JSON string into an `int`, a bool into a number, an object into a scalar, an array into a scalar | `400` — `Parameter 'X' of 'Controller.Method' cannot be converted to type 'Y' (received JSON string).` `System.Text.Json` throws; the invoker catches and returns `BadRequest`. Because `AllowReadingFromString` is off, `"42"`→`int` and `42`→`string` are **both** rejected — no string/number coercion. |
    | **Unresolved alias** — the JsonPath matched 0 nodes, or no prior request exposed that alias | `400` — `Unresolved dependencies: alias.` (Serial / dangling-alias path). On the **topological** path this is caught *earlier* as provider-failure propagation — `400 dependency '@a' unavailable: …` (see [Resolution Rules §5](#resolution-rules) and [DEPENDENCY_BINDING.md §9](DEPENDENCY_BINDING.md#9-provider-failure--dependent-propagation)). |
-   | **`null` extraction** | Reference type / `Nullable<T>` → `null` (no error). Non-nullable value type (`int`, `bool`, `DateTime`, …) → `400` (cannot convert null). |
+   | **`null` extraction** | Reference type / `Nullable<T>` → `null` (no error). Non-nullable value type (`int`, `bool`, `DateTime`, …) → `400` — `Parameter 'X' of 'Controller.Method' does not accept null (type 'Y').` |
    | **object → object (duck-typing)** | **No error.** `System.Text.Json` maps properties that match by name (case-insensitively), **ignores extra properties**, and **defaults missing properties silently** — a missing `int` becomes `0`, a missing `bool` becomes `false`, a missing reference becomes `null`. This is the one binding failure the server does *not* raise: a structurally narrower provider object binds without a `400` and yields default-filled fields. The DevUI dependency-builder flags it statically (see below). |
 
    Accepted silently (no error, genuine conversion): widening within a numeric kind

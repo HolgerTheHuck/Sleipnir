@@ -2,6 +2,7 @@ using SleipnirCommon;
 using SleipnirCommon.MessagePack;
 using SleipnirCore.Attributes;
 using SleipnirCore.Services;
+using SleipnirCore.Services.Helper;
 using MessagePack;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Linq;
@@ -295,6 +296,7 @@ namespace SleipnirHub.Extensions
             if (builder != null)
             {
                 builder.Apply(app.ApplicationServices, sleipnirService);
+                WarnAboutOpaqueContractTypes(app.ApplicationServices, sleipnirService);
                 return app;
             }
 
@@ -321,7 +323,44 @@ namespace SleipnirHub.Extensions
                 }
             }
 
+            WarnAboutOpaqueContractTypes(app.ApplicationServices, sleipnirService);
             return app;
+        }
+
+        /// <summary>
+        /// Opaque contract types are otherwise silent: a return/parameter/event/property type that
+        /// discovery cannot model reaches every generated client as unknown/object, and nobody
+        /// notices until the first property access. One startup warning lists the sites while the
+        /// fix (a DTO in the API project) is still cheap. Builds the discovery once — it is cached
+        /// for the first discovery request anyway.
+        /// </summary>
+        private static void WarnAboutOpaqueContractTypes(IServiceProvider services, SleipnirCore.Services.ISleipnirCore core)
+        {
+            var logger = services.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()?.CreateLogger("Sleipnir");
+            if (logger == null || !logger.IsEnabled(Microsoft.Extensions.Logging.LogLevel.Warning))
+                return;
+            try
+            {
+                var usages = DiscoveryOpaqueScan.Find(core.GetDiscoveryInfo());
+                if (usages.Count == 0)
+                    return;
+
+                const int max = 20;
+                var sites = string.Join("; ", usages.Take(max).Select(u => $"{u.Site}: {u.NativeName}"))
+                            + (usages.Count > max ? $"; … ({usages.Count - max} more)" : "");
+                logger.LogWarning(
+                    "Sleipnir discovery: {Count} contract usage(s) are opaque — generated clients see them as " +
+                    "unknown/object: {Sites}. A type is opaque when it is declared outside the controller assemblies " +
+                    "(e.g. a Core/Domain project) or is a framework type. Map it to a DTO in the API project, or mark " +
+                    "it [SleipnirDataContract] to expand it. A non-generic SleipnirResponse return stays opaque — " +
+                    "return SleipnirResponse<T> to keep the payload type. See DISCOVERY_REFERENCE.md.",
+                    usages.Count, sites);
+            }
+            catch (Exception ex)
+            {
+                // A diagnostic must never break startup; the discovery endpoint reports real failures.
+                logger.LogDebug(ex, "Sleipnir: opaque contract-type scan failed.");
+            }
         }
     }
 }

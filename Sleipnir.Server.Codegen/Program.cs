@@ -71,6 +71,9 @@ internal static class Program
         {
             File.WriteAllText(opts.ContractPath, regeneratedJson);
             Console.WriteLine($"[sleipnir-export] created committed contract at '{opts.ContractPath}'.");
+            Console.WriteLine("[sleipnir-export] Commit it: every later build fails when the server drifts from it. " +
+                              $"Generate clients from this file, not a live URL: sleipnir-gen --discovery {opts.ContractPath} (TS/JS/Python), " +
+                              "or Sleipnir.Generator (C#).");
             return ExitOk;
         }
 

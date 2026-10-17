@@ -191,7 +191,34 @@ curl -s -X POST http://localhost:5000/api/sleipnir/json \
 {"code":200,"data":{"message":"Hello, World!","length":5},"content":null,"error":null,"id":"q1"}
 ```
 
-`code:200` + the `data` payload — that is a successful Sleipnir call on the wire.
+`code:200` + the `data` payload — that is a successful Sleipnir call on the wire. (Only a request
+the server cannot even read — malformed JSON, a wrong-typed envelope field like `"id": 1` — gets a
+real HTTP `400`; its body is still a Sleipnir error that names the JSON path.)
+
+---
+
+## 8. Generate a typed client — from the committed contract
+
+For a client you commit, generate from a **contract file**, not from the running server: the
+server build exports the file and fails on drift, so the client can never be generated against a
+stale build and codegen never needs the app running.
+
+```bash
+# server project: add the drift gate, create the contract once, commit contract.sleipnir.json
+dotnet add package Sleipnir.Server.Codegen
+SLEIPNIR_REGEN_GOLDEN=1 dotnet build        # PowerShell: $env:SLEIPNIR_REGEN_GOLDEN='1'; dotnet build
+
+# TypeScript / JavaScript / Python client — from that file (add --selfcheck in CI)
+npx sleipnir-gen --lang ts --discovery ../HelloApi/contract.sleipnir.json --out src/api
+```
+
+C# clients read the same file at compile time via `Sleipnir.Generator` —
+[CODEGEN_ONBOARDING.md](CODEGEN_ONBOARDING.md). `--discovery http://localhost:5000/api/sleipnir/discovery`
+works too, for ad-hoc use.
+
+If `sleipnir-gen` (or the server log at startup) warns about **opaque** types, a method uses a type
+declared outside your API assembly (e.g. a domain class from a Core project): clients would see it as
+`unknown`. Map it to a DTO in the API project.
 
 ---
 
@@ -204,9 +231,10 @@ curl -s -X POST http://localhost:5000/api/sleipnir/json \
   cross-transport resume → production. Each chapter has a 3-command "Try it"; clone the repo
   and follow [`guide/README.md`](guide/README.md). This guide is the fastest path from
   "empty directory" to a real multi-tier Sleipnir app.
-- **Build-time contract & typed clients** (Node-free): [CODEGEN_ONBOARDING.md](CODEGEN_ONBOARDING.md)
-  — the server exports `contract.sleipnir.json` (drift fails the build), the client is generated from
-  it by a Roslyn source generator. The compile-time boundary gRPC gives you, without `.proto`.
+- **Build-time contract & typed clients**: [CODEGEN_ONBOARDING.md](CODEGEN_ONBOARDING.md)
+  — the server exports `contract.sleipnir.json` (drift fails the build); C# clients are generated from
+  it by a Roslyn source generator (Node-free), TS/JS/Python clients by `sleipnir-gen --discovery
+  contract.sleipnir.json` (§8). The compile-time boundary gRPC gives you, without `.proto`.
 - **Dependency chaining** (the defining feature): [docs/stories/01-the-n-plus-one-screen.md](docs/stories/01-the-n-plus-one-screen.md)
   — six dependent reads, one roundtrip.
 - **Command fan-out with isolation**: [docs/stories/02-one-button-seven-commands.md](docs/stories/02-one-button-seven-commands.md)

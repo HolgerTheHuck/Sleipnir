@@ -67,3 +67,22 @@ export function selfcheck(emitted: Record<string, string>, outDir: string): Self
   }
   return { clean: drift.length === 0, drift, unchanged, total: Object.keys(emitted).length };
 }
+/**
+ * The follow-up line to a drift report. The drift is where the committed-contract
+ * workflow has to become visible: a committed client generated from a live URL
+ * follows whichever server build happens to run.
+ */
+export function selfcheckDriftHint(discovery: string): string {
+  if (/^https?:\/\//i.test(discovery)) {
+    return (
+      "sleipnir-gen: hint: --discovery is a live URL, so the client follows whichever server build is running. " +
+      "For a committed client, generate from the server's committed contract instead " +
+      "(--discovery path/to/contract.sleipnir.json): the Sleipnir.Server.Codegen NuGet package regenerates that " +
+      "file on every server build and fails the build on drift — see CODEGEN_ONBOARDING.md."
+    );
+  }
+  return (
+    "sleipnir-gen: hint: if this file is the server's committed contract.sleipnir.json, Sleipnir.Server.Codegen " +
+    "keeps it current on every server build — regenerate the client whenever that file changes."
+  );
+}

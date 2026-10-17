@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MessagePack.Annotations" Version="3.1.8" />
+    <PackageReference Include="MessagePack.Annotations" Version="3.1.12" />
   </ItemGroup>
 
   <!-- System.Text.Json ist in net8.0 Teil des Frameworks, aber NICHT in der

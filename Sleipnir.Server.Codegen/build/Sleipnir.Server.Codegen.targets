@@ -13,7 +13,11 @@
     Contract file selection (in priority order):
       1. $(SleipnirContractFile) — an explicit path (project-relative or absolute).
       2. contract.sleipnir.json in the project directory (the default convention).
-    Set SleipnirContractEnabled=false to opt out.
+      3. Bootstrap: with SLEIPNIR_REGEN_GOLDEN=1 and no contract yet, contract.sleipnir.json is
+         created (the tool writes a missing file and reports "created committed contract").
+    Without any of these the drift gate is inactive and the build says so (warning SLEIPNIRCG001)
+    instead of skipping silently. Set SleipnirContractEnabled=false to opt out (e.g. a project that
+    references the package but is not a Sleipnir server).
 
     The export tool runs in its own process (invoked via dotnet), isolating the server assembly
     load from the MSBuild process — no version collisions, no locked files. The tool prints a
@@ -28,10 +32,20 @@
     <SleipnirExportToolDll Condition="'$(SleipnirExportToolDll)' == ''">$(MSBuildThisFileDirectory)..\tasks\net8.0\Sleipnir.Server.Codegen.dll</SleipnirExportToolDll>
     <SleipnirContractEnabled Condition="'$(SleipnirContractEnabled)' == ''">true</SleipnirContractEnabled>
     <SleipnirRegen Condition="'$(SLEIPNIR_REGEN_GOLDEN)' == '1'">true</SleipnirRegen>
+    <!-- Bootstrap: the first regen build creates the default contract file. Before this rule the
+         target only ran when the file already existed, so the very first SLEIPNIR_REGEN_GOLDEN=1
+         build was a silent no-op. -->
+    <SleipnirContractFile Condition="'$(SleipnirContractFile)' == '' AND '$(SleipnirRegen)' == 'true'">contract.sleipnir.json</SleipnirContractFile>
   </PropertyGroup>
 
-  <!-- Only run on projects that actually expose a Sleipnir contract (a configured contract file).
-       Skips library/transit projects that happen to reference the NuGet but are not servers. -->
+  <!-- Referenced, enabled, but no contract configured: say so instead of skipping silently. -->
+  <Target Name="SleipnirContractMissingWarning" AfterTargets="Build"
+          Condition="'$(SleipnirContractEnabled)' != 'false' AND '$(SleipnirContractFile)' == ''">
+    <Warning Code="SLEIPNIRCG001"
+             Text="Sleipnir.Server.Codegen is referenced, but this project has no contract.sleipnir.json — the contract drift gate is inactive. Create the committed contract once with: SLEIPNIR_REGEN_GOLDEN=1 dotnet build (bash) — PowerShell: $env:SLEIPNIR_REGEN_GOLDEN='1'; dotnet build — cmd: set SLEIPNIR_REGEN_GOLDEN=1 &amp;&amp; dotnet build. Every later build then fails on drift. Use another path via the SleipnirContractFile property, or set SleipnirContractEnabled=false if this project is not a Sleipnir server." />
+  </Target>
+
+  <!-- Only run on projects that actually expose a Sleipnir contract (a configured contract file). -->
   <Target Name="SleipnirExportDriftCheck" AfterTargets="Build"
           Condition="'$(SleipnirContractEnabled)' != 'false' AND '$(SleipnirContractFile)' != '' AND '$(SleipnirExportToolDll)' != ''">
 
@@ -50,7 +64,7 @@
 
     <!-- Exit codes from the tool: 0 = ok / regenerated, 1 = drift detected, 2 = tool error. -->
     <Error Condition="'$(SleipnirExportExitCode)' == '1'"
-           Text="Sleipnir contract drift detected: the committed $(SleipnirContractFile) does not match the server's runtime discovery. See the regenerated-vs-committed diff above. If the change is intentional, regenerate with: SLEIPNIR_REGEN_GOLDEN=1 dotnet build (bash) — PowerShell: $env:SLEIPNIR_REGEN_GOLDEN='1'; dotnet build — cmd: set SLEIPNIR_REGEN_GOLDEN=1 &amp;&amp; dotnet build" />
+           Text="Sleipnir contract drift detected: the committed $(SleipnirContractFile) does not match the server's runtime discovery. See the regenerated-vs-committed diff above. If the change is intentional, regenerate with: SLEIPNIR_REGEN_GOLDEN=1 dotnet build (bash) — PowerShell: $env:SLEIPNIR_REGEN_GOLDEN='1'; dotnet build — cmd: set SLEIPNIR_REGEN_GOLDEN=1 &amp;&amp; dotnet build. Then regenerate the clients from the same file: TS/JS/Python via sleipnir-gen --discovery $(SleipnirContractFile); C# (Sleipnir.Generator) picks it up on its next build." />
     <Error Condition="'$(SleipnirExportExitCode)' == '2'"
            Text="Sleipnir export tool error (not a contract drift). See the tool output above." />
     <Error Condition="'$(SleipnirExportExitCode)' != '0' AND '$(SleipnirExportExitCode)' != '1' AND '$(SleipnirExportExitCode)' != '2'"

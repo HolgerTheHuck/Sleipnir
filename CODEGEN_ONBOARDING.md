@@ -76,7 +76,7 @@ project directory is picked up automatically:
 ```xml
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
-    <PackageReference Include="Sleipnir.Server.Codegen" Version="1.8.0" />
+    <PackageReference Include="Sleipnir.Server.Codegen" Version="1.8.1" />
   </ItemGroup>
 </Project>
 ```
@@ -170,9 +170,9 @@ Reference the generator (as an analyzer) and the Sleipnir client runtime, and dr
   </PropertyGroup>
   <ItemGroup>
     <!-- The runtime the generated stubs call (SleipnirRestJsonClient, ISleipnirClient, SleipnirCall, ...). -->
-    <PackageReference Include="Sleipnir.Client" Version="1.8.0" />
+    <PackageReference Include="Sleipnir.Client" Version="1.8.1" />
     <!-- The source generator: loaded as an analyzer, emits SleipnirGenerated.cs at compile time. -->
-    <PackageReference Include="Sleipnir.Generator" Version="1.8.0"
+    <PackageReference Include="Sleipnir.Generator" Version="1.8.1"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>

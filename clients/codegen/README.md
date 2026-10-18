@@ -104,7 +104,34 @@ sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdo
 - `--help` / `-h`, `--version` / `-v`.
 
 Exit codes: `0` ok · `1` usage/runtime error · `2` discovery shape mismatch ·
-`3` I/O error · `4` `--selfcheck` drift (committed tree out of date).
+`3` I/O error · `4` `--selfcheck` drift (committed tree out of date) ·
+`5` `diff` found changes at/above `--fail-on`.
+
+### `sleipnir-gen diff` — will this contract break deployed clients?
+
+```bash
+sleipnir-gen diff --base <url|file|-> --head <url|file|-> [--fail-on breaking|soft|never] [--rollback] [--json]
+```
+
+Compares the contract deployed clients were built against (`--base`, e.g. the last release's
+`contract.sleipnir.json`) with the one the server serves now (`--head`) and classifies every
+difference as **breaking**, **soft** or **safe** for the wire — position-aware (a property removed
+from a response breaks, removed from a request is soft), structural (a renamed C# type is
+invisible) and with exact sites (`Order.Get -> return.Customer.Name`, `Order.Find(take)`).
+
+```bash
+git show v1.7.0:Api/contract.sleipnir.json > base.json
+npx sleipnir-gen diff --base base.json --head Api/contract.sleipnir.json             # exit 5 on breaking
+npx sleipnir-gen diff --base base.json --head Api/contract.sleipnir.json --json      # report for a PR comment
+```
+
+- `--fail-on`: `breaking` (default), `soft` (breaking or soft), `never` (report only).
+- `--rollback`: also check the new clients against the old server.
+- `--json`: `{ summary: { breaking, soft, safe }, changes: [{ id, severity, site, position, direction, message }] }`.
+
+The server build runs the identical rules (`SleipnirContractBaseline` in `Sleipnir.Server.Codegen`).
+The rule set and the safe alternatives:
+[CONTRACT_EVOLUTION.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/CONTRACT_EVOLUTION.md).
 
 ### Examples
 

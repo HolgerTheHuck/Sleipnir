@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  NAMED_ONLY,
   buildParams,
   buildSingle,
   buildMulti,
@@ -9,11 +10,24 @@ import {
 import { ExecutionMode } from "../../src/types.js";
 
 describe("buildParams", () => {
-  it("named params -> [{parameterName, data, num}] (camelCase)", () => {
+  it("named params -> [{parameterName, data, num: NAMED_ONLY}] (name-only binding)", () => {
     const arr = buildParams({ id: 42, name: "Alice" });
     expect(arr).toEqual([
-      { parameterName: "id", data: 42, num: 0 },
-      { parameterName: "name", data: "Alice", num: 1 },
+      { parameterName: "id", data: 42, num: NAMED_ONLY },
+      { parameterName: "name", data: "Alice", num: NAMED_ONLY },
+    ]);
+    expect(NAMED_ONLY).toBe(-1);
+  });
+
+  it("omits undefined values (absent -> server default), keeps explicit null", () => {
+    expect(buildParams({ id: 1, take: undefined, note: null })).toEqual([
+      { parameterName: "id", data: 1, num: NAMED_ONLY },
+      { parameterName: "note", data: null, num: NAMED_ONLY },
+    ]);
+    // Positional: the remaining values keep their index.
+    expect(buildParams([1, undefined, 3])).toEqual([
+      { parameterName: "param0", data: 1, num: 0 },
+      { parameterName: "param2", data: 3, num: 2 },
     ]);
   });
 

@@ -74,14 +74,15 @@ namespace SleipnirClient.Sleipnir
         }
 
         /// <summary>
-        /// Fügt einen benannten Parameter hinzu. Der Name muss mit einem Parameter der
-        /// Zielmethode übereinstimmen (sichere, positionsunabhängige Bindung).
+        /// Adds a named parameter. The name must match a parameter of the target method — it
+        /// binds by name only (<see cref="SleipnirParameter.NamedOnly"/>), so a name the server
+        /// no longer knows fails with "Missing required parameter" instead of binding by position.
         /// </summary>
         public SleipnirCall Param(string parameterName, object? value)
         {
             _parameters.Add(new SleipnirParameter
             {
-                Num = _num,
+                Num = SleipnirParameter.NamedOnly,
                 ParameterName = parameterName,
                 Data = value == null ? null : JsonSerializer.SerializeToNode(value)
             });

@@ -61,7 +61,7 @@ Method parameter within `params`.
 |-------|------|----------|-------------|
 | `parameterName` | string | ✅ | Parameter name (matched server-side by name) |
 | `data` | value | ✅ | Native JSON parameter value — a number, string, boolean, object, or array (NOT a JSON string). The server deserializes this value directly into the target parameter type. An `@alias` dependency placeholder is a native **string** value with an `@` prefix, e.g. `"@newId"`. |
-| `num` | int | ❌ | Positional index (fallback when `parameterName` does not match) |
+| `num` | int | ❌ | Positional index (fallback when `parameterName` does not match). **`-1` = name-only** (`SleipnirParameter.NamedOnly` / TS `NAMED_ONLY`): the entry never binds by position. Named calls of every Sleipnir client send `-1` since 1.8.0, so a parameter name the server no longer knows fails as `400 Missing required parameter` instead of being bound by position. |
 
 > **Binding order:** the server binds each method parameter by `parameterName` first.
 > If the name does not match, it falls back to the positional `num` index (counting

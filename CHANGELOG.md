@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — 1.8.0 (contract evolution)
+
+### Added — contract compatibility gate ([CONTRACT_EVOLUTION.md](CONTRACT_EVOLUTION.md))
+
+- **`CONTRACT_EVOLUTION.md`** — the evolution policy for *your* contract: what the wire tolerates,
+  input vs output position, the full rule table (breaking / soft / safe with stable ids), recipes
+  (rename a parameter, add a required field, enum additions, `Controller.v2`), and the limits of a
+  mechanical check.
+- **Compatibility engine** `ContractCompatibility.Compare(baseline, current, includeRollback)`
+  (`Sleipnir.Codegen.Core`) and its TS port `compareContracts` (`sleipnir-codegen`). Position-aware
+  (acceptor vs producer), structural (a renamed/moved C# type is invisible), enum values by number,
+  recursion-safe, exact sites (`Order.Get -> return.Customer.Name`, `Order.Find(take)`,
+  `Order.SetState(state)::Draft`). Both engines run one executable spec
+  (`clients/codegen/test/fixtures/compat/cases.json`, 16 cases) and agree on every field.
+- **Server build gate (opt-in)** in `Sleipnir.Server.Codegen`: `SleipnirContractBaseline` (a file or
+  `git:<ref>`, e.g. `git:v1.7.0`), `SleipnirBreakingChanges=error|warn` (default `error`),
+  `SleipnirContractRollbackCheck` (also check new clients against the old server),
+  `SleipnirContractCompatReport` (JSON report). Findings are build warnings `SLEIPNIRCG003`
+  (breaking) / `SLEIPNIRCG002` (soft); an unavailable baseline is `SLEIPNIRCG004`, never a silent
+  skip; a breaking change fails the build (tool exit 3). Export tool: `--baseline`, `--breaking`,
+  `--rollback`, `--compat-report`.
+- **`sleipnir-gen diff --base <src> --head <src>`** — the same rules for any pipeline:
+  `--fail-on breaking|soft|never`, `--rollback`, `--json`; exit `5` on changes at/above the
+  threshold.
+
+### Changed — clients: named parameters are name-only (behavior change)
+
+- Every Sleipnir client now sends **`num: -1`** (`SleipnirParameter.NamedOnly`, TS `NAMED_ONLY`) for
+  named parameters: C# `SleipnirCall.Param`, the Linq client's calls and `ApplyWhere`, the JSON-RPC
+  adapter's named params, TS `buildParams`/`SleipnirCall` (generated clients), the generated Python
+  client. Before, a named entry carried its insertion index, so a parameter the server had renamed
+  was **silently bound by position** (and a rename plus a reorder bound values into the wrong
+  parameters). Now it fails as `400 Missing required parameter 'x'`. No server can match index -1,
+  so this holds against older servers too. **Migration:** a caller that relied on a mismatching or
+  wrongly-cased parameter name being rescued by position gets a `400` naming the expected parameter
+  — fix the name. Positional calls (`param{i}`), `WithAlias` and Linq navigation fetches keep their
+  index.
+- **TS client omits `undefined` values** instead of sending `null` (`buildParams`, `SleipnirCall`):
+  the parameter is absent, so the server applies the C# default (`int? take = 20` → `20`, was
+  `null`). Pass `null` for an explicit null. Positions of later positional values are unchanged.
+
+### Fixed
+
+- **`SleipnirWebSocketClient` positional subscribe arguments** (`arg{i}`) were sent without an
+  index, i.e. all as `num: 0` — only the first argument bound (silently before 1.7.0, a `400`
+  since). They now carry their position.
+
 ## [1.7.0] — 2026-10-17
 
 Ships on both channels: NuGet (`Sleipnir.*` lockstep) and npm (`sleipnir-client`,

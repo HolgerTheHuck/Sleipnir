@@ -17,7 +17,10 @@
 // Deprecated aliases accepted one minor version: `sse`→`rest`, `both`→`all`.
 //
 // Exit codes: 0 ok · 1 usage/runtime error · 2 discovery shape mismatch · 3 I/O
-//            · 4 selfcheck drift (--selfcheck found the committed client tree out of date).
+//            · 4 selfcheck drift (--selfcheck found the committed client tree out of date)
+//            · 5 `diff` found changes at/above --fail-on (see ./diff.ts).
+//
+// `sleipnir-gen diff --base <src> --head <src>` is the contract compatibility gate (./diff.ts).
 
 import { writeFile, mkdir } from "node:fs/promises";
 import { readFileSync } from "node:fs";
@@ -31,6 +34,7 @@ import { emitJsClient } from "../emitters/js.js";
 import { emitCsClient } from "../emitters/cs.js";
 import { emitPyClient } from "../emitters/py.js";
 import { selfcheck, selfcheckDriftHint } from "./selfcheck.js";
+import { runDiff } from "./diff.js";
 
 /** Canonical bundle-capability (which backends the generated client bundles). */
 type Capability = "rest" | "ws" | "all" | "signalr";
@@ -105,6 +109,9 @@ function parseTransport(s: string): Capability {
 }
 
 async function main(): Promise<void> {
+  if (process.argv[2] === "diff") {
+    process.exit(await runDiff(process.argv.slice(3), (s) => process.stdout.write(s), (s) => process.stderr.write(s)));
+  }
   const args = parseArgs(process.argv.slice(2));
 
   if (!args.lang) failUsage("--lang is required (ts | js | cs | py)");
@@ -228,6 +235,8 @@ function printHelp(): void {
     `  sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdout]\n` +
     `           [--base-url <url>] [--transport <rest|ws|all|signalr>] [--bearer <token>] [--timeout <ms>]\n` +
     `           [--selfcheck]\n` +
+    `  sleipnir-gen diff --base <src> --head <src> [--fail-on breaking|soft|never] [--rollback] [--json]\n` +
+    `           Contract compatibility check (exit 5 on changes at/above --fail-on).\n` +
     `\n` +
     `Options:\n` +
     `  --lang <ts|js|cs|py>  Output language.\n` +

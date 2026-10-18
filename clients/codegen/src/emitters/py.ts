@@ -228,12 +228,12 @@ ${accessors.join("\n")}
 
 const RUNTIME_TEMPLATE = `# --- Wire helpers (mirror the TS/C# request builders) ---
 
+_NAMED_ONLY = -1  # num marker: bind by parameterName only, never by position
+
+
 def _build_params(params: dict) -> list:
-    """Named params → [{parameterName, num, data}] (data is a native JSON value)."""
-    out = []
-    for i, (key, value) in enumerate(params.items()):
-        out.append({"parameterName": key, "num": i, "data": value})
-    return out
+    """Named params → [{parameterName, num: -1, data}] (data is a native JSON value)."""
+    return [{"parameterName": key, "num": _NAMED_ONLY, "data": value} for key, value in params.items()]
 
 
 def _build_single(controller: str, method: str, params: dict, *,

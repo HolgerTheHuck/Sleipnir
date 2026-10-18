@@ -108,7 +108,7 @@ internal static class JsonRpcAdapter
             if (p.ValueKind == JsonValueKind.Object)
             {
                 foreach (var prop in p.EnumerateObject())
-                    parameters.Add(new SleipnirParameter { ParameterName = prop.Name, Data = JsonNode.Parse(prop.Value.GetRawText()) });
+                    parameters.Add(new SleipnirParameter { Num = SleipnirParameter.NamedOnly, ParameterName = prop.Name, Data = JsonNode.Parse(prop.Value.GetRawText()) });
             }
             else if (p.ValueKind == JsonValueKind.Array)
             {

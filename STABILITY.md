@@ -258,6 +258,11 @@ drift-check failing the build) is the v1.1 endgame (`ROADMAP.md` "v1.1 — Versi
 build-time contract") and is **experimental** until it lands. The routing-key convention itself
 is stable.
 
+How *your* contract may evolve without breaking deployed clients — which changes are breaking,
+soft or safe, and the build gate that checks it against a baseline (`SleipnirContractBaseline`,
+`sleipnir-gen diff`) — is [`CONTRACT_EVOLUTION.md`](CONTRACT_EVOLUTION.md). This document covers
+the framework's own surface.
+
 ---
 
 ## 5. What is explicitly out of scope for stability

@@ -1,0 +1,272 @@
+{
+  "$comment": "Executable spec of the contract compatibility check (CONTRACT_EVOLUTION.md). Consumed by BOTH engines: clients/codegen/test/unit/compat.test.ts (TS) and SleipnirTests/Unit/Codegen/ContractCompatibilityTests.cs (C#). 'base' = the contract deployed clients were built against, 'head' = what the server now serves. 'expected' is the full, ordered report (severity, then site, then id, then direction).",
+  "cases": [
+    {
+      "name": "identical contracts report nothing",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[{"methodName":"GetById","returnType":{"kind":"ref","ref":"Api.Order"},"parameters":[{"parameterName":"id","parameterType":{"kind":"scalar","name":"int"}}]}]}],"types":{"Api.Order":{"kind":"object","typeName":"Api.Order","properties":[{"propertyName":"Id","propertyType":{"kind":"scalar","name":"int"}},{"propertyName":"Total","propertyType":{"kind":"scalar","name":"decimal"}}]}}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[{"methodName":"GetById","returnType":{"kind":"ref","ref":"Api.Order"},"parameters":[{"parameterName":"id","parameterType":{"kind":"scalar","name":"int"}}]}]}],"types":{"Api.Order":{"kind":"object","typeName":"Api.Order","properties":[{"propertyName":"Id","propertyType":{"kind":"scalar","name":"int"}},{"propertyName":"Total","propertyType":{"kind":"scalar","name":"decimal"}}]}}},
+      "expected": []
+    },
+    {
+      "name": "a moved or renamed C# type is identical on the wire (structural, not by key)",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[{"methodName":"GetById","returnType":{"kind":"ref","ref":"Api.Dto.Order"},"parameters":[]}]}],"types":{"Api.Dto.Order":{"kind":"object","typeName":"Api.Dto.Order","properties":[{"propertyName":"Id","propertyType":{"kind":"scalar","name":"int"}}]}}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[{"methodName":"GetById","returnType":{"kind":"ref","ref":"Api.Contracts.OrderDto"},"parameters":[]}]}],"types":{"Api.Contracts.OrderDto":{"kind":"object","typeName":"Api.Contracts.OrderDto","properties":[{"propertyName":"Id","propertyType":{"kind":"scalar","name":"int"}}]}}},
+      "expected": []
+    },
+    {
+      "name": "controllers and methods added / removed",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[{"methodName":"GetById","returnType":{"kind":"void"},"parameters":[]},{"methodName":"Cancel","returnType":{"kind":"void"},"parameters":[]}]},{"name":"Legacy","methods":[{"methodName":"Ping","returnType":{"kind":"void"},"parameters":[]}]}],"types":{}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[{"methodName":"GetById","returnType":{"kind":"void"},"parameters":[]},{"methodName":"Archive","returnType":{"kind":"void"},"parameters":[]}]},{"name":"Billing","methods":[{"methodName":"Invoice","returnType":{"kind":"void"},"parameters":[]}]}],"types":{}},
+      "expected": [
+        {"id":"controller-removed","severity":"breaking","site":"Legacy","position":null,"direction":"old-clients","message":"Controller 'Legacy' does not exist on the server - every call to it fails (404)."},
+        {"id":"method-removed","severity":"breaking","site":"Order.Cancel","position":null,"direction":"old-clients","message":"Method 'Order.Cancel' does not exist on the server - calls fail with 400 (method not found)."},
+        {"id":"controller-added","severity":"safe","site":"Billing","position":null,"direction":"old-clients","message":"Controller 'Billing' is new on the server."},
+        {"id":"method-added","severity":"safe","site":"Order.Archive","position":null,"direction":"old-clients","message":"Method 'Order.Archive' is new on the server."}
+      ]
+    },
+    {
+      "name": "parameters: required added, optional added, removed, renamed, default changed",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[
+        {"methodName":"Find","returnType":{"kind":"void"},"parameters":[
+          {"parameterName":"query","parameterType":{"kind":"scalar","name":"string"}},
+          {"parameterName":"take","parameterType":{"kind":"scalar","name":"int"},"defaultValue":20},
+          {"parameterName":"includeDeleted","parameterType":{"kind":"scalar","name":"bool","nullable":true}}]},
+        {"methodName":"Get","returnType":{"kind":"void"},"parameters":[{"parameterName":"id","parameterType":{"kind":"scalar","name":"int"}}]}]}],"types":{}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[
+        {"methodName":"Find","returnType":{"kind":"void"},"parameters":[
+          {"parameterName":"query","parameterType":{"kind":"scalar","name":"string"}},
+          {"parameterName":"take","parameterType":{"kind":"scalar","name":"int"},"defaultValue":50},
+          {"parameterName":"note","parameterType":{"kind":"scalar","name":"string"}},
+          {"parameterName":"page","parameterType":{"kind":"scalar","name":"int","nullable":true}}]},
+        {"methodName":"Get","returnType":{"kind":"void"},"parameters":[{"parameterName":"orderId","parameterType":{"kind":"scalar","name":"int"}}]}]}],"types":{}},
+      "expected": [
+        {"id":"required-parameter-not-sent","severity":"breaking","site":"Order.Find(note)","position":"input","direction":"old-clients","message":"The server requires parameter 'note' (string), which the client does not send - 400 Missing required parameter."},
+        {"id":"parameter-renamed","severity":"breaking","site":"Order.Get(orderId)","position":"input","direction":"old-clients","message":"The client sends 'id' where the server expects 'orderId' (same position) - the name no longer binds: 400 Missing required parameter."},
+        {"id":"parameter-not-accepted","severity":"soft","site":"Order.Find(includeDeleted)","position":"input","direction":"old-clients","message":"The client sends 'includeDeleted', which the server does not have - the value is silently ignored."},
+        {"id":"parameter-default-changed","severity":"soft","site":"Order.Find(take)","position":"input","direction":"old-clients","message":"The default of 'take' differs (client contract: 20, server: 50) - callers that omit it get the server's default."},
+        {"id":"optional-parameter-added","severity":"safe","site":"Order.Find(page)","position":"input","direction":"old-clients","message":"The server accepts the optional parameter 'page' (int), which the client does not send - it binds its default."}
+      ]
+    },
+    {
+      "name": "parameters: optional became required, order changed",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[
+        {"methodName":"List","returnType":{"kind":"void"},"parameters":[
+          {"parameterName":"skip","parameterType":{"kind":"scalar","name":"int"},"defaultValue":0},
+          {"parameterName":"filter","parameterType":{"kind":"scalar","name":"string","nullable":true}}]},
+        {"methodName":"Move","returnType":{"kind":"void"},"parameters":[
+          {"parameterName":"from","parameterType":{"kind":"scalar","name":"string"}},
+          {"parameterName":"to","parameterType":{"kind":"scalar","name":"string"}}]}]}],"types":{}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[
+        {"methodName":"List","returnType":{"kind":"void"},"parameters":[
+          {"parameterName":"skip","parameterType":{"kind":"scalar","name":"int"}},
+          {"parameterName":"filter","parameterType":{"kind":"scalar","name":"string","nullable":true}}]},
+        {"methodName":"Move","returnType":{"kind":"void"},"parameters":[
+          {"parameterName":"to","parameterType":{"kind":"scalar","name":"string"}},
+          {"parameterName":"from","parameterType":{"kind":"scalar","name":"string"}}]}]}],"types":{}},
+      "expected": [
+        {"id":"parameter-may-be-omitted","severity":"breaking","site":"Order.List(skip)","position":"input","direction":"old-clients","message":"The client may omit 'skip' (optional in its contract), but the server requires it - 400 Missing required parameter when omitted."},
+        {"id":"parameter-order-changed","severity":"soft","site":"Order.Move","position":"input","direction":"old-clients","message":"The parameter order differs (client: from, to; server: to, from) - positional callers bind values to the wrong parameters; named callers are unaffected."}
+      ]
+    },
+    {
+      "name": "parameter types: widening is safe, narrowing and kind changes break",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Calc","methods":[
+        {"methodName":"Add","returnType":{"kind":"void"},"parameters":[
+          {"parameterName":"a","parameterType":{"kind":"scalar","name":"int"}},
+          {"parameterName":"b","parameterType":{"kind":"scalar","name":"int"}}]},
+        {"methodName":"Scale","returnType":{"kind":"void"},"parameters":[{"parameterName":"factor","parameterType":{"kind":"scalar","name":"double"}}]}]}],"types":{}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Calc","methods":[
+        {"methodName":"Add","returnType":{"kind":"void"},"parameters":[
+          {"parameterName":"a","parameterType":{"kind":"scalar","name":"long"}},
+          {"parameterName":"b","parameterType":{"kind":"scalar","name":"string"}}]},
+        {"methodName":"Scale","returnType":{"kind":"void"},"parameters":[{"parameterName":"factor","parameterType":{"kind":"scalar","name":"int"}}]}]}],"types":{}},
+      "expected": [
+        {"id":"type-incompatible","severity":"breaking","site":"Calc.Add(b)","position":"input","direction":"old-clients","message":"The client sends int, the server expects string - 400."},
+        {"id":"type-incompatible","severity":"breaking","site":"Calc.Scale(factor)","position":"input","direction":"old-clients","message":"The client sends double, the server expects int - 400."}
+      ]
+    },
+    {
+      "name": "return values: output widening breaks, output narrowing is safe, void and null",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[
+        {"methodName":"Count","returnType":{"kind":"scalar","name":"int"},"parameters":[]},
+        {"methodName":"Do","returnType":{"kind":"scalar","name":"string"},"parameters":[]},
+        {"methodName":"Find","returnType":{"kind":"scalar","name":"string"},"parameters":[]},
+        {"methodName":"Ping","returnType":{"kind":"void"},"parameters":[]},
+        {"methodName":"Total","returnType":{"kind":"scalar","name":"decimal"},"parameters":[]}]}],"types":{}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[
+        {"methodName":"Count","returnType":{"kind":"scalar","name":"long"},"parameters":[]},
+        {"methodName":"Do","returnType":{"kind":"void"},"parameters":[]},
+        {"methodName":"Find","returnType":{"kind":"scalar","name":"string","nullable":true},"parameters":[]},
+        {"methodName":"Ping","returnType":{"kind":"scalar","name":"string"},"parameters":[]},
+        {"methodName":"Total","returnType":{"kind":"scalar","name":"int"},"parameters":[]}]}],"types":{}},
+      "expected": [
+        {"id":"type-incompatible","severity":"breaking","site":"Order.Count -> return","position":"output","direction":"old-clients","message":"The server returns long, the client expects int - deserialization fails."},
+        {"id":"type-incompatible","severity":"breaking","site":"Order.Do -> return","position":"output","direction":"old-clients","message":"The server returns void, the client expects string - deserialization fails."},
+        {"id":"null-not-accepted","severity":"breaking","site":"Order.Find -> return","position":"output","direction":"old-clients","message":"The server may return null, but the client does not expect null."}
+      ]
+    },
+    {
+      "name": "output object: removed required/optional property, nested nullability, added property",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[{"methodName":"Get","returnType":{"kind":"ref","ref":"Api.Order"},"parameters":[]}]}],"types":{
+        "Api.Order":{"kind":"object","typeName":"Api.Order","properties":[
+          {"propertyName":"Id","propertyType":{"kind":"scalar","name":"int"}},
+          {"propertyName":"Total","propertyType":{"kind":"scalar","name":"decimal"}},
+          {"propertyName":"Note","propertyType":{"kind":"scalar","name":"string","nullable":true}},
+          {"propertyName":"Customer","propertyType":{"kind":"ref","ref":"Api.Customer"}}]},
+        "Api.Customer":{"kind":"object","typeName":"Api.Customer","properties":[{"propertyName":"Name","propertyType":{"kind":"scalar","name":"string"}}]}}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[{"methodName":"Get","returnType":{"kind":"ref","ref":"Api.Order"},"parameters":[]}]}],"types":{
+        "Api.Order":{"kind":"object","typeName":"Api.Order","properties":[
+          {"propertyName":"Id","propertyType":{"kind":"scalar","name":"int"}},
+          {"propertyName":"Customer","propertyType":{"kind":"ref","ref":"Api.Customer"}},
+          {"propertyName":"Tags","propertyType":{"kind":"array","element":{"kind":"scalar","name":"string"}}}]},
+        "Api.Customer":{"kind":"object","typeName":"Api.Customer","properties":[{"propertyName":"Name","propertyType":{"kind":"scalar","name":"string","nullable":true}}]}}},
+      "expected": [
+        {"id":"null-not-accepted","severity":"breaking","site":"Order.Get -> return.Customer.Name","position":"output","direction":"old-clients","message":"The server may return null, but the client does not expect null."},
+        {"id":"property-not-sent","severity":"breaking","site":"Order.Get -> return.Total","position":"output","direction":"old-clients","message":"The server does not send 'Total', which the client requires."},
+        {"id":"property-not-sent","severity":"soft","site":"Order.Get -> return.Note","position":"output","direction":"old-clients","message":"The server does not send 'Note' (optional for the client) - the client sees it as absent."},
+        {"id":"property-not-accepted","severity":"safe","site":"Order.Get -> return.Tags","position":"output","direction":"old-clients","message":"The server sends 'Tags', which the client does not know - ignored."}
+      ]
+    },
+    {
+      "name": "input object: new required/optional property, removed property, nullable to non-null",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[{"methodName":"Create","returnType":{"kind":"void"},"parameters":[{"parameterName":"order","parameterType":{"kind":"ref","ref":"Api.NewOrder"}}]}]}],"types":{
+        "Api.NewOrder":{"kind":"object","typeName":"Api.NewOrder","properties":[
+          {"propertyName":"Sku","propertyType":{"kind":"scalar","name":"string"}},
+          {"propertyName":"Qty","propertyType":{"kind":"scalar","name":"int"}},
+          {"propertyName":"Gift","propertyType":{"kind":"scalar","name":"bool","nullable":true}},
+          {"propertyName":"Legacy","propertyType":{"kind":"scalar","name":"string","nullable":true}}]}}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[{"methodName":"Create","returnType":{"kind":"void"},"parameters":[{"parameterName":"order","parameterType":{"kind":"ref","ref":"Api.NewOrder"}}]}]}],"types":{
+        "Api.NewOrder":{"kind":"object","typeName":"Api.NewOrder","properties":[
+          {"propertyName":"Sku","propertyType":{"kind":"scalar","name":"string"}},
+          {"propertyName":"Qty","propertyType":{"kind":"scalar","name":"int"}},
+          {"propertyName":"Gift","propertyType":{"kind":"scalar","name":"bool"}},
+          {"propertyName":"Currency","propertyType":{"kind":"scalar","name":"string"}},
+          {"propertyName":"Comment","propertyType":{"kind":"scalar","name":"string","nullable":true}}]}}},
+      "expected": [
+        {"id":"null-not-accepted","severity":"breaking","site":"Order.Create(order).Gift","position":"input","direction":"old-clients","message":"The client may send null, but the server does not accept null - 400 for a value type, an unexpected null otherwise."},
+        {"id":"property-not-sent","severity":"soft","site":"Order.Create(order).Currency","position":"input","direction":"old-clients","message":"The server requires property 'Currency', which the client does not send - it binds a silent default (400 under AliasBindingMode Strict/Paranoid)."},
+        {"id":"property-not-accepted","severity":"soft","site":"Order.Create(order).Legacy","position":"input","direction":"old-clients","message":"The client sends 'Legacy', which the server does not have - the value is silently ignored."},
+        {"id":"property-not-sent","severity":"safe","site":"Order.Create(order).Comment","position":"input","direction":"old-clients","message":"The server has the optional property 'Comment', which the client does not send - it binds null."}
+      ]
+    },
+    {
+      "name": "enums compare by numeric wire value: added member (output soft), removed member (input breaking), renumbered member",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[
+        {"methodName":"Get","returnType":{"kind":"ref","ref":"Api.Order"},"parameters":[]},
+        {"methodName":"SetState","returnType":{"kind":"void"},"parameters":[{"parameterName":"state","parameterType":{"kind":"ref","ref":"Api.State"}}]}]}],"types":{
+        "Api.Order":{"kind":"object","typeName":"Api.Order","properties":[{"propertyName":"State","propertyType":{"kind":"ref","ref":"Api.State"}}]},
+        "Api.State":{"kind":"enum","typeName":"Api.State","properties":[],"members":[{"name":"Open","value":0},{"name":"Shipped","value":1},{"name":"Draft","value":2}]}}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[
+        {"methodName":"Get","returnType":{"kind":"ref","ref":"Api.Order"},"parameters":[]},
+        {"methodName":"SetState","returnType":{"kind":"void"},"parameters":[{"parameterName":"state","parameterType":{"kind":"ref","ref":"Api.State"}}]}]}],"types":{
+        "Api.Order":{"kind":"object","typeName":"Api.Order","properties":[{"propertyName":"State","propertyType":{"kind":"ref","ref":"Api.State"}}]},
+        "Api.State":{"kind":"enum","typeName":"Api.State","properties":[],"members":[{"name":"Open","value":0},{"name":"Shipped","value":5},{"name":"Archived","value":3}]}}},
+      "expected": [
+        {"id":"enum-value-changed","severity":"breaking","site":"Order.Get -> return.State::Shipped","position":"output","direction":"old-clients","message":"Enum member 'Shipped' is 1 for the client but 5 for the server - the numeric wire value changed meaning."},
+        {"id":"enum-value-not-accepted","severity":"breaking","site":"Order.SetState(state)::Draft","position":"input","direction":"old-clients","message":"The client may send 'Draft' (2), which the server's enum does not have - the server binds an undefined enum value."},
+        {"id":"enum-value-changed","severity":"breaking","site":"Order.SetState(state)::Shipped","position":"input","direction":"old-clients","message":"Enum member 'Shipped' is 5 for the server but 1 for the client - the numeric wire value changed meaning."},
+        {"id":"enum-value-not-accepted","severity":"soft","site":"Order.Get -> return.State::Archived","position":"output","direction":"old-clients","message":"The server may return 'Archived' (3), which the client's enum does not know."}
+      ]
+    },
+    {
+      "name": "collections: array/set/stream are one wire kind, map values compare",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Stats","methods":[
+        {"methodName":"Get","returnType":{"kind":"map","key":{"kind":"scalar","name":"string"},"value":{"kind":"scalar","name":"int"}},"parameters":[]},
+        {"methodName":"Ids","returnType":{"kind":"array","element":{"kind":"scalar","name":"int"}},"parameters":[]},
+        {"methodName":"Tag","returnType":{"kind":"void"},"parameters":[{"parameterName":"tags","parameterType":{"kind":"array","element":{"kind":"scalar","name":"string"}}}]}]}],"types":{}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Stats","methods":[
+        {"methodName":"Get","returnType":{"kind":"map","key":{"kind":"scalar","name":"string"},"value":{"kind":"scalar","name":"string"}},"parameters":[]},
+        {"methodName":"Ids","returnType":{"kind":"stream","element":{"kind":"scalar","name":"int"}},"parameters":[]},
+        {"methodName":"Tag","returnType":{"kind":"void"},"parameters":[{"parameterName":"tags","parameterType":{"kind":"set","element":{"kind":"scalar","name":"string"}}}]}]}],"types":{}},
+      "expected": [
+        {"id":"type-incompatible","severity":"breaking","site":"Stats.Get -> return{value}","position":"output","direction":"old-clients","message":"The server returns string, the client expects int - deserialization fails."}
+      ]
+    },
+    {
+      "name": "events: payload compares as output, call/event switch breaks",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Feed","methods":[
+        {"methodName":"Ticks","returnType":{"kind":"event","element":{"kind":"ref","ref":"Api.Tick"}},"parameters":[{"parameterName":"symbol","parameterType":{"kind":"scalar","name":"string"}}]},
+        {"methodName":"Snapshot","returnType":{"kind":"ref","ref":"Api.Tick"},"parameters":[]}]}],"types":{
+        "Api.Tick":{"kind":"object","typeName":"Api.Tick","properties":[{"propertyName":"Price","propertyType":{"kind":"scalar","name":"decimal"}}]}}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Feed","methods":[
+        {"methodName":"Ticks","returnType":{"kind":"event","element":{"kind":"ref","ref":"Api.Tick"}},"parameters":[{"parameterName":"symbol","parameterType":{"kind":"scalar","name":"string"}}]},
+        {"methodName":"Snapshot","returnType":{"kind":"event","element":{"kind":"ref","ref":"Api.Tick"}},"parameters":[]}]}],"types":{
+        "Api.Tick":{"kind":"object","typeName":"Api.Tick","properties":[{"propertyName":"Price","propertyType":{"kind":"scalar","name":"decimal"}},{"propertyName":"Volume","propertyType":{"kind":"scalar","name":"long"}}]}}},
+      "expected": [
+        {"id":"method-kind-changed","severity":"breaking","site":"Feed.Snapshot","position":null,"direction":"old-clients","message":"'Feed.Snapshot' is a call for the client but an event on the server."},
+        {"id":"property-not-accepted","severity":"safe","site":"Feed.Ticks -> event.Volume","position":"output","direction":"old-clients","message":"The server sends 'Volume', which the client does not know - ignored."}
+      ]
+    },
+    {
+      "name": "opaque: becoming modelled is fine, becoming opaque cannot be verified",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Run","methods":[
+        {"methodName":"Exec","returnType":{"kind":"opaque","nativeName":"IngestionSummary"},"parameters":[]},
+        {"methodName":"Info","returnType":{"kind":"ref","ref":"Api.Info"},"parameters":[]}]}],"types":{
+        "Api.Info":{"kind":"object","typeName":"Api.Info","properties":[{"propertyName":"X","propertyType":{"kind":"scalar","name":"int"}}]}}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Run","methods":[
+        {"methodName":"Exec","returnType":{"kind":"ref","ref":"Api.Summary"},"parameters":[]},
+        {"methodName":"Info","returnType":{"kind":"opaque","nativeName":"Info"},"parameters":[]}]}],"types":{
+        "Api.Summary":{"kind":"object","typeName":"Api.Summary","properties":[{"propertyName":"Count","propertyType":{"kind":"scalar","name":"int"}}]}}},
+      "expected": [
+        {"id":"opaque-changed","severity":"soft","site":"Run.Info -> return","position":"output","direction":"old-clients","message":"The server returns Info (not modelled), the client expects Info - compatibility cannot be verified."}
+      ]
+    },
+    {
+      "name": "rollback direction: current clients against the baseline server (safe changes omitted)",
+      "rollback": true,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[{"methodName":"Find","returnType":{"kind":"ref","ref":"Api.Order"},"parameters":[{"parameterName":"query","parameterType":{"kind":"scalar","name":"string"}}]}]}],"types":{
+        "Api.Order":{"kind":"object","typeName":"Api.Order","properties":[{"propertyName":"Id","propertyType":{"kind":"scalar","name":"int"}}]}}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Order","methods":[{"methodName":"Find","returnType":{"kind":"ref","ref":"Api.Order"},"parameters":[{"parameterName":"query","parameterType":{"kind":"scalar","name":"string"}},{"parameterName":"take","parameterType":{"kind":"scalar","name":"int","nullable":true}}]}]}],"types":{
+        "Api.Order":{"kind":"object","typeName":"Api.Order","properties":[{"propertyName":"Id","propertyType":{"kind":"scalar","name":"int"}},{"propertyName":"Note","propertyType":{"kind":"scalar","name":"string"}}]}}},
+      "expected": [
+        {"id":"property-not-sent","severity":"breaking","site":"Order.Find -> return.Note","position":"output","direction":"rollback","message":"The server does not send 'Note', which the client requires."},
+        {"id":"parameter-not-accepted","severity":"soft","site":"Order.Find(take)","position":"input","direction":"rollback","message":"The client sends 'take', which the server does not have - the value is silently ignored."},
+        {"id":"property-not-accepted","severity":"safe","site":"Order.Find -> return.Note","position":"output","direction":"old-clients","message":"The server sends 'Note', which the client does not know - ignored."},
+        {"id":"optional-parameter-added","severity":"safe","site":"Order.Find(take)","position":"input","direction":"old-clients","message":"The server accepts the optional parameter 'take' (int), which the client does not send - it binds its default."}
+      ]
+    },
+    {
+      "name": "recursive types terminate; a type reached via two properties reports both sites",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[
+        {"name":"Tree","methods":[{"methodName":"Get","returnType":{"kind":"ref","ref":"Api.Node"},"parameters":[]}]},
+        {"name":"Ship","methods":[{"methodName":"Get","returnType":{"kind":"ref","ref":"Api.Shipment"},"parameters":[]}]}],"types":{
+        "Api.Node":{"kind":"object","typeName":"Api.Node","properties":[{"propertyName":"Name","propertyType":{"kind":"scalar","name":"string"}},{"propertyName":"Children","propertyType":{"kind":"array","element":{"kind":"ref","ref":"Api.Node"}}}]},
+        "Api.Shipment":{"kind":"object","typeName":"Api.Shipment","properties":[{"propertyName":"Billing","propertyType":{"kind":"ref","ref":"Api.Address"}},{"propertyName":"Shipping","propertyType":{"kind":"ref","ref":"Api.Address"}}]},
+        "Api.Address":{"kind":"object","typeName":"Api.Address","properties":[{"propertyName":"Street","propertyType":{"kind":"scalar","name":"string"}},{"propertyName":"Zip","propertyType":{"kind":"scalar","name":"string"}}]}}},
+      "head": {"discoveryVersion":"1","controllers":[
+        {"name":"Tree","methods":[{"methodName":"Get","returnType":{"kind":"ref","ref":"Api.Node"},"parameters":[]}]},
+        {"name":"Ship","methods":[{"methodName":"Get","returnType":{"kind":"ref","ref":"Api.Shipment"},"parameters":[]}]}],"types":{
+        "Api.Node":{"kind":"object","typeName":"Api.Node","properties":[{"propertyName":"Name","propertyType":{"kind":"scalar","name":"string"}},{"propertyName":"Children","propertyType":{"kind":"array","element":{"kind":"ref","ref":"Api.Node"}}},{"propertyName":"Id","propertyType":{"kind":"scalar","name":"int"}}]},
+        "Api.Shipment":{"kind":"object","typeName":"Api.Shipment","properties":[{"propertyName":"Billing","propertyType":{"kind":"ref","ref":"Api.Address"}},{"propertyName":"Shipping","propertyType":{"kind":"ref","ref":"Api.Address"}}]},
+        "Api.Address":{"kind":"object","typeName":"Api.Address","properties":[{"propertyName":"Street","propertyType":{"kind":"scalar","name":"string"}}]}}},
+      "expected": [
+        {"id":"property-not-sent","severity":"breaking","site":"Ship.Get -> return.Billing.Zip","position":"output","direction":"old-clients","message":"The server does not send 'Zip', which the client requires."},
+        {"id":"property-not-sent","severity":"breaking","site":"Ship.Get -> return.Shipping.Zip","position":"output","direction":"old-clients","message":"The server does not send 'Zip', which the client requires."},
+        {"id":"property-not-accepted","severity":"safe","site":"Tree.Get -> return.Id","position":"output","direction":"old-clients","message":"The server sends 'Id', which the client does not know - ignored."}
+      ]
+    },
+    {
+      "name": "a new byte[] parameter is optional (bound from binaryData)",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Doc","methods":[{"methodName":"Upload","returnType":{"kind":"void"},"parameters":[{"parameterName":"name","parameterType":{"kind":"scalar","name":"string"}}]}]}],"types":{}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Doc","methods":[{"methodName":"Upload","returnType":{"kind":"void"},"parameters":[{"parameterName":"name","parameterType":{"kind":"scalar","name":"string"}},{"parameterName":"content","parameterType":{"kind":"scalar","name":"bytes"}}]}]}],"types":{}},
+      "expected": [
+        {"id":"optional-parameter-added","severity":"safe","site":"Doc.Upload(content)","position":"input","direction":"old-clients","message":"The server accepts the optional parameter 'content' (bytes), which the client does not send - it binds its default."}
+      ]
+    }
+  ]
+}

@@ -38,6 +38,10 @@ public class SleipnirWebSocketClientResumeTests
         /// or degraded (a fresh id returned, simulating TTL expiry / non-resumable). Default true.</summary>
         public bool HonorResume = true;
 
+        /// <summary>When set, every subscribe ack is followed immediately by an event (eventId 1)
+        /// with this payload — a hot source that starts pushing right away.</summary>
+        public string? EventRightAfterAck;
+
         private int _subSeq;
         public readonly Channel<SubscribeCapture> Subscribes = Channel.CreateUnbounded<SubscribeCapture>();
 
@@ -126,9 +130,15 @@ public class SleipnirWebSocketClientResumeTests
                 else
                     responseSubId = "s" + Interlocked.Increment(ref _subSeq);
                 cap.ResponseSubscriptionId = responseSubId;
-                Subscribes.Writer.TryWrite(cap);
 
                 await SendAsync(ws, $"{{\"code\":200,\"data\":{{\"subscriptionId\":\"{responseSubId}\"}},\"id\":\"{reqId}\"}}");
+                // Like a real hot source: the first event follows the ack immediately, on the same socket.
+                if (EventRightAfterAck != null)
+                    await SendAsync(ws, JsonSerializer.Serialize(new { type = "event", subscriptionId = responseSubId, eventId = 1, data = EventRightAfterAck }, JsonOpts));
+
+                // Signal the test only after the ack is on the wire: a test that reacts by pushing an
+                // event on the new id must not race the ack (that ordering flaked the degrade test).
+                Subscribes.Writer.TryWrite(cap);
             }
         }
 
@@ -256,6 +266,59 @@ public class SleipnirWebSocketClientResumeTests
         obs.Values.Should().Equal(["a", "b"]);
 
         sub.Dispose();
+    }
+
+    [Fact]
+    public async Task Subscribe_EventRightAfterAck_ReachesTheFirstObserver()
+    {
+        // The event follows the ack on the socket before SubscribeAsync has even returned, so the
+        // observer is attached later: the subscription must hold it for the first observer
+        // instead of dropping it (in the reader or in the subject).
+        await using var server = new ResumeWsServer { EventRightAfterAck = "first" };
+        server.Start();
+        await using var client = new SleipnirWebSocketClient(server.BaseUrl, autoReconnect: false);
+        await client.ConnectAsync();
+
+        for (var i = 0; i < 20; i++)
+        {
+            using var sub = await client.SubscribeAsync<string>("C", "Tick");
+            var obs = new CountingObserver<string>();
+            sub.Subscribe(obs);
+            await WaitUntilAsync(() => obs.NextCount >= 1, 2000);
+            obs.Values.Should().Equal(["first"], $"subscription {i} must not lose the event that follows its ack");
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]  // Resume policy, server degrades to a fresh id
+    [InlineData(false)] // default Fresh policy
+    public async Task Reconnect_EventRightAfterReSubscribeAck_IsNotDropped(bool requestResume)
+    {
+        // After a reconnect the observer is already attached; the event that follows the
+        // re-subscribe ack on the NEW id must reach it — the handler is re-keyed before the reader
+        // dispatches the next frame (it used to be re-keyed in an async continuation).
+        await using var server = new ResumeWsServer { HonorResume = false };
+        server.Start();
+        ResumePolicy? policy = requestResume ? _ => ResumeDecision.Resume : null;
+        await using var client = new SleipnirWebSocketClient(server.BaseUrl,
+            autoReconnect: true, reconnectDelays: new[] { TimeSpan.FromMilliseconds(40) }, resumePolicy: policy);
+        await client.ConnectAsync();
+
+        using var sub = await client.SubscribeAsync<string>("C", "Tick");
+        var first = await server.Subscribes.Reader.ReadAsync();
+        var obs = new CountingObserver<string>();
+        sub.Subscribe(obs);
+        await server.SendEventAsync(first.ResponseSubscriptionId!, 1, "before");
+        await WaitUntilAsync(() => obs.NextCount >= 1, 2000);
+
+        server.EventRightAfterAck = "after";
+        await server.CloseCurrentAsync();
+        await WaitForStateAsync(client, SleipnirConnectionState.Reconnecting, 2000);
+        await WaitForStateAsync(client, SleipnirConnectionState.Connected);
+        (await server.Subscribes.Reader.ReadAsync()).ResponseSubscriptionId.Should().NotBe(first.ResponseSubscriptionId);
+
+        await WaitUntilAsync(() => obs.NextCount >= 2, 3000);
+        obs.Values.Should().Equal(["before", "after"]);
     }
 
     [Fact]

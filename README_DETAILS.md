@@ -863,22 +863,22 @@ Sleipnir v1 is intentionally focused. The following are deliberate scope decisio
 
 ```xml
 <!-- Server: all transports (hub + REST + WebSocket + DevUI) -->
-<PackageReference Include="Sleipnir.Server" Version="1.8.0" />
+<PackageReference Include="Sleipnir.Server" Version="1.8.1" />
 
 <!-- Optional: OpenTelemetry SDK bootstrap -->
-<PackageReference Include="Sleipnir.Telemetry" Version="1.8.0" />
+<PackageReference Include="Sleipnir.Telemetry" Version="1.8.1" />
 
 <!-- Optional: embedded Heimdall telemetry backend (dashboard + PromQL API under /otel) -->
-<PackageReference Include="Sleipnir.Telemetry.Heimdall" Version="1.8.0" />
+<PackageReference Include="Sleipnir.Telemetry.Heimdall" Version="1.8.1" />
 
 <!-- Or individual transports -->
-<PackageReference Include="Sleipnir.Core" Version="1.8.0" />
-<PackageReference Include="Sleipnir.Hub" Version="1.8.0" />
-<PackageReference Include="Sleipnir.Rest" Version="1.8.0" />
-<PackageReference Include="Sleipnir.WebSocket" Version="1.8.0" />
+<PackageReference Include="Sleipnir.Core" Version="1.8.1" />
+<PackageReference Include="Sleipnir.Hub" Version="1.8.1" />
+<PackageReference Include="Sleipnir.Rest" Version="1.8.1" />
+<PackageReference Include="Sleipnir.WebSocket" Version="1.8.1" />
 
 <!-- Client -->
-<PackageReference Include="Sleipnir.Client" Version="1.8.0" />
+<PackageReference Include="Sleipnir.Client" Version="1.8.1" />
 ```
 
 ### Distributed Tracing

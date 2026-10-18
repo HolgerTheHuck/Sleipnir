@@ -19,7 +19,7 @@ OTel pipeline.
 ## Install
 
 ```xml
-<PackageReference Include="Sleipnir.Telemetry" Version="1.8.0" />
+<PackageReference Include="Sleipnir.Telemetry" Version="1.8.1" />
 ```
 
 Targets `net8.0`. Depends on `Sleipnir.Core`. The instrumentation itself lives in the

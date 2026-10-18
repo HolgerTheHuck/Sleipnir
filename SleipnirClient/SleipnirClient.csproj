@@ -33,4 +33,8 @@
     <ProjectReference Include="..\SleipnirCore\SleipnirCore.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="SleipnirTests" />
+  </ItemGroup>
+
 </Project>

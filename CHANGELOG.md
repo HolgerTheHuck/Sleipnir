@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] — 2026-10-18
+
+NuGet only (`Sleipnir.*`). npm stays at 1.8.0: the TS client is not affected — its event loop runs
+the subscribe continuation before the next WebSocket message.
+
+### Fixed — `Sleipnir.Client`: events lost right after a subscribe
+
+- **WebSocket: the event handler was registered too late.** It was registered in the continuation
+  awaiting the subscribe ack, which `RunContinuationsAsynchronously` schedules later — the reader
+  dispatched an event that followed the ack immediately before the handler existed and **dropped it
+  silently**. Affected: both `SubscribeAsync` overloads and the reconnect re-subscribe with the
+  default `Fresh` policy or a `Resume` the server degraded to a fresh id (a `Resume` keeping its
+  durable id was already pre-registered). The handler is now registered on the reader thread before
+  the next frame is dispatched.
+- **WebSocket: `Fresh` reconnect kept the old dedup cursor.** A new server subscription restarts
+  its `eventId` at 1, so after every reconnect of a resumable event the first events were dropped as
+  "replays" (as many as had arrived before the reconnect). The cursor is now reset whenever the
+  server returns a new subscription id.
+- **`SleipnirSubscription<T>` (all C# backends) dropped events before the first observer.**
+  `SubscribeAsync` returns after the ack, so a hot source's first events arrived before
+  `Subscribe(observer)`. They are now held (up to 1024, oldest dropped) and replayed in order to the
+  first observer; after that the subscription is hot as before.
+
+### Internal
+
+- CI: the Linux leg runs the suite once (the coverage run) instead of twice — it reached ~35 of its
+  40 minutes on the 1.7.0 tag run.
+- The WebSocket test harness signals a subscribe only after its ack is on the wire — the ordering
+  that flaked `Reconnect_ResumeNotHonored_DegradesToFresh_UnderNewId`. Regression tests for the
+  fixes above fail on 1.8.0 and pass now.
+
 ## [1.8.0] — 2026-10-18
 
 Ships on both channels: NuGet (`Sleipnir.*` lockstep) and npm (`sleipnir-client`,

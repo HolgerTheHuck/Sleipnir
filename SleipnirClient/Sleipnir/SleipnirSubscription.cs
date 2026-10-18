@@ -49,19 +49,41 @@ public sealed class SleipnirSubscription<T> : IObservable<T>, IDisposable
 }
 
 /// <summary>
-/// Minimal-Subject (IObservable+IObserver) ohne System.Reactive-Abhängigkeit. Erlaubt
-/// Multiple Observer, pusht OnNext/OnCompleted/OnError. Thread-safe über ein Lock.
+/// Minimal subject (IObservable+IObserver) without a System.Reactive dependency. Multiple
+/// observers; pushes OnNext/OnCompleted/OnError. Thread-safe via one lock.
 /// </summary>
+/// <remarks>
+/// <c>SubscribeAsync</c> returns the subscription only after the server's ack, so a hot source's
+/// first events — pushed right behind the ack — arrive before the caller can attach an observer.
+/// They (and a terminal signal) are held for the <b>first</b> observer and replayed to it in order;
+/// after that the subject is plain hot. Bounded by <see cref="MaxHeldForFirstObserver"/> (oldest
+/// dropped beyond).
+/// </remarks>
 internal sealed class SleipnirSubject<T> : IObservable<T>, IObserver<T>, IDisposable
 {
+    internal const int MaxHeldForFirstObserver = 1024;
+
     private readonly List<IObserver<T>> _observers = new();
     private readonly object _lock = new();
     private bool _completed;
+    private Queue<T>? _held = new();
+    private Exception? _heldError;
+    private bool _heldCompleted;
 
     public IDisposable Subscribe(IObserver<T> observer)
     {
         lock (_lock)
         {
+            if (_held != null)
+            {
+                // First observer: replay under the lock, so no concurrent OnNext overtakes the
+                // held events.
+                var held = _held;
+                _held = null;
+                foreach (var value in held) observer.OnNext(value);
+                if (_heldError != null) { observer.OnError(_heldError); return new NoopDisposable(); }
+                if (_heldCompleted) { observer.OnCompleted(); return new NoopDisposable(); }
+            }
             if (_completed) { observer.OnCompleted(); return new NoopDisposable(); }
             _observers.Add(observer);
         }
@@ -71,27 +93,51 @@ internal sealed class SleipnirSubject<T> : IObservable<T>, IObserver<T>, IDispos
     public void OnNext(T value)
     {
         List<IObserver<T>> snapshot;
-        lock (_lock) { if (_completed) return; snapshot = _observers.ToList(); }
+        lock (_lock)
+        {
+            if (_completed) return;
+            if (_held != null)
+            {
+                if (_held.Count >= MaxHeldForFirstObserver) _held.Dequeue();
+                _held.Enqueue(value);
+                return;
+            }
+            snapshot = _observers.ToList();
+        }
         foreach (var o in snapshot) o.OnNext(value);
     }
 
     public void OnCompleted()
     {
         List<IObserver<T>> snapshot;
-        lock (_lock) { if (_completed) return; _completed = true; snapshot = _observers.ToList(); _observers.Clear(); }
+        lock (_lock)
+        {
+            if (_completed) return;
+            _completed = true;
+            if (_held != null) { _heldCompleted = true; return; }
+            snapshot = _observers.ToList();
+            _observers.Clear();
+        }
         foreach (var o in snapshot) o.OnCompleted();
     }
 
     public void OnError(Exception error)
     {
         List<IObserver<T>> snapshot;
-        lock (_lock) { if (_completed) return; _completed = true; snapshot = _observers.ToList(); _observers.Clear(); }
+        lock (_lock)
+        {
+            if (_completed) return;
+            _completed = true;
+            if (_held != null) { _heldError = error; return; }
+            snapshot = _observers.ToList();
+            _observers.Clear();
+        }
         foreach (var o in snapshot) o.OnError(error);
     }
 
     public void Dispose()
     {
-        lock (_lock) { _observers.Clear(); _completed = true; }
+        lock (_lock) { _observers.Clear(); _completed = true; _held = null; }
     }
 
     private void RemoveObserver(IObserver<T> observer)

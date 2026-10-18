@@ -93,7 +93,19 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
     {
         public readonly TaskCompletionSource<T> Tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public void SetResult(object result) => Tcs.TrySetResult((T)result!);
+        /// <summary>
+        /// Runs on the reader thread, before the next frame is dispatched — unlike the awaiting
+        /// continuation, which RunContinuationsAsynchronously schedules later. Subscribe uses it to
+        /// register the event handler, so an event that follows the ack immediately is not dropped.
+        /// </summary>
+        public Action<T>? OnResult { get; set; }
+
+        public void SetResult(object result)
+        {
+            if (!Tcs.Task.IsCompleted)
+                OnResult?.Invoke((T)result!);
+            Tcs.TrySetResult((T)result!);
+        }
         public void SetException(Exception ex) => Tcs.TrySetException(ex);
         // R4: TrySetCanceled (not SetCanceled) — the non-Try version races the reader thread's
         // TrySetResult and the loser throws an unobserved InvalidOperationException inside a
@@ -675,6 +687,7 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
         }, JsonOptions);
 
         var holder = new TcsHolder<SleipnirResponse>();
+        var registered = RegisterHandlerOnAck<T>(holder, ct);
         _pendingRequests[requestId] = holder;
         // Phase R: the record (args + per-subscribe resume policy) is keyed by subscriptionId once
         // the response arrives — ResubscribeAllAsync looks it up by the live subscriptionId, so it
@@ -695,8 +708,7 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
         if (string.IsNullOrEmpty(subscriptionId))
             throw new SleipnirException("Subscribe response missing subscriptionId.");
 
-        var subscription = new SleipnirSubscription<T>(subscriptionId!, UnsubscribeAsync, ct);
-        _subscriptions[subscriptionId!] = new SleipnirSubscriptionHandler<T>(subscription);
+        var subscription = registered() ?? throw new SleipnirException("Subscribe response could not be registered.");
         record.SubscriptionId = subscriptionId;
         _subscribeRequests[subscriptionId!] = record;
 
@@ -728,6 +740,7 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
         }, JsonOptions);
 
         var holder = new TcsHolder<SleipnirResponse>();
+        var registered = RegisterHandlerOnAck<T>(holder, ct);
         _pendingRequests[requestId] = holder;
         var record = new SubscribeRequestRecord(request.Controller, request.Method, args: null, resumePolicy)
         {
@@ -747,12 +760,39 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
         if (string.IsNullOrEmpty(subscriptionId))
             throw new SleipnirException("Subscribe response missing subscriptionId.");
 
-        var subscription = new SleipnirSubscription<T>(subscriptionId!, UnsubscribeAsync, ct);
-        _subscriptions[subscriptionId!] = new SleipnirSubscriptionHandler<T>(subscription);
+        var subscription = registered() ?? throw new SleipnirException("Subscribe response could not be registered.");
         record.SubscriptionId = subscriptionId;
         _subscribeRequests[subscriptionId!] = record;
 
         return subscription;
+    }
+
+    /// <summary>
+    /// Registers the subscription's event handler from the subscribe ack on the reader thread
+    /// (<see cref="TcsHolder{T}.OnResult"/>). The server may push the first event right behind the
+    /// ack; registered in the awaiting continuation (scheduled asynchronously), the handler came
+    /// too late and the reader dropped that event. Returns the registered subscription (null when
+    /// the ack was an error or carried no id — the caller then throws as before). Never throws on
+    /// the reader thread: an unexpected ack shape leaves the handler unregistered.
+    /// </summary>
+    private Func<SleipnirSubscription<T>?> RegisterHandlerOnAck<T>(TcsHolder<SleipnirResponse> holder, CancellationToken ct)
+    {
+        SleipnirSubscription<T>? subscription = null;
+        holder.OnResult = response =>
+        {
+            try
+            {
+                var id = response?.IsSuccess == true ? ExtractSubscriptionId(response) : null;
+                if (string.IsNullOrEmpty(id)) return;
+                subscription = new SleipnirSubscription<T>(id!, UnsubscribeAsync, ct);
+                _subscriptions[id!] = new SleipnirSubscriptionHandler<T>(subscription);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Subscribe ack could not be registered on the reader thread.");
+            }
+        };
+        return () => subscription;
     }
 
     private async Task UnsubscribeAsync(string subscriptionId, CancellationToken ct)
@@ -907,6 +947,31 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
                 }
 
                 var holder = new TcsHolder<SleipnirResponse>();
+                // Re-key the handler under the live id on the reader thread, before the next frame
+                // (see RegisterHandlerOnAck): the server pushes on the new id right behind the ack.
+                // Resume keeps the durable id (already pre-registered above). A new id — Fresh, or a
+                // Resume degraded to fresh — is a new server subscription whose eventId counter
+                // restarts at 1: reset the dedup cursor, or the fresh stream is deduped away. (The
+                // Fresh path used to keep the old cursor and dropped the first events after every
+                // reconnect of a resumable event.)
+                holder.OnResult = r =>
+                {
+                    try
+                    {
+                        var id = ExtractSubscriptionId(r);
+                        if (string.IsNullOrEmpty(id)) return;
+                        if (id != oldId)
+                        {
+                            if (isResume) _subscriptions.TryRemove(oldId, out _);
+                            handler.ResetEventCursor();
+                        }
+                        _subscriptions[id!] = handler;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogDebug(ex, "Re-subscribe ack could not be registered on the reader thread.");
+                    }
+                };
                 _pendingRequests[requestId] = holder;
 
                 await SendRawAsync(subscribeJson, ct);
@@ -921,25 +986,6 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
                     continue;
                 }
 
-                // Resume keeps the durable id (newSubId == oldId); a degraded-to-fresh resume gets a
-                // new id. Either way, re-key the record + handler under the live id.
-                if (newSubId != oldId)
-                {
-                    if (isResume)
-                    {
-                        _subscriptions.TryRemove(oldId, out _);
-                        // Degrade-to-fresh: the new server subscription restarts its eventId counter
-                        // at 1, so the stale pre-reconnect cursor must be reset or the fresh stream
-                        // would be deduped away.
-                        handler.ResetEventCursor();
-                    }
-                    _subscriptions[newSubId!] = handler;
-                }
-                else if (!isResume)
-                {
-                    // Fresh path did not pre-register.
-                    _subscriptions[newSubId!] = handler;
-                }
                 record.SubscriptionId = newSubId;
                 _subscribeRequests[newSubId!] = record;
             }

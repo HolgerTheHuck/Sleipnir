@@ -55,13 +55,18 @@ jobs:
       - name: Build
         run: dotnet build Sleipnir.sln --configuration Release --no-restore
 
+      # The plain run is for the non-coverage legs only: on Linux the coverage run below IS the
+      # test run. Running the suite twice there (incl. the ~15 min ServerCodegenNet10RollForward
+      # test on a cold runner) pushed the leg to ~35 of its 40 minutes on the 1.7.0 tag run.
       - name: Test
+        if: matrix.os != 'ubuntu-latest'
         run: dotnet test SleipnirTests/SleipnirTests.csproj --configuration Release --no-build --verbosity normal
 
       # Coverage on one leg only — the matrix exists for platform coverage; collecting
       # twice doubles CI minutes for nothing. Coverlet is referenced but was never
       # exercised (08-08 audit R11.4); collect the XPlat DataCollector and upload the
       # cobertura/xml reports as a workflow artifact (no external service, no token).
+      # On Linux this is the only test run (see the Test step above).
       - name: Test with coverage
         if: matrix.os == 'ubuntu-latest'
         run: >

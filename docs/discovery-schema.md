@@ -33,6 +33,7 @@ This document specifies how. The guiding invariant:
 | Field | Type | Meaning |
 |---|---|---|
 | `discoveryVersion` | `string` | Schema version, additive-only (see §11). Current: `"1"`. |
+| `contractHash` | `string?` | Since 1.8.0 (additive). `sha256:<hex>` over the contract's canonical form: objects key-sorted; `controllers`, `methods`, `properties`, enum `members` sorted by name; parameters in signature order; `documentation`, `example`, `deprecated` and `contractHash` itself excluded. Same contract ⇒ same hash, whatever the registration or member order. Generated clients embed it and send it back (`Sleipnir-Contract` header / `sleipnir-contract` query) — [CONTRACT_EVOLUTION.md §7](../CONTRACT_EVOLUTION.md#7-who-is-still-out-there--contract-identity-at-runtime). |
 | `controllers` | `ControllerMeta[]` | One per registered `[SleipnirController]`. |
 | `types` | `Record<string, TypeMeta>` | Registry of every expandable contract type (object or enum) referenced anywhere in the payload. Keys are **opaque producer-chosen identifiers** (the .NET producer uses the fully-qualified type name); they are *identity*, not type *syntax*. A `TypeRef` with `kind:"ref"` points here. The .NET producer keys and resolves this map with an **OrdinalIgnoreCase** comparer, and writes both a `ref` and its target `types` key from the same `TypeKey`, so the two always agree on casing in producer output. A non-C# producer should pick one casing convention and keep `ref` and `types` keys consistent. |
 
@@ -52,7 +53,8 @@ This document specifies how. The guiding invariant:
   "methodName": "GetById",
   "returnType": TypeRef,            // the method's effective return type (Task<T> unwrapped; void → {kind:"void"})
   "parameters": [ ParameterMeta, … ],
-  "documentation": "Returns a customer by ID"   // from [SleipnirDocumentation] on the method, or null
+  "documentation": "Returns a customer by ID",  // from [SleipnirDocumentation] on the method, or null
+  "deprecated": "Use Customer.v2.GetById."      // since 1.8.0: [SleipnirDeprecated] (method, else controller); absent when not deprecated
 }
 ```
 

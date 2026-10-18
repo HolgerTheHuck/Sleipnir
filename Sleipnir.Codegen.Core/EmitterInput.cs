@@ -161,7 +161,8 @@ internal static class EmitterBuilder
             parms,
             NormalizeRef(method.ReturnType ?? VoidRef, enumKeys),
             isVoid,
-            method.Documentation);
+            method.Documentation,
+            method.Deprecated);
     }
 
     /// <summary>Recursively collapse enum refs to their numeric wire scalar; recurse into element/key/value.</summary>

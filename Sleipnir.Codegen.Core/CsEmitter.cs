@@ -158,10 +158,10 @@ internal static class CsEmitter
     };
 
     // Root SleipnirGeneratedClient — preamble (before accessors) and footer (after accessors).
-    private static string[] RootPreambleLines(EmitCsOptions opts)
+    private static string[] RootPreambleLines(EmitCsOptions opts, string? contractHash)
     {
         var cap = CapabilityLiteral(opts);
-        return new[]
+        var lines = new List<string>
         {
         "    /// <summary>Root generated Sleipnir client. Wraps an <see cref=\"ISleipnirClient\"/> — a",
         "    /// <see cref=\"SleipnirTransportRouter\"/> by default, which bundles the backends selected by the",
@@ -172,18 +172,29 @@ internal static class CsEmitter
         "    /// colliding with the global SleipnirClient namespace.</summary>",
         "    public sealed class SleipnirGeneratedClient",
         "    {",
+        };
+        // Contract identity (CONTRACT_EVOLUTION.md §7): only for contracts that carry a hash.
+        if (contractHash != null)
+        {
+            lines.Add("        /// <summary>Contract hash this client was generated from — sent on every request so the server can tell which contracts its callers were built against.</summary>");
+            lines.Add("        public const string ContractHash = \"" + contractHash + "\";");
+            lines.Add("");
+        }
+        lines.AddRange(new[]
+        {
         "        private readonly ISleipnirClient _client;",
         "",
         "        /// <summary>Construct with a <see cref=\"SleipnirTransportRouter\"/> bundling the codegen",
         "        /// capability (<c>" + cap + "</c>); defaultTransport=auto (WebSocket → REST+SSE fallback).</summary>",
         "        public SleipnirGeneratedClient(string baseUrl) : this(new SleipnirTransportRouter(",
-        "            new SleipnirRouterOptions { BaseUrl = baseUrl, Capability = " + CapabilityEnum(opts) + " })) { }",
+        "            new SleipnirRouterOptions { BaseUrl = baseUrl, Capability = " + CapabilityEnum(opts) + (contractHash != null ? ", ContractHash = ContractHash" : "") + " })) { }",
         "",
         "        /// <summary>Construct with a custom <see cref=\"ISleipnirClient\"/> (e.g. a pre-configured",
         "        /// <see cref=\"SleipnirTransportRouter\"/>, a specific backend, or <c>SleipnirInMemoryClient</c>",
         "        /// for tests).</summary>",
         "        public SleipnirGeneratedClient(ISleipnirClient client) => _client = client;",
-        };
+        });
+        return lines.ToArray();
     }
 
     private static readonly string[] RootFooterLines =
@@ -249,7 +260,7 @@ internal static class CsEmitter
         sb.Append(EmitControllers(input.Controllers, resolver));
         sb.Append("\n\n"); // template "\n\n" between controllers and root
 
-        sb.Append(EmitRootClient(input.Controllers, opts));
+        sb.Append(EmitRootClient(input.Controllers, opts, input.ContractHash));
 
         sb.Append("\n}\n"); // namespace close + trailing newline
         return sb.ToString();
@@ -320,7 +331,7 @@ internal static class CsEmitter
             var remarks = "        /// <remarks>" + m.MethodName + " is a [SleipnirEvent] (server-push, IObservable&lt;" + elementType + "&gt;).\n" +
                           "        /// Build the call, then subscribe via <see cref=\"SleipnirGeneratedClient.Subscribe{T}\"/> (routes to the\n" +
                           "        /// active event backend — WebSocket / SSE / SignalR depending on the transport profile).</remarks>\n";
-            return doc + remarks + "        public Call " + m.MethodName + "(" + string.Join(", ", argParms) + ") => new Call(SleipnirCall.Init(\"" + ctrl.Name + "\", \"" + m.MethodName + "\")" + argParamChain + ");";
+            return doc + remarks + Obsolete(m) + "        public Call " + m.MethodName + "(" + string.Join(", ", argParms) + ") => new Call(SleipnirCall.Init(\"" + ctrl.Name + "\", \"" + m.MethodName + "\")" + argParamChain + ");";
         }
 
         // Call-Methoden (bestehend): Arg<T>-Wrapper für Dependency-Chaining.
@@ -330,12 +341,18 @@ internal static class CsEmitter
         var argParamChain2 = new StringBuilder();
         foreach (var p in m.Parameters)
             argParamChain2.Append(".Param(\"" + p.Name + "\", " + p.Name + ".ToWireValue())");
-        return doc + todo + "        public Call " + m.MethodName + "(" + string.Join(", ", argParms2) + ") => new Call(SleipnirCall.Init(\"" + ctrl.Name + "\", \"" + m.MethodName + "\")" + argParamChain2 + ");";
+        return doc + todo + Obsolete(m) + "        public Call " + m.MethodName + "(" + string.Join(", ", argParms2) + ") => new Call(SleipnirCall.Init(\"" + ctrl.Name + "\", \"" + m.MethodName + "\")" + argParamChain2 + ");";
     }
 
-    private static string EmitRootClient(List<ResolvedController> controllers, EmitCsOptions opts)
+    // [SleipnirDeprecated] → [System.Obsolete] (mirror of clients/codegen/src/emitters/cs.ts).
+    private static string Obsolete(ResolvedMethod m)
+        => m.Deprecated == null
+            ? ""
+            : "        [System.Obsolete(\"" + m.Deprecated.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\")]\n";
+
+    private static string EmitRootClient(List<ResolvedController> controllers, EmitCsOptions opts, string? contractHash)
     {
         var accessors = controllers.Select(c => "        public " + c.ClassName + " " + c.Name + " { get; } = new();");
-        return string.Join("\n", RootPreambleLines(opts)) + "\n\n" + string.Join("\n", accessors) + "\n\n" + string.Join("\n", RootFooterLines);
+        return string.Join("\n", RootPreambleLines(opts, contractHash)) + "\n\n" + string.Join("\n", accessors) + "\n\n" + string.Join("\n", RootFooterLines);
     }
 }

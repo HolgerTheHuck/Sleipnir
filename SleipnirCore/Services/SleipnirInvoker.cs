@@ -43,6 +43,30 @@ namespace SleipnirCore.Services
         public Func<HttpContext, string, Task<bool>>? PolicyEvaluator { get; set; }
 
         /// <summary>
+        /// Records which client contract each resolved call came from, and calls to
+        /// <c>[SleipnirDeprecated]</c> methods (CONTRACT_EVOLUTION.md §7). Set by <c>AddSleipnir</c>;
+        /// null (a bare invoker) records nothing.
+        /// </summary>
+        public SleipnirClientContractRegistry? ClientContracts { get; set; }
+
+        /// <summary>
+        /// Records one resolved call. Reads the caller's contract from the HttpContext, so it runs
+        /// only where the context may be touched: the single-call path, the serial batch pre-pass
+        /// (<see cref="ResolveAndAuthorizeAsync"/>) and subscribe — never in the parallel fan-out.
+        /// </summary>
+        private void RecordContractUsage(HttpContext? context, InvokeInfo invokeInfo, string controller, string method)
+        {
+            var registry = ClientContracts;
+            if (registry == null)
+                return;
+            var contract = SleipnirClientContractRegistry.Resolve(context);
+            var current = _discoveryService.GetDiscoveryInfo().ContractHash;
+            registry.RecordCall(contract, current);
+            if (invokeInfo.Deprecated != null)
+                registry.RecordDeprecatedCall(controller + "." + method, contract, current);
+        }
+
+        /// <summary>
         /// Wenn gesetzt, werden in Fehler-Responses die echten Exception-Details
         /// (SleipnirError.Details) befüllt. In Produktion auf false belassen, um keine
         /// internen Informationen an Clients preiszugeben. Wird durch AddSleipnir anhand
@@ -261,6 +285,8 @@ namespace SleipnirCore.Services
                         AuthoriseAttribute = GetAttribute<SleipnirAuthoriseAttribute>(methodInfo)
                             ?? GetAttribute<SleipnirAuthoriseAttribute>(controllerType),
                         AnonymousAttribute = GetAttribute<SleipnirAnonymousAttribute>(methodInfo),
+                        Deprecated = (GetAttribute<SleipnirDeprecatedAttribute>(methodInfo)
+                                      ?? GetAttribute<SleipnirDeprecatedAttribute>(controllerType))?.Message,
                         CompiledInvocation = CompileInvocation(controllerType, methodInfo),
                         IsAsync = typeof(Task).IsAssignableFrom(methodInfo.ReturnType),
                         HasResult = GetHasResult(methodInfo)
@@ -425,6 +451,7 @@ namespace SleipnirCore.Services
                 try { await CheckAuthorisation(invokeInfo, context); }
                 catch (UnauthorizedAccessException) { return SleipnirSubscribeResult.Fail(Unauthorized()); }
                 catch (ForbiddenAccessException) { return SleipnirSubscribeResult.Fail(Forbidden()); }
+                RecordContractUsage(context, invokeInfo, request.Controller, request.Method);
 
                 // Parameter binden (wie Calls).
                 var parameters = BuildParameters(request.Params, invokeInfo.MethodInfo!.GetParameters(),
@@ -557,6 +584,7 @@ namespace SleipnirCore.Services
                 {
                     return Forbidden();
                 }
+                RecordContractUsage(context, invokeInfo, request.Controller, request.Method);
 
                 // Im Single-Call ohne Dependencies brauchen wir keine Alias-Auflösung:
                 var parameters = BuildParameters(request.Params, invokeInfo.MethodInfo!.GetParameters(),
@@ -1610,6 +1638,7 @@ namespace SleipnirCore.Services
                 return new AuthDecision(null, null, TraceCallError(request, Forbidden()));
             }
 
+            RecordContractUsage(context, invokeInfo, request.Controller, request.Method);
             return new AuthDecision(invokeInfo, controllerType, null);
         }
 
@@ -2599,6 +2628,9 @@ namespace SleipnirCore.Services
             /// Default-Deny (Health/Ping). Null, wenn nicht vorhanden.
             /// </summary>
             public SleipnirAnonymousAttribute? AnonymousAttribute { get; set; }
+
+            /// <summary><c>[SleipnirDeprecated]</c> message (method, else controller); null when not deprecated.</summary>
+            public string? Deprecated { get; set; }
 
             /// <summary>
             /// Kompilierter Delegate für den Methodenaufruf.

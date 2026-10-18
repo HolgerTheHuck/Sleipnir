@@ -97,6 +97,8 @@ export interface ResolvedMethod {
   /** void / Task (no result) → the emitter still returns SleipnirResponse<unknown>. */
   isVoid: boolean;
   documentation?: string | null;
+  /** `[SleipnirDeprecated]` message; null/absent when not deprecated. */
+  deprecated?: string | null;
 }
 
 export interface ResolvedController {
@@ -119,6 +121,11 @@ export interface EmitterInput {
   enums: ResolvedEnum[];
   /** Raw discovery, retained for emitters that need the example payloads. */
   discovery: DiscoveryInfo;
+  /**
+   * The discovery's `contractHash` — embedded into the generated client and sent on every request
+   * (CONTRACT_EVOLUTION.md §7). Absent for contracts of servers before 1.8.0: emitters emit nothing.
+   */
+  contractHash?: string;
 }
 
 /**
@@ -228,7 +235,7 @@ export function buildEmitterInput(
     resolveController(c, sets),
   );
 
-  return { controllers, types, enums, discovery };
+  return { controllers, types, enums, discovery, contractHash: discovery.contractHash ?? undefined };
 }
 
 function resolveProperty(prop: PropertyMeta, sets: EnumSets): ResolvedProperty {
@@ -262,6 +269,7 @@ function resolveMethod(
     returnType: resolveTypeRef(method.returnType ?? { kind: "void" }, sets.keys, sets.identity),
     isVoid,
     documentation: method.documentation,
+    deprecated: method.deprecated,
   };
 }
 

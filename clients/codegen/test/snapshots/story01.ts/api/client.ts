@@ -37,6 +37,9 @@ export interface SleipnirClientOptions {
   defaultTransport?: SleipnirTransport;
 }
 
+/** Contract hash this client was generated from — sent on every request so the server can tell which contracts its callers were built against. */
+export const SLEIPNIR_CONTRACT_HASH = "sha256:6540975bc36aa1d41594600217db6fb6dc4d04a21f2fdcfde15896642422c529";
+
 export class SleipnirClient {
   private readonly _router: SleipnirTransportRouter;
   readonly stock: StockClient;
@@ -47,7 +50,7 @@ export class SleipnirClient {
   readonly address: AddressClient;
 
   constructor(baseUrl: string, options: SleipnirClientOptions = {}) {
-    this._router = new SleipnirTransportRouter({ baseUrl, capability: "all", ...options });
+    this._router = new SleipnirTransportRouter({ baseUrl, capability: "all", contractHash: SLEIPNIR_CONTRACT_HASH, ...options });
     const build = (controller: string, method: string) => SleipnirCall.init(controller, method);
     this.stock = new StockClient(build);
     this.orderLine = new OrderLineClient(build);

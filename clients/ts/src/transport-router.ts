@@ -17,6 +17,7 @@
 
 import { ExecutionMode, SleipnirConnectionState } from "./types.js";
 import { SleipnirError } from "./errors.js";
+import { withContractHeader } from "./contract.js";
 import type {
   BearerProvider,
   SleipnirConnectionStatus,
@@ -95,6 +96,13 @@ export interface SleipnirRouterOptions {
   callTimeout?: number;
   /** WS handshake probe timeout (ms) for `auto` negotiation. Default 1500. */
   probeTimeout?: number;
+  /**
+   * Contract hash the client was generated from (the discovery's `contractHash`; the generated
+   * `SleipnirClient` sets it). Sent on every request — header `Sleipnir-Contract` on REST/SSE,
+   * query `sleipnir-contract` on the WebSocket/SignalR connect — so the server can tell which
+   * contracts its callers were built against (CONTRACT_EVOLUTION.md §7).
+   */
+  contractHash?: string;
   /** REST backend options (bearer/callTimeout are injected from the shared fields). */
   rest?: Omit<SleipnirRestClientOptions, "bearer" | "callTimeout">;
   /** WebSocket backend options (bearer/callTimeout are injected from the shared fields). */
@@ -235,13 +243,20 @@ export class SleipnirTransportRouter {
     const bearer = opts.bearer;
     const callTimeout = opts.callTimeout;
     const recompute = () => this.recomputeStatus();
+    const contractHash = opts.contractHash;
 
     if (hasBackend(this.capability, "rest")) {
-      this._rest = new SleipnirRestClient(opts.baseUrl, { ...(opts.rest ?? {}), bearer, callTimeout });
+      this._rest = new SleipnirRestClient(opts.baseUrl, {
+        ...(opts.rest ?? {}),
+        headers: withContractHeader(opts.rest?.headers, contractHash),
+        bearer,
+        callTimeout,
+      });
     }
     if (hasBackend(this.capability, "ws")) {
       const user = opts.ws?.onStateChanged;
       this._ws = new SleipnirWebSocketClient(opts.baseUrl, {
+        contractHash,
         ...(opts.ws ?? {}),
         bearer,
         callTimeout,
@@ -255,6 +270,7 @@ export class SleipnirTransportRouter {
       const user = opts.sse?.onStateChanged;
       this._sse = new SleipnirSseClient(opts.baseUrl, {
         ...(opts.sse ?? {}),
+        headers: withContractHeader(opts.sse?.headers, contractHash),
         bearer,
         onStateChanged: (s) => {
           user?.(s);
@@ -265,6 +281,7 @@ export class SleipnirTransportRouter {
     if (hasBackend(this.capability, "signalr")) {
       const user = opts.signalr?.onStateChanged;
       this._signalr = new SleipnirSignalrClient(opts.baseUrl, {
+        contractHash,
         ...(opts.signalr ?? {}),
         bearer,
         onStateChanged: (s) => {

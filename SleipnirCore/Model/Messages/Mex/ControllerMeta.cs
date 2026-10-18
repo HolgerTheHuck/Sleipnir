@@ -19,6 +19,12 @@ namespace SleipnirCore.Model.Messages.Mex
         public TypeRef ReturnType { get; set; } = new TypeRef { Kind = "void" };
         public List<ParameterMeta> Parameters { get; set; } = new();
         public string? Documentation { get; set; }
+        /// <summary>
+        /// <c>[SleipnirDeprecated]</c> message (method-level, else controller-level); absent when the
+        /// method is not deprecated. Additive. Not part of the contract hash (advisory, like
+        /// documentation).
+        /// </summary>
+        public string? Deprecated { get; set; }
     }
 
     public class ParameterMeta

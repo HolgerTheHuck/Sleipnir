@@ -184,8 +184,17 @@ public sealed class SleipnirSseClient : SleipnirClientBase, ISleipnirClient, IDi
             req.Headers.TryAddWithoutValidation("Last-Event-Id", lastEventId.ToString());
         if (!string.IsNullOrEmpty(_bearer))
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _bearer);
+        if (!string.IsNullOrEmpty(ContractHash))
+            req.Headers.TryAddWithoutValidation(SleipnirContract.HeaderName, ContractHash);
         return req;
     }
+
+    /// <summary>
+    /// Contract hash the calling client was generated from, sent as header
+    /// <see cref="SleipnirContract.HeaderName"/> on every subscribe/resume (set by
+    /// <see cref="SleipnirTransportRouter"/> from <see cref="SleipnirRouterOptions.ContractHash"/>).
+    /// </summary>
+    public string? ContractHash { get; set; }
 
     private void ThrowIfDisposed()
     {

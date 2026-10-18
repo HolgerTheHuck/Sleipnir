@@ -76,6 +76,8 @@ internal sealed class MethodMeta
     public TypeRef? ReturnType { get; set; }
     public List<ParameterMeta>? Parameters { get; set; }
     public string? Documentation { get; set; }
+    /// <summary>Wire <c>deprecated</c>: the [SleipnirDeprecated] message, null when not deprecated.</summary>
+    public string? Deprecated { get; set; }
 }
 
 internal sealed class ControllerMeta
@@ -139,7 +141,7 @@ internal sealed class ResolvedParameter
 
 internal sealed class ResolvedMethod
 {
-    public ResolvedMethod(string methodName, string controller, List<ResolvedParameter> parameters, TypeRef returnType, bool isVoid, string? documentation)
+    public ResolvedMethod(string methodName, string controller, List<ResolvedParameter> parameters, TypeRef returnType, bool isVoid, string? documentation, string? deprecated = null)
     {
         MethodName = methodName;
         Controller = controller;
@@ -147,6 +149,7 @@ internal sealed class ResolvedMethod
         ReturnType = returnType;
         IsVoid = isVoid;
         Documentation = documentation;
+        Deprecated = deprecated;
     }
     public string MethodName { get; }
     public string Controller { get; }
@@ -155,6 +158,8 @@ internal sealed class ResolvedMethod
     /// <summary>void / Task (no result) → the emitter still returns Call.</summary>
     public bool IsVoid { get; }
     public string? Documentation { get; }
+    /// <summary>[SleipnirDeprecated] message → <c>[System.Obsolete]</c> on the emitted method.</summary>
+    public string? Deprecated { get; }
 }
 
 internal sealed class ResolvedController
@@ -178,7 +183,11 @@ internal sealed class EmitterInput
         Controllers = controllers;
         Types = types;
         Discovery = discovery;
+        ContractHash = discovery["contractHash"] is JsonValue hash && hash.TryGetValue<string>(out var h) ? h : null;
     }
+    /// <summary>The discovery's <c>contractHash</c> (null for contracts of servers before 1.8.0) —
+    /// embedded into the generated client and sent on every request (CONTRACT_EVOLUTION.md §7).</summary>
+    public string? ContractHash { get; }
     public List<ResolvedController> Controllers { get; }
     public List<ResolvedType> Types { get; }
     /// <summary>Raw discovery, retained for emitters that need example payloads.</summary>

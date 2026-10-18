@@ -233,3 +233,22 @@ describe("emitTsClient story02 (nested-array path descent, golden against story0
     expect(ctrl).toContain("getByIds(articleIds: number[]): TypedCall<Article[], ArticleArrayPaths>");
   });
 });
+describe("emitTsClient — contract identity + deprecation (CONTRACT_EVOLUTION.md §7)", () => {
+  const tree = emitTsClient(buildEmitterInput(readFixture("story01"), new NamingResolver()));
+
+  it("embeds the contract hash and hands it to the router", () => {
+    const client = tree["api/client.ts"];
+    expect(client).toMatch(/export const SLEIPNIR_CONTRACT_HASH = "sha256:[0-9a-f]{64}";/);
+    expect(client).toContain('capability: "all", contractHash: SLEIPNIR_CONTRACT_HASH, ...options');
+  });
+
+  it("marks a [SleipnirDeprecated] method @deprecated on its own JSDoc line", () => {
+    expect(tree["api/controllers.ts"]).toContain("  /**\n   * @deprecated Use Article.GetByIds.\n   */\n  getMany(");
+  });
+
+  it("emits neither for a contract without a hash (servers before 1.8.0)", () => {
+    const old = emitTsClient(buildEmitterInput(readFixture("story02"), new NamingResolver()));
+    expect(old["api/client.ts"]).not.toContain("SLEIPNIR_CONTRACT_HASH");
+    expect(old["api/client.ts"]).not.toContain("contractHash");
+  });
+});

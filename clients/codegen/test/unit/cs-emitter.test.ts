@@ -63,7 +63,11 @@ describe("emitCsClient (golden against story01 snapshot)", () => {
     expect(cs).toContain("public OrderClient Order { get; } = new();");
     // (string baseUrl) wraps a SleipnirTransportRouter with the codegen capability (default all).
     expect(cs).toContain("new SleipnirTransportRouter(");
-    expect(cs).toContain("SleipnirRouterOptions { BaseUrl = baseUrl, Capability = SleipnirBundleCapability.All }");
+    // The story01 contract carries a contractHash: the client embeds it and passes it to the router.
+    expect(cs).toContain("SleipnirRouterOptions { BaseUrl = baseUrl, Capability = SleipnirBundleCapability.All, ContractHash = ContractHash }");
+    expect(cs).toMatch(/public const string ContractHash = "sha256:[0-9a-f]{64}";/);
+    // [SleipnirDeprecated] (Article.GetMany) → [System.Obsolete].
+    expect(cs).toContain("        [System.Obsolete(\"Use Article.GetByIds.\")]\n        public Call GetMany(");
     // Event entry point routes through the router to the active event backend.
     expect(cs).toContain("public Task<SleipnirSubscription<T>> Subscribe<T>(Call call, ResumePolicy? resumePolicy = null, CancellationToken ct = default)");
     // A custom ISleipnirClient overload remains (tests / pre-configured backends).

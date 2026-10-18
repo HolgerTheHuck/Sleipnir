@@ -5,7 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — 1.8.0 (contract evolution)
+## [1.8.0] — 2026-10-18
+
+Ships on both channels: NuGet (`Sleipnir.*` lockstep) and npm (`sleipnir-client`,
+`sleipnir-codegen`). Contract evolution for long-running projects:
+[CONTRACT_EVOLUTION.md](CONTRACT_EVOLUTION.md) says which changes break deployed clients, the
+compatibility gate checks it in the build against a baseline (`SleipnirContractBaseline`,
+`sleipnir-gen diff`), and the contract identity (`contractHash`, `[SleipnirDeprecated]`,
+`/observability` → `contracts`) shows which clients are still in the field. Everything is opt-in
+or additive except the client fix for named parameters (behavior change, migration note below).
 
 ### Added — contract compatibility gate ([CONTRACT_EVOLUTION.md](CONTRACT_EVOLUTION.md))
 
@@ -29,6 +37,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`sleipnir-gen diff --base <src> --head <src>`** — the same rules for any pipeline:
   `--fail-on breaking|soft|never`, `--rollback`, `--json`; exit `5` on changes at/above the
   threshold.
+
+### Added — contract identity at runtime ([CONTRACT_EVOLUTION.md §7](CONTRACT_EVOLUTION.md#7-who-is-still-out-there--contract-identity-at-runtime))
+
+- **`contractHash`** in discovery and `contract.sleipnir.json` (additive, `discoveryVersion` stays
+  `"1"`): `sha256:<hex>` over the canonical contract (sorted; parameters in signature order;
+  `documentation`, `example`, `deprecated` excluded). The live discovery and the committed file
+  hash identically. The committed contracts in this repo and the Story-01 golden are regenerated.
+- **Generated clients send it.** TS/JS `SLEIPNIR_CONTRACT_HASH`, C# `SleipnirGeneratedClient.ContractHash`,
+  Python `SLEIPNIR_CONTRACT_HASH`, passed to the router (`contractHash` / `SleipnirRouterOptions.ContractHash`):
+  header `Sleipnir-Contract` on REST/SSE, query `sleipnir-contract` on the WebSocket/SignalR connect.
+  New: TS `CONTRACT_HEADER`/`CONTRACT_QUERY`, C# `SleipnirContract`, `ContractHash` on
+  `SleipnirRestJsonClient`/`SleipnirSseClient`. Contracts without a hash (servers before 1.8.0)
+  generate exactly as before.
+- **The server counts** every resolved call per client contract and every call to a deprecated
+  method per route and contract (`SleipnirClientContractRegistry`, registered by `AddSleipnir`):
+  `/observability` → `contracts { current, clients[], deprecatedCalls[] }`, metrics
+  `sleipnir.client.contract.calls` and `sleipnir.deprecated.calls`, one `Information` log when a
+  non-current contract calls for the first time. Values are validated and capped (64 tracked
+  contracts; `unknown` / `invalid` / `other`). Recorded only where the HttpContext may be touched
+  (single call, serial batch pre-pass, subscribe) — never in the parallel fan-out.
+- **`[SleipnirDeprecated("…")]`** on a method or controller (method-level wins): discovery
+  `deprecated`; generated `@deprecated` (TS/JS), `[System.Obsolete]` (C#, both emitters — parity
+  gate), a Python docstring note; compatibility id `method-deprecated` (safe). Story 01 dogfoods it
+  with `Article.GetMany` (deprecated forward to `GetByIds`).
 
 ### Changed — clients: named parameters are name-only (behavior change)
 

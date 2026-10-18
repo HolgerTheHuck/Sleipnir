@@ -1,6 +1,7 @@
 using SleipnirCommon.Attribute;
 using SleipnirCore.Attributes;
 using SleipnirCore.Model.Messages.Mex;
+using SleipnirCore.Services.Helper;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -168,6 +169,9 @@ namespace SleipnirCore.Services
                         Documentation = methodDoc,
                         MethodName = methodAttr?.Name ?? eventAttr?.Name ?? method.Name,
                         ReturnType = BuildTypeRef(effectiveReturnType, returnNullable, ctx),
+                        // Method-level [SleipnirDeprecated] overrides the controller-level one.
+                        Deprecated = (method.GetCustomAttribute<SleipnirDeprecatedAttribute>()
+                                      ?? controllerType.GetCustomAttribute<SleipnirDeprecatedAttribute>())?.Message,
                     };
 
                     var paramDoc = method.GetCustomAttribute<SleipnirDocumentationAttribute>()?.Summary;
@@ -195,6 +199,7 @@ namespace SleipnirCore.Services
                 discovery.Controllers.Add(controllerMeta);
             }
 
+            discovery.ContractHash = ContractHash.Compute(discovery);
             return discovery;
         }
 

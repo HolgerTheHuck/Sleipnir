@@ -129,6 +129,39 @@ public static class SleipnirMetrics
         unit: "{event}",
         description: "Events dropped because the per-subscription buffer was full (backpressure).");
 
+    // ─── Contract identity (CONTRACT_EVOLUTION.md §7) ───────────────────────
+
+    /// <summary>
+    /// Resolved calls per client contract (the <c>contractHash</c> a generated client sends).
+    /// Tags: sleipnir.contract (hash prefix, or unknown/invalid/other — bounded by
+    /// <see cref="SleipnirClientContractRegistry.MaxTrackedContracts"/>), sleipnir.contract.current.
+    /// </summary>
+    internal static readonly Counter<long> ClientContractCalls = Meter.CreateCounter<long>(
+        "sleipnir.client.contract.calls",
+        unit: "{call}",
+        description: "Sleipnir calls per client contract (the contract hash the calling client was generated from).");
+
+    /// <summary>
+    /// Calls to <c>[SleipnirDeprecated]</c> methods. Tags: rpc.route (Controller.Method),
+    /// sleipnir.contract (hash prefix). Zero for long enough = safe to remove.
+    /// </summary>
+    internal static readonly Counter<long> DeprecatedCalls = Meter.CreateCounter<long>(
+        "sleipnir.deprecated.calls",
+        unit: "{call}",
+        description: "Calls to deprecated Sleipnir methods, per route and client contract.");
+
+    internal static void RecordClientContractCall(string contract, bool current)
+    {
+        if (!ClientContractCalls.Enabled) return;
+        ClientContractCalls.Add(1, new TagList { RpcSystemTag, new("sleipnir.contract", contract), new("sleipnir.contract.current", current) });
+    }
+
+    internal static void RecordDeprecatedCall(string route, string contract)
+    {
+        if (!DeprecatedCalls.Enabled) return;
+        DeprecatedCalls.Add(1, new TagList { RpcSystemTag, new("rpc.route", route), new("sleipnir.contract", contract) });
+    }
+
     /// <summary>Recordet ein gedropptes Event (Backpressure-Metrik).</summary>
     public static void EventDropped(string subscriptionId)
     {

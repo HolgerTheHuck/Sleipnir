@@ -260,6 +260,15 @@
       ]
     },
     {
+      "name": "a newly deprecated method is reported as safe (the first step of a removal)",
+      "rollback": false,
+      "base": {"discoveryVersion":"1","controllers":[{"name":"Article","methods":[{"methodName":"GetMany","returnType":{"kind":"void"},"parameters":[]}]}],"types":{}},
+      "head": {"discoveryVersion":"1","controllers":[{"name":"Article","methods":[{"methodName":"GetMany","returnType":{"kind":"void"},"parameters":[],"deprecated":"Use Article.GetByIds."}]}],"types":{}},
+      "expected": [
+        {"id":"method-deprecated","severity":"safe","site":"Article.GetMany","position":null,"direction":"old-clients","message":"Method 'Article.GetMany' is deprecated on the server: Use Article.GetByIds."}
+      ]
+    },
+    {
       "name": "a new byte[] parameter is optional (bound from binaryData)",
       "rollback": false,
       "base": {"discoveryVersion":"1","controllers":[{"name":"Doc","methods":[{"methodName":"Upload","returnType":{"kind":"void"},"parameters":[{"parameterName":"name","parameterType":{"kind":"scalar","name":"string"}}]}]}],"types":{}},

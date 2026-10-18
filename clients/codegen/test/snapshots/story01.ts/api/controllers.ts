@@ -33,6 +33,13 @@ export class ArticleClient {
   getByIds(articleIds: number[]): TypedCall<Article[], ArticleArrayPaths> {
     return new TypedCall<Article[], ArticleArrayPaths>(this._build("Article", "GetByIds").with({ articleIds: articleIds }));
   }
+
+  /**
+   * @deprecated Use Article.GetByIds.
+   */
+  getMany(articleIds: number[]): TypedCall<Article[], ArticleArrayPaths> {
+    return new TypedCall<Article[], ArticleArrayPaths>(this._build("Article", "GetMany").with({ articleIds: articleIds }));
+  }
 }
 
 export class OrderClient {

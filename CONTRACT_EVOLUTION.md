@@ -22,6 +22,9 @@
     breaking change.
 - Both run the same rules (a C# and a TS engine, kept identical by a shared executable spec:
   [`clients/codegen/test/fixtures/compat/cases.json`](clients/codegen/test/fixtures/compat/cases.json)).
+- **Who would it break?** Every contract has a `contractHash`; generated clients send theirs, and
+  the server counts calls per contract and calls to `[SleipnirDeprecated]` methods
+  (`/observability`, metrics) — so a method is removed when the data says nobody calls it (§7).
 
 ## 1. What the wire tolerates (the facts the rules rest on)
 
@@ -68,6 +71,7 @@ understood; **safe** = invisible or purely additive.
 | Method removed / renamed | `method-removed` | breaking |
 | Method switched between call and `[SleipnirEvent]` | `method-kind-changed` | breaking |
 | Controller / method added | `controller-added` / `method-added` | safe |
+| Method newly `[SleipnirDeprecated]` (the first step of a removal, §7) | `method-deprecated` | safe |
 
 ### Parameters (input)
 
@@ -125,7 +129,8 @@ Sites name exactly where: `Order.Find(take)`, `Order.Get -> return.Customer.Name
 one, mark the old one in the docs; drop it in the next major. Or add a new method.
 
 **Rename or reshape a method.** Add the new method (or a `Customer.v2` controller), keep the old
-one delegating to it. Remove the old one only when no client uses it anymore.
+one delegating to it and mark it `[SleipnirDeprecated("Use Customer.v2.GetById.")]`. Remove the old
+one only when no client uses it anymore — §7 tells you when that is.
 
 **Add a parameter.** Make it nullable or give it a C# default (`int take = 20`). The TS/JS client
 omits `undefined` values (since 1.8.0), so the C# default applies for new clients too; an explicit
@@ -201,3 +206,42 @@ JSON report has the same shape as `SleipnirContractCompatReport`:
   no `AllowReadingFromString`). A host that serializes enums as strings makes renaming a member
   breaking and renumbering harmless.
 - **Opaque types** (not modelled in discovery) are compared by name only (`opaque-changed`).
+
+## 7. Who is still out there — contract identity at runtime
+
+The gate tells you *whether* a change would break the clients built against the baseline. Long-
+running projects need the second half: *whom* it would break. Every contract has an identity,
+and every generated client reports it.
+
+- **`contractHash`** — discovery and `contract.sleipnir.json` carry
+  `"contractHash": "sha256:<hex>"`: SHA-256 over the contract's canonical form (objects key-sorted,
+  controllers/methods/types/properties/enum members sorted by name, parameters in signature
+  order). `documentation`, `example` and `deprecated` are excluded — a docs edit does not make
+  clients "old". The live discovery and the committed (sorted) file hash identically.
+- **Generated clients embed and send it.** TS/JS `SLEIPNIR_CONTRACT_HASH`, C#
+  `SleipnirGeneratedClient.ContractHash`, Python `SLEIPNIR_CONTRACT_HASH`; the runtime sends it on
+  every request — header `Sleipnir-Contract` on REST/SSE, query `sleipnir-contract` on the
+  WebSocket/SignalR connect (a browser cannot set upgrade headers). Hand-written clients send
+  nothing and count as `unknown`.
+- **The server counts.** Every resolved call is recorded per contract; every call to a
+  `[SleipnirDeprecated]` method per route and contract:
+  - `/observability` → `contracts: { current, clients: [{ contract, current, firstSeen, lastSeen, calls }], deprecatedCalls: [{ route, contract, firstSeen, lastSeen, calls }] }`
+  - metrics `sleipnir.client.contract.calls{sleipnir.contract, sleipnir.contract.current}` and
+    `sleipnir.deprecated.calls{rpc.route, sleipnir.contract}`
+  - one log line (`Information`) when a contract that is not current calls for the first time.
+
+  The value is client-controlled: it is validated (`sha256:` + 64 hex, else `invalid`), and at
+  most 64 distinct contracts are tracked (the rest count as `other`).
+
+**`[SleipnirDeprecated("…")]`** on a method or controller (the method-level one wins): the method
+keeps working; discovery reports `deprecated`; generated clients mark it (`@deprecated`,
+`[System.Obsolete]`, a Python docstring note); the compatibility check reports
+`method-deprecated` (safe); the server counts its calls.
+
+**The removal workflow** this enables:
+
+1. Add the replacement, mark the old method `[SleipnirDeprecated("Use X.")]`, release.
+2. Watch `deprecatedCalls` (or `sleipnir.deprecated.calls`) per contract.
+3. When the old method has had no calls for long enough — and `clients` shows no contract older
+   than the deprecation still calling at all — remove it. The compatibility gate then reports a
+   breaking `method-removed` against the old baseline; move the baseline with that release.

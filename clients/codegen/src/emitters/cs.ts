@@ -270,12 +270,19 @@ function emitMethod(ctrl: ResolvedController, m: ResolvedMethod, resolver: Namin
     return `${doc}        /// <remarks>${m.methodName} is a [SleipnirEvent] (server-push, IObservable&lt;${payload}&gt;).
         /// Build the call, then subscribe via <see cref="SleipnirGeneratedClient.Subscribe{T}"/> (routes to the
         /// active event backend — WebSocket / SSE / SignalR depending on the transport profile).</remarks>
-        public Call ${m.methodName}(${params.join(", ")}) => new Call(SleipnirCall.Init("${ctrl.name}", "${m.methodName}")${paramChain});`;
+${obsolete(m)}        public Call ${m.methodName}(${params.join(", ")}) => new Call(SleipnirCall.Init("${ctrl.name}", "${m.methodName}")${paramChain});`;
   }
   const todo = m.returnType.kind === "opaque" && !m.isVoid
     ? `        // TODO: return type "${m.returnType.nativeName ?? "?"}" is an opaque framework/BCL type not modelled in discovery; deserialize as object.\n`
     : "";
-  return `${doc}${todo}        public Call ${m.methodName}(${params.join(", ")}) => new Call(SleipnirCall.Init("${ctrl.name}", "${m.methodName}")${paramChain});`;
+  return `${doc}${todo}${obsolete(m)}        public Call ${m.methodName}(${params.join(", ")}) => new Call(SleipnirCall.Init("${ctrl.name}", "${m.methodName}")${paramChain});`;
+}
+
+/** [SleipnirDeprecated] → [System.Obsolete] (mirror of Sleipnir.Codegen.Core/CsEmitter.cs). */
+function obsolete(m: ResolvedMethod): string {
+  if (!m.deprecated) return "";
+  const literal = m.deprecated.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `        [System.Obsolete("${literal}")]\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +293,14 @@ function emitRootClient(input: EmitterInput, capability: CsBundleCapability): st
   const accessors = input.controllers.map((c) =>
     `        public ${c.className} ${c.name} { get; } = new();`);
   const capEnum = `SleipnirBundleCapability.${capability.charAt(0).toUpperCase()}${capability.slice(1)}`;
+  // Contract identity (CONTRACT_EVOLUTION.md §7): only for contracts that carry a hash.
+  const contractConst = input.contractHash
+    ? `        /// <summary>Contract hash this client was generated from — sent on every request so the server can tell which contracts its callers were built against.</summary>
+        public const string ContractHash = "${input.contractHash}";
+
+`
+    : "";
+  const contractOption = input.contractHash ? ", ContractHash = ContractHash" : "";
   return `    /// <summary>Root generated Sleipnir client. Wraps an <see cref="ISleipnirClient"/> — a
     /// <see cref="SleipnirTransportRouter"/> by default, which bundles the backends selected by the
     /// codegen <c>--transport ${capability}</c> capability and routes calls to the active call backend
@@ -295,12 +310,12 @@ function emitRootClient(input: EmitterInput, capability: CsBundleCapability): st
     /// colliding with the global SleipnirClient namespace.</summary>
     public sealed class SleipnirGeneratedClient
     {
-        private readonly ISleipnirClient _client;
+${contractConst}        private readonly ISleipnirClient _client;
 
         /// <summary>Construct with a <see cref="SleipnirTransportRouter"/> bundling the codegen
         /// capability (<c>${capability}</c>); defaultTransport=auto (WebSocket → REST+SSE fallback).</summary>
         public SleipnirGeneratedClient(string baseUrl) : this(new SleipnirTransportRouter(
-            new SleipnirRouterOptions { BaseUrl = baseUrl, Capability = ${capEnum} })) { }
+            new SleipnirRouterOptions { BaseUrl = baseUrl, Capability = ${capEnum}${contractOption} })) { }
 
         /// <summary>Construct with a custom <see cref="ISleipnirClient"/> (e.g. a pre-configured
         /// <see cref="SleipnirTransportRouter"/>, a specific backend, or <c>SleipnirInMemoryClient</c>

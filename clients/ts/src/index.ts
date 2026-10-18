@@ -40,7 +40,8 @@ export {
   type IStreamResult,
   type IStreamSubscriber,
 } from "./signalr.js";
-export { buildParams, buildSingle, buildMulti, toBase64, fromBase64 } from "./request.js";
+export { buildParams, buildSingle, buildMulti, toBase64, fromBase64, NAMED_ONLY } from "./request.js";
+export { CONTRACT_HEADER, CONTRACT_QUERY } from "./contract.js";
 export {
   SleipnirTransportRouter,
   SleipnirTransportNotBundledError,

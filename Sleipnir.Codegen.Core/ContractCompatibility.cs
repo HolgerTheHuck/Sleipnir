@@ -245,6 +245,14 @@ public static class ContractCompatibility
                 return;
             }
 
+            // Newly deprecated on the server: nothing breaks, but it is the first step of a removal.
+            var serverDeprecated = server["deprecated"] is JsonValue sd && sd.TryGetValue<string>(out var sdText) ? sdText : null;
+            if (serverDeprecated != null && client["deprecated"] is null)
+            {
+                Add("method-deprecated", Safe, route, null,
+                    $"Method '{route}' is deprecated on the server: {serverDeprecated}");
+            }
+
             CompareParameters(route, Params(client), Params(server));
 
             if (serverEvent)

@@ -126,6 +126,8 @@ namespace SleipnirRest
                         return Results.Unauthorized();
 
                     var snap = registry.GetSnapshot();
+                    var contracts = httpContext.RequestServices.GetService<SleipnirClientContractRegistry>()
+                        ?.GetSnapshot(sleipnirService.GetDiscoveryInfo().ContractHash);
                     // Transport flags: REST is on whenever this endpoint is reachable (it lives in the
                     // REST endpoint group, which is only mapped when UseRest != false). WebSocket and
                     // SignalR are threaded in from SleipnirOptions so the snapshot reflects the
@@ -140,6 +142,28 @@ namespace SleipnirRest
                         errorCount = snap.ErrorCount,
                         batchCount = snap.BatchCount,
                         uptimeMs = (long)(DateTimeOffset.UtcNow - registry.StartedAtUtc).TotalMilliseconds,
+                        // Which contracts the callers were built against, and who still calls
+                        // deprecated methods (CONTRACT_EVOLUTION.md §7).
+                        contracts = contracts == null ? null : new
+                        {
+                            current = contracts.Current,
+                            clients = contracts.Clients.Select(c => new
+                            {
+                                contract = c.Contract,
+                                current = c.Current,
+                                firstSeen = c.FirstSeen,
+                                lastSeen = c.LastSeen,
+                                calls = c.Calls,
+                            }),
+                            deprecatedCalls = contracts.DeprecatedCalls.Select(d => new
+                            {
+                                route = d.Route,
+                                contract = d.Contract,
+                                firstSeen = d.FirstSeen,
+                                lastSeen = d.LastSeen,
+                                calls = d.Calls,
+                            }),
+                        },
                     };
                     return Results.Json(payload);
                 });

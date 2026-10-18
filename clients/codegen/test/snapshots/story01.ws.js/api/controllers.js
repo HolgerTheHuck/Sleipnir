@@ -43,6 +43,16 @@ export class ArticleClient {
     const call = this._build("Article", "GetByIds").with({ articleIds: articleIds });
     return call;
   }
+
+  /**
+   * @deprecated Use Article.GetByIds.
+   * @param {number[]} articleIds
+   * @returns {Promise<SleipnirResponse<Article[] | null>>}
+   */
+  async getMany(articleIds) {
+    const call = this._build("Article", "GetMany").with({ articleIds: articleIds });
+    return call;
+  }
 }
 
 export class OrderClient {

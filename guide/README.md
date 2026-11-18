@@ -46,7 +46,7 @@ binary-efficient streaming), but REST + SSE is the friend you can always reach f
 
 ## Prerequisites
 
-- **.NET 8 SDK** (the repo targets `net8.0`; runs on .NET 8+).
+- **.NET 10 SDK** (the guide apps target `net10.0`; the Sleipnir packages support .NET 8 and .NET 10).
 - **Node 18+** for the web (chapter 3) and Svelte portal (chapter 4) clients.
 - A one-time `dotnet dev-certs https --trust` for the `https://localhost:5010` dev URL.
 - Everything is wired with **in-repo project references** — no NuGet or npm restore of

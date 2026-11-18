@@ -74,7 +74,7 @@ public class DiscoveryContractTests : IAsyncLifetime
             : new[] { "Release", "Debug" };
         foreach (var cfg in configs)
         {
-            var dll = Path.Combine(binRoot, cfg, "net8.0", "Story01.dll");
+            var dll = Path.Combine(binRoot, cfg, "net10.0", "Story01.dll");
             if (File.Exists(dll)) return dll;
         }
         // Last resort: search whatever exists.

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>Sleipnir.Hub</PackageId>
@@ -34,8 +34,15 @@
     <None Include="README.md" Pack="true" PackagePath="README.md" />
   </ItemGroup>
 
-  <ItemGroup>
+  <!-- The SignalR MessagePack protocol follows the target's ASP.NET Core major. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Protocols.MessagePack" Version="8.0.32" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Protocols.MessagePack" Version="10.0.15" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Floor: transitively, SignalR.Protocols.MessagePack 8.0.x would pull a vulnerable
          MessagePack 2.5.x (GHSA-hv8m, GHSA-qhrr, ...). The direct reference forces the patched
          2.5.x — standalone hosts without their own 3.x reference would otherwise load the

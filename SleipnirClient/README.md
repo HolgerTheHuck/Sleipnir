@@ -29,8 +29,8 @@ live in [`samples/csharp/`](../samples/csharp).
 <PackageReference Include="Sleipnir.Client" Version="1.8.1" />
 ```
 
-The package targets `net8.0` (runs on .NET 8+). It brings `MessagePack` and the
-SignalR client transitively for the SignalR transport.
+The package targets `net8.0` and `net10.0` (runs on .NET 8+). It brings `MessagePack` and the
+SignalR client (8.0.x on net8.0, 10.0.x on net10.0) transitively for the SignalR transport.
 
 ## Quick start
 

@@ -26,7 +26,7 @@ dotnet run --project Sleipnir/Sleipnir.csproj
 
 ## Architecture
 
-Sleipnir is a **multi-transport RPC framework** for .NET 8 that is **code-first** (no `.proto` files, no IDL). The C# classes decorated with attributes *are* the contract. Discovery metadata is generated at runtime.
+Sleipnir is a **multi-transport RPC framework** for .NET 8 and .NET 10 (libraries multi-target `net8.0;net10.0`; samples, stories and tests run on `net10.0`) that is **code-first** (no `.proto` files, no IDL). The C# classes decorated with attributes *are* the contract. Discovery metadata is generated at runtime.
 
 ### Project Dependency Graph
 

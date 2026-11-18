@@ -25,12 +25,11 @@ jobs:
         with:
           languages: csharp
 
-      # Pin the SDKs so the analysis tracks the solution's target frameworks rather than the
-      # runner default: 10.0.x builds the net10.0 test project, 8.0.x matches the libraries.
+      # Pin the SDK so the analysis tracks the solution's target frameworks rather than the
+      # runner default: 10.0.x builds both library TFMs (net8.0 + net10.0).
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
-            8.0.x
             10.0.x
 
       - uses: github/codeql-action/autobuild@v3

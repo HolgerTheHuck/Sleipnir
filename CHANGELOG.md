@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — .NET 10 support (.NET 8 left support on 2026-11-10)
+
+- **All library packages multi-target `net8.0` and `net10.0`** (`Sleipnir.Common` additionally
+  keeps `netstandard2.1`). A .NET 10+ application gets the `net10.0` build with ASP.NET Core 10
+  dependencies (`Microsoft.AspNetCore.SignalR.Client` / `.Protocols.MessagePack` 10.0.x); .NET 8
+  applications keep the unchanged `net8.0` build. No API or wire change.
+- `Sleipnir.Core` no longer references the `Microsoft.AspNetCore.Authorization` and
+  `Microsoft.Extensions.Caching.Abstractions` packages — both come from the ASP.NET Core shared
+  framework it already references.
+- `sleipnir-linq` (`Sleipnir.Client.Linq.Codegen`) ships `net8.0` and `net10.0` tool builds, so it
+  runs on a machine with only the .NET 10 runtime. `Sleipnir.Server.Codegen` stays `net8.0` and
+  rolls forward to the newest installed runtime, as before.
+- `dotnet new` templates, samples, stories and the guide apps target `net10.0`; building the
+  repository needs the .NET 10 SDK (no .NET 8 runtime required). CI installs 10.0.x only.
+
 ### Added
 
 - **Localizable 401/403 messages** — `SleipnirOptions.Messages` (`SleipnirMessages`) sets the text

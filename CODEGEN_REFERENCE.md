@@ -275,7 +275,7 @@ Reference the generator (as an analyzer) and the Sleipnir client runtime, and dr
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
     <!-- The runtime the generated stubs call (SleipnirRestJsonClient, ISleipnirClient, SleipnirCall, ...). -->

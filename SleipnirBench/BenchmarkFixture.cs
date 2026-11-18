@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using System.Text;
 using System.Text.Json;
 
@@ -23,7 +24,7 @@ namespace SleipnirBench;
 public class BenchmarkFixture
 {
     private TestServer _testServer = null!;
-    private Microsoft.AspNetCore.Hosting.IWebHost? _realServer;
+    private Microsoft.Extensions.Hosting.IHost? _realServer;
     private int _port;
     private int _grpcPort;
 
@@ -65,7 +66,9 @@ public class BenchmarkFixture
         ServerUrl = $"http://localhost:{_port}/";
         GrpcServerUrl = $"http://localhost:{_grpcPort}/";
 
-        _realServer = Microsoft.AspNetCore.WebHost.CreateDefaultBuilder()
+        // Generic host (IWebHost/WebHost are obsolete since ASP.NET Core 10, ASPDEPR008).
+        _realServer = Microsoft.Extensions.Hosting.Host.CreateDefaultBuilder()
+            .ConfigureWebHostDefaults(web => web
             .ConfigureKestrel(serverOptions =>
             {
                 // REST/WebSocket/SignalR — HTTP/1.1 (WebSocket-Upgrade braucht HTTP/1.1).
@@ -119,7 +122,7 @@ public class BenchmarkFixture
                     // gRPC über h2c (Kestrel-Default Http1AndHttp2 verhandelt HTTP/2).
                     endpoints.MapGrpcService<CustomerGrpcService>();
                 });
-            })
+            }))
             .Build();
 
         _realServer.Start();

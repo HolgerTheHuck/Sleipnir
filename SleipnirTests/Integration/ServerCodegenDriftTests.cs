@@ -58,7 +58,7 @@ public class ServerCodegenDriftTests
         var binRoot = Path.Combine(repo.FullName, "stories", "01-n-plus-one-screen", "bin");
         foreach (var cfg in ConfigOrder())
         {
-            var dll = Path.Combine(binRoot, cfg, "net8.0", "Story01.dll");
+            var dll = Path.Combine(binRoot, cfg, "net10.0", "Story01.dll");
             if (File.Exists(dll)) return dll;
         }
         if (Directory.Exists(binRoot))
@@ -100,7 +100,7 @@ public class ServerCodegenDriftTests
         var binRoot = Path.Combine(repo.FullName, "guide", "server", "bin");
         foreach (var cfg in ConfigOrder())
         {
-            var dll = Path.Combine(binRoot, cfg, "net8.0", "Story.Api.dll");
+            var dll = Path.Combine(binRoot, cfg, "net10.0", "Story.Api.dll");
             if (File.Exists(dll)) return dll;
         }
         if (Directory.Exists(binRoot))

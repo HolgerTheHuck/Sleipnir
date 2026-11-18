@@ -18,11 +18,10 @@ on:
   workflow_dispatch: ~
 
 env:
-  # 10.0.x: SDK used for build/restore (the test project targets net10.0; the newest
-  # installed SDK wins). 8.0.x: runtime for the net8.0 libraries/stories that the suite
-  # launches out-of-process (Story01 discovery gate, Sleipnir.Server.Codegen).
+  # 10.0.x builds both library TFMs (net8.0 + net10.0; the net8.0 targeting pack is restored)
+  # and runs everything the suite launches: the tests, stories and samples target net10.0, and
+  # the net8.0 export tool (Sleipnir.Server.Codegen) rolls forward (RollForward=LatestMajor).
   DOTNET_VERSION: |
-    8.0.x
     10.0.x
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true

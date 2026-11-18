@@ -593,7 +593,7 @@ export const SLEIPNIR_CONTRACT_HASH = "${input.contractHash}";
 // and falls back to REST+SSE on failure; useTransport() switches explicitly. The public surface
 // is identical across all capabilities — only the bundled backends differ.
 import { SleipnirCall, SleipnirTransportRouter } from "sleipnir-client";
-import type { SleipnirResponse, SleipnirRequest, SubscribeHandlers, SleipnirSubscription,${events ? " SleipnirSubscribeOptions," : ""} SleipnirTransport, SleipnirRestClient, SleipnirWebSocketClient, SleipnirSseClient, SleipnirSignalrClient, SleipnirRestClientOptions, SleipnirWebSocketClientOptions, SleipnirSseClientOptions, SleipnirSignalrClientOptions } from "sleipnir-client";
+import type { SleipnirResponse, SleipnirRequest, SubscribeHandlers, SleipnirSubscription,${events ? " SleipnirSubscribeOptions," : ""} SleipnirTransport, SleipnirConnectionStore, SleipnirRestClient, SleipnirWebSocketClient, SleipnirSseClient, SleipnirSignalrClient, SleipnirRestClientOptions, SleipnirWebSocketClientOptions, SleipnirSseClientOptions, SleipnirSignalrClientOptions } from "sleipnir-client";
 import { Batch, TypedCall } from "./typed-call.js";
 ${imports}
 
@@ -640,6 +640,14 @@ ${inits.join("\n")}
 
   /** The resolved transport profile (\`null\` until \`auto\` is negotiated). */
   get activeTransport(): Exclude<SleipnirTransport, "auto"> | null { return this._router.activeTransport; }
+
+  /**
+   * Aggregated connection status of the active transport profile, as a store
+   * (\`connection.state\` + \`connection.subscribe(listener) → unsubscribe\`). Same vocabulary on
+   * every transport: \`connecting | open | reconnecting | closed\`. Store-shaped (Svelte store
+   * contract), so Svelte and Tsazor \`observe()\` consume it without adapters.
+   */
+  get connection(): SleipnirConnectionStore { return this._router.connection; }
 
   /** Execute a single typed call over the active call backend; \`response.data\` is narrowed to T. */
   async call<T, TPaths extends Record<string, unknown>>(call: TypedCall<T, TPaths>): Promise<TypedResponse<T>> {

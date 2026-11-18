@@ -179,6 +179,28 @@ Every emitter produces the **same public client surface** regardless of
 `SleipnirTransportRouter` bundles. Transport is selected at runtime
 (`auto` default), not codegen time — `--transport` is a capability, not a shape.
 
+The generated *files* do differ by capability (the header comment and the
+`capability:` the constructor passes to the router), so generating once with the
+default and once with `--transport rest` yields a diff for the same contract.
+Pin the value in one place — e.g. a `package.json` script — and pass the **same**
+`--transport` to the regular run and to `--selfcheck`; otherwise the drift gate
+reports the capability change as drift.
+
+### Connection status
+
+The generated TS/JS `SleipnirClient` exposes the router's aggregated connection
+status as `client.connection` — a store with `state` and
+`subscribe(listener) → unsubscribe` (the listener fires immediately with the
+current value, then on every change). The vocabulary is the same on every
+transport: `connecting | open | reconnecting | closed` (`rest` reports `open`, and
+`reconnecting` while an SSE event stream reconnects). It follows the Svelte store
+contract, so UI code can bind it directly instead of reaching into a specific
+backend (`client.sse`/`client.ws`):
+
+```ts
+const off = client.connection.subscribe((s) => (indicator.textContent = s));
+```
+
 The TS/JS emitters generate a **typed call surface**: a `TypedCall` /
 `TypedRequest` builder with path records (`XPaths` / `XArrayPaths`) constraining
 `exposes(jsonPath, alias)` to real JSONPaths, and a typed `alias(name)` that

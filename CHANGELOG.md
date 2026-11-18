@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`sleipnir-codegen`: the generated TS/JS `SleipnirClient` exposes `connection`** — the router's
+  aggregated connection-status store (`state` + `subscribe(listener)`, `connecting | open |
+  reconnecting | closed` on every transport), so UI code no longer reaches into `client.sse` /
+  `client.ws`. Regenerate to pick it up (the drift gate reports the new getter as a change).
+
+### Docs
+
+- `sleipnir-codegen` README: why the generated files differ per `--transport`, and to pass the
+  same value to `--selfcheck`.
+
 ## [1.8.1] — 2026-10-18
 
 NuGet only (`Sleipnir.*`). npm stays at 1.8.0: the TS client is not affected — its event loop runs

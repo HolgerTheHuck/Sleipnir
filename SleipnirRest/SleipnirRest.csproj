@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -8,6 +8,26 @@
     <Description>REST transport for Sleipnir RPC framework (minimal-API, canonical)</Description>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
+
+  <!-- Class library, not a web app: Microsoft.NET.Sdk + FrameworkReference (like SleipnirWebSocket).
+       Microsoft.NET.Sdk.Web forced OutputType=Exe and, since SDK 11, injects a Debug-only Hot Reload
+       JS module into every Web-SDK project; two of those flowing into one app break its build. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Implicit usings the Web SDK used to add; kept so the sources compile unchanged. -->
+  <ItemGroup>
+    <Using Include="Microsoft.AspNetCore.Builder" />
+    <Using Include="Microsoft.AspNetCore.Hosting" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.AspNetCore.Routing" />
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Hosting" />
+    <Using Include="Microsoft.Extensions.Logging" />
+    <Using Include="System.Net.Http.Json" />
+  </ItemGroup>
 
   <!-- Project README as the package README (PackageReadmeFile via Directory.Build.props). -->
   <ItemGroup>

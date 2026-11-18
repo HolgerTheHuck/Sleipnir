@@ -8,7 +8,7 @@
 // testable seam CodegenSeam.TryEmit, which Emit calls and turns into a Roslyn Diagnostic.
 //
 // We test the seam directly rather than driving the Roslyn pipeline: the generator is
-// netstandard2.0 and the test host is net8.0, and Microsoft.CodeAnalysis.CSharp 4.8.0 ships
+// netstandard2.0 and the test host is net10.0, and Microsoft.CodeAnalysis.CSharp 4.8.0 ships
 // per-TFM libs, so the generator's ISourceGenerator and the test's would not share a single type
 // identity across the TFM boundary. The seam returns plain strings (the diagnostic id + message +
 // source), so no Roslyn types are needed in the test.

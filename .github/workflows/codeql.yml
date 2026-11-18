@@ -25,11 +25,13 @@ jobs:
         with:
           languages: csharp
 
-      # .NET 8 is preinstalled on GitHub runners, but pin it so the analysis runtime
-      # tracks the solution's target framework rather than the runner default.
+      # Pin the SDKs so the analysis tracks the solution's target frameworks rather than the
+      # runner default: 10.0.x builds the net10.0 test project, 8.0.x matches the libraries.
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - uses: github/codeql-action/autobuild@v3
 

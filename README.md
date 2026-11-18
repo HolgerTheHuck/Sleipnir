@@ -249,6 +249,8 @@ npm i -D sleipnir-codegen
 
 All `Sleipnir.*` packages ship to **nuget.org**: [`nuget.org/packages?q=Sleipnir`](https://www.nuget.org/packages?q=Sleipnir) — the TypeScript/JavaScript packages are on **npm**: [`npmjs.com/package/sleipnir-client`](https://www.npmjs.com/package/sleipnir-client).
 
+> **Versions across NuGet and npm:** major and minor versions ship in lockstep on both channels; a patch release ships only on the channel it fixes, so `Sleipnir.Server 1.8.1` with `sleipnir-client 1.8.0` is an intended, compatible pair. Any server and client of the same major version are wire-compatible (details: [`STABILITY.md`](STABILITY.md) §3, rule 9). The [CHANGELOG](CHANGELOG.md) names the channels each release ships on.
+
 Requires .NET 8.0+.
 
 ---

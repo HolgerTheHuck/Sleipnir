@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Docs
 
+- **Version rule across NuGet and npm** ([STABILITY.md](STABILITY.md) §3 rule 9, README
+  install section): major/minor versions ship in lockstep, patches per channel.
 - `sleipnir-codegen` README: why the generated files differ per `--transport`, and to pass the
   same value to `--selfcheck`.
 

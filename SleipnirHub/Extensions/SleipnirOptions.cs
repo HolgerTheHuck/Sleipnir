@@ -221,6 +221,17 @@ namespace SleipnirHub.Extensions
         public AliasBindingMode AliasBindingMode { get; set; } = AliasBindingMode.Weak;
 
         /// <summary>
+        /// Texts of the error messages Sleipnir generates for authentication/authorization
+        /// (401 <c>Unauthenticated</c>, 403 <c>PermissionDenied</c>) — set them to return these
+        /// in your application's language (<c>options.Messages.Unauthenticated = "Bitte anmelden.";</c>),
+        /// or assign a subclass of <see cref="SleipnirCommon.Results.SleipnirMessages"/> that
+        /// resolves them per request culture. Code and category stay fixed; clients should
+        /// branch on <c>category</c>. Defaults: <c>"Unauthorized."</c> / <c>"Forbidden."</c>.
+        /// See ERROR_CATALOG.md §1.2.
+        /// </summary>
+        public SleipnirCommon.Results.SleipnirMessages Messages { get; set; } = new();
+
+        /// <summary>
         /// Enables the JSON-RPC 2.0 compatibility endpoint (POST /api/sleipnir/jsonrpc).
         /// Default <c>false</c> — opt-in. Maps JSON-RPC requests onto the Sleipnir
         /// invoker (parallel mode, routing <c>Controller.Method</c>, named and

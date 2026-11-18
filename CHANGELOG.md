@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Localizable 401/403 messages** — `SleipnirOptions.Messages` (`SleipnirMessages`) sets the text
+  of the framework-generated `Unauthenticated` / `PermissionDenied` errors; a subclass can resolve
+  them per request culture (e.g. via `IStringLocalizer`). Code and category are unchanged; the
+  defaults stay `"Unauthorized."` / `"Forbidden."`. [ERROR_CATALOG.md](ERROR_CATALOG.md) §1.2 lists
+  which messages are framework-generated and recommends branching on `category`.
 - **`sleipnir-codegen`: the generated TS/JS `SleipnirClient` exposes `connection`** — the router's
   aggregated connection-status store (`state` + `subscribe(listener)`, `connecting | open |
   reconnecting | closed` on every transport), so UI code no longer reaches into `client.sse` /

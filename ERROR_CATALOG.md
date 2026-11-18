@@ -62,6 +62,36 @@ registered names (`Available methods: Add, Divide. If it was added recently, the
 server may be a stale build.`). The hint is off in Production — it would enumerate the API
 surface past a discovery endpoint that sits behind authentication.
 
+### 1.2 Framework-generated vs. your messages — and localizing them
+
+Two kinds of `error.message` reach a client:
+
+- **Yours** — everything a controller returns via `SleipnirResults.*` / `SleipnirResponse<T>`.
+  Sleipnir passes the text through verbatim, in whatever language you wrote it.
+- **Framework-generated** — the 401/403 from `[SleipnirAuthorise]` / `RequireAuthentication`,
+  the request-validation messages of §1.1, the generic 500, cardinality caps (413), dependency
+  propagation (400 `dependency '@a' unavailable …`). These are English.
+
+The 401/403 texts are configurable, so an application in another language can answer
+consistently:
+
+```csharp
+builder.Services.AddSleipnir(new SleipnirOptions
+{
+    Messages = { Unauthenticated = "Bitte anmelden.", PermissionDenied = "Keine Berechtigung." }
+});
+```
+
+For per-request languages, derive from `SleipnirMessages` and override the getters (e.g. with an
+`IStringLocalizer`); they are read on every rejected call, so `CultureInfo.CurrentUICulture` is the
+request's culture (REST/SSE; for WebSocket/SignalR the culture of the connection's upgrade
+request). Only the text changes — `code` and `category` stay fixed.
+
+The remaining framework messages are diagnostic (they name parameters, types and routes) and are
+not localizable. **Clients should therefore branch on `category`, not on the text**, and show
+their own text for the framework categories they care about (`Unauthenticated`,
+`PermissionDenied`, `InvalidArgument` from binding, `ResourceExhausted`, `Internal`).
+
 ---
 
 ## 2. Semantic categories (`SleipnirErrorCategory`)

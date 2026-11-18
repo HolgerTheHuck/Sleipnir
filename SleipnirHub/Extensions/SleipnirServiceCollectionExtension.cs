@@ -169,6 +169,8 @@ namespace SleipnirHub.Extensions
                 // Propagate the alias binding mode (default Weak; Strict = fragment must
                 // fully cover the consumer type, otherwise 400 — see DEPENDENCY_BINDING.md).
                 invoker.AliasBindingMode = options.AliasBindingMode;
+                // Localizable 401/403 texts (ERROR_CATALOG.md §1.2); shared with the auth interceptor.
+                invoker.Messages = options.Messages ?? new SleipnirCommon.Results.SleipnirMessages();
                 // Event backpressure (Phase 3, experimental): per-subscription buffer capacity
                 // + overflow strategy, overridable per event via [SleipnirEvent]. Defaults keep
                 // the 1.1.x behavior (capacity 100, drop-oldest) — see STABILITY.md §2.
@@ -219,7 +221,8 @@ namespace SleipnirHub.Extensions
                     sp => new SleipnirHub.Interceptors.SleipnirAuthorizationInterceptor(
                         sp.GetService<Microsoft.AspNetCore.Authorization.IAuthorizationService>(),
                         sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SleipnirHub.Interceptors.SleipnirAuthorizationInterceptor>>(),
-                        options.RequireAuthentication));
+                        options.RequireAuthentication,
+                        options.Messages));
 
                 // Telemetry (middle) — tracing + metrics + OTel logging conventions.
                 // Runs after Auth (measures only authorized traffic) and before Logging

@@ -104,6 +104,13 @@ namespace SleipnirCore.Services
         public AliasBindingMode AliasBindingMode { get; set; } = AliasBindingMode.Weak;
 
         /// <summary>
+        /// Texts of the framework-generated 401/403 messages (localizable). Set via
+        /// <c>SleipnirOptions.Messages</c> in <c>AddSleipnir</c>; the defaults are the 1.x texts.
+        /// Only <c>error.message</c> changes — code and category stay fixed.
+        /// </summary>
+        public SleipnirMessages Messages { get; set; } = new();
+
+        /// <summary>
         /// Per-Subscription Buffer-Kapazität für Server-Push-Events
         /// (<c>[SleipnirEvent]</c> + <c>IObservable&lt;T&gt;</c>). <c>null</c> (Default)
         /// → Fallback 100. Ein positiver Wert deckelt den Buffer; Überschuss-Verhalten
@@ -2518,14 +2525,14 @@ namespace SleipnirCore.Services
             => new() { Code = SleipnirErrorCodes.NoContent };
 
         private SleipnirResponse Unauthorized()
-            => CreateError(SleipnirErrorCodes.Unauthorized, "Unauthorized.", SleipnirErrorCategory.Unauthenticated);
+            => CreateError(SleipnirErrorCodes.Unauthorized, SleipnirMessages.ResolveUnauthenticated(Messages), SleipnirErrorCategory.Unauthenticated);
 
         /// <summary>
         /// 403 Forbidden — authentifiziert, aber Rolle/Policy verweigert (Phase 1).
         /// Spiegel von <see cref="SleipnirResults.Forbidden"/>; PermissionDenied-Kategorie.
         /// </summary>
         private SleipnirResponse Forbidden()
-            => CreateError(SleipnirErrorCodes.Forbidden, "Forbidden.", SleipnirErrorCategory.PermissionDenied);
+            => CreateError(SleipnirErrorCodes.Forbidden, SleipnirMessages.ResolvePermissionDenied(Messages), SleipnirErrorCategory.PermissionDenied);
 
         private SleipnirResponse InternalServerError(string message)
             => CreateError(SleipnirErrorCodes.InternalServerError, message, SleipnirErrorCategory.Internal);

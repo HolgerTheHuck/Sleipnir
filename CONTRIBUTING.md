@@ -28,7 +28,9 @@ license (see [LICENSE](LICENSE)).
 
 ## 2. Prerequisites
 
-- **.NET 8 SDK** — `dotnet --version` reports 8.x.
+- **.NET 10 SDK** (or newer) — `dotnet --version` reports 10.x or higher. The libraries target
+  `net8.0` and `net10.0`; the SDK 10 builds both (the net8.0 targeting pack is restored
+  automatically, no .NET 8 runtime needed). Samples, stories and tests run on .NET 10.
 - Optional, for HTTPS/WSS local dev: `dotnet dev-certs https --trust`.
 - For UI work in `SleipnirDeveloperUi/`: Node.js (the dev UI is a Svelte app bundled into the
   Razor package; see `SleipnirDeveloperUi/` for its own build steps).

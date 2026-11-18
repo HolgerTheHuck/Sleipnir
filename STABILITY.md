@@ -243,6 +243,18 @@ phases land.
 8. **The `ROADMAP.md` "Benutzbarkeit-Roadmap" phases each declare**, when they land, whether
    they promote an experimental surface to stable. Each phase's graduation is a `CHANGELOG.md`
    entry.
+9. **Package versions across channels.** Sleipnir ships on two channels: NuGet (all `Sleipnir.*`
+   packages, always one shared version) and npm (`sleipnir-client`, `sleipnir-codegen`, always one
+   shared version). **Major and minor versions are released in lockstep** on both channels — a
+   `1.9.0` exists on NuGet and npm. **Patch versions are released per channel**: a fix that only
+   touches the .NET packages ships as a NuGet patch, and npm stays on the previous patch (e.g.
+   `Sleipnir.Server 1.8.1` + `sleipnir-client 1.8.0`). A patch never changes the wire or the
+   discovery schema, so a patch gap between channels is always compatible; beyond that, rule 4
+   makes every server and client of the same major version wire-compatible. Each `CHANGELOG.md`
+   entry states which channels it ships on. Whether a *generated* client matches the server it
+   talks to is a question of the contract, not of package versions — the generated client sends its
+   `contractHash`, and `sleipnir-gen --selfcheck` / `sleipnir-gen diff` check the contract itself
+   ([`CONTRACT_EVOLUTION.md`](CONTRACT_EVOLUTION.md)).
 
 ---
 

@@ -23,12 +23,12 @@ Sprache gibt es vier Szenarien, die unterschiedliche RPC-Muster zeigen.
 ```
 samples/
   server/                     # Ausführbarer Beispiel-Server (consumiert Sleipnir.Server als NuGet-Paket)
-    SampleServer.csproj       # Web-SDK, net8.0 — PackageReference auf Sleipnir.Server
+    SampleServer.csproj       # Web-SDK, net10.0 — PackageReference auf Sleipnir.Server
     Program.cs                 # AddSleipnir → UseSleipnirTransports → MapSleipnir (3 Zeilen Wiring)
     SampleServer.cs            # Controller + DTOs + In-Memory-Store
     nuget.config               # lokaler Feed → ../../artifacts/packages
   csharp/                      # Ausführbare C#-Client-Samples (SleipnirClient aus lokalem Feed)
-    Samples.csproj             # Console, net8.0 — PackageReference auf Sleipnir.Client
+    Samples.csproj             # Console, net10.0 — PackageReference auf Sleipnir.Client
     Program.cs                 # Runner: Szenario-Arg 1–4 / all
     Dtos.cs                    # client-seitige Customer/Order-POCOs + SampleJson-Options
     01-single-call.cs  02-batch-parallel.cs  03-batch-serial.cs  04-dependency-chain.cs

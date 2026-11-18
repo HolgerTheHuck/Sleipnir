@@ -41,15 +41,28 @@ public class SleipnirAuthorizationInterceptor : ISleipnirInterceptor
     private readonly IAuthorizationService? _authorizationService;
     private readonly ILogger<SleipnirAuthorizationInterceptor> _logger;
     private readonly bool _requireAuthentication;
+    private readonly SleipnirMessages _messages;
 
     public SleipnirAuthorizationInterceptor(
         IAuthorizationService? authorizationService,
         ILogger<SleipnirAuthorizationInterceptor> logger,
         bool requireAuthentication)
+        : this(authorizationService, logger, requireAuthentication, messages: null)
+    {
+    }
+
+    /// <param name="messages">Localizable 401/403 texts (<c>SleipnirOptions.Messages</c>);
+    /// <c>null</c> = the default texts.</param>
+    public SleipnirAuthorizationInterceptor(
+        IAuthorizationService? authorizationService,
+        ILogger<SleipnirAuthorizationInterceptor> logger,
+        bool requireAuthentication,
+        SleipnirMessages? messages)
     {
         _authorizationService = authorizationService;
         _logger = logger;
         _requireAuthentication = requireAuthentication;
+        _messages = messages ?? new SleipnirMessages();
     }
 
     public async Task<SleipnirResponse?> InvokeAsync(
@@ -119,9 +132,11 @@ public class SleipnirAuthorizationInterceptor : ISleipnirInterceptor
         return await next(context);
     }
 
-    private static SleipnirResponse UnauthorizedResponse() => SleipnirResults.Unauthorized();
+    private SleipnirResponse UnauthorizedResponse()
+        => SleipnirResults.Unauthorized(SleipnirMessages.ResolveUnauthenticated(_messages));
 
-    private static SleipnirResponse ForbiddenResponse() => SleipnirResults.Forbidden();
+    private SleipnirResponse ForbiddenResponse()
+        => SleipnirResults.Forbidden(SleipnirMessages.ResolvePermissionDenied(_messages));
 
     private static SleipnirResponse InternalServerErrorResponse(string message)
         => SleipnirResults.Error(SleipnirErrorCodes.InternalServerError, message, SleipnirErrorCategory.Internal);

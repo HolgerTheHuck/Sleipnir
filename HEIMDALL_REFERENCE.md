@@ -222,8 +222,8 @@ The package pins Heimdall `1.3.1` and OpenTelemetry `1.18.0`
   telemetry packages in the same change.
 - `Heimdall.Storage.SQLite` pulls `Microsoft.Data.Sqlite` transitively (10.0.11
   at the 1.3.1 pin) — expect its version to track Heimdall releases.
-- Targets `net8.0`; Heimdall's `net8.0`/`net9.0`/`net10.0` assets are consumed
-  at the net8.0 TFM.
+- Targets `net8.0` and `net10.0`; Heimdall's `net8.0`/`net10.0` assets are consumed
+  at the matching TFM.
 - **Always against the NuGet package API, never against local Heimdall
   sources** — the source tree is typically ahead of the published package
   (e.g. `HeimdallAlertingOptions.Language` existed in source before it shipped).

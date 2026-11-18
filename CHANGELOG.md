@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed — .NET 10 support (.NET 8 left support on 2026-11-10)
+
+- **All library packages multi-target `net8.0` and `net10.0`** (`Sleipnir.Common` additionally
+  keeps `netstandard2.1`). A .NET 10+ application gets the `net10.0` build with ASP.NET Core 10
+  dependencies (`Microsoft.AspNetCore.SignalR.Client` / `.Protocols.MessagePack` 10.0.x); .NET 8
+  applications keep the unchanged `net8.0` build. No API or wire change.
+- `Sleipnir.Core` no longer references the `Microsoft.AspNetCore.Authorization` and
+  `Microsoft.Extensions.Caching.Abstractions` packages — both come from the ASP.NET Core shared
+  framework it already references.
+- `sleipnir-linq` (`Sleipnir.Client.Linq.Codegen`) ships `net8.0` and `net10.0` tool builds, so it
+  runs on a machine with only the .NET 10 runtime. `Sleipnir.Server.Codegen` stays `net8.0` and
+  rolls forward to the newest installed runtime, as before.
+- `dotnet new` templates, samples, stories and the guide apps target `net10.0`; building the
+  repository needs the .NET 10 SDK (no .NET 8 runtime required). CI installs 10.0.x only.
+
+### Added
+
+- **Localizable 401/403 messages** — `SleipnirOptions.Messages` (`SleipnirMessages`) sets the text
+  of the framework-generated `Unauthenticated` / `PermissionDenied` errors; a subclass can resolve
+  them per request culture (e.g. via `IStringLocalizer`). Code and category are unchanged; the
+  defaults stay `"Unauthorized."` / `"Forbidden."`. [ERROR_CATALOG.md](ERROR_CATALOG.md) §1.2 lists
+  which messages are framework-generated and recommends branching on `category`.
+- **`sleipnir-codegen`: the generated TS/JS `SleipnirClient` exposes `connection`** — the router's
+  aggregated connection-status store (`state` + `subscribe(listener)`, `connecting | open |
+  reconnecting | closed` on every transport), so UI code no longer reaches into `client.sse` /
+  `client.ws`. Regenerate to pick it up (the drift gate reports the new getter as a change).
+
+### Docs
+
+- **Version rule across NuGet and npm** ([STABILITY.md](STABILITY.md) §3 rule 9, README
+  install section): major/minor versions ship in lockstep, patches per channel.
+- `sleipnir-codegen` README: why the generated files differ per `--transport`, and to pass the
+  same value to `--selfcheck`.
+
 ## [1.8.1] — 2026-10-18
 
 NuGet only (`Sleipnir.*`). npm stays at 1.8.0: the TS client is not affected — its event loop runs

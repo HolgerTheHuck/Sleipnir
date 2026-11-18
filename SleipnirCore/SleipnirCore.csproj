@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>Sleipnir.Core</PackageId>
@@ -17,8 +17,6 @@
   <ItemGroup>
     <PackageReference Include="JsonPath.Net" Version="2.1.1" />
     <PackageReference Include="MessagePack.Annotations" Version="3.1.12" />
-    <PackageReference Include="Microsoft.AspNetCore.Authorization" Version="8.0.14" />
-    <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="8.0.0" />
   </ItemGroup>
 
   <!-- IHttpContext access (HttpContext, IStartupFilter plumbing) via the shared framework,

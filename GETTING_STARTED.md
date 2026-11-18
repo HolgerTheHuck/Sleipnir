@@ -13,7 +13,7 @@ Sleipnir knowledge assumed; .NET basics assumed.
 
 ## 0. Prerequisites
 
-- **.NET 8 SDK** — `dotnet --version` must report 8.x. Install from <https://dotnet.microsoft.com>.
+- **.NET 10 SDK** (or newer) — `dotnet --version` must report 10.x or higher. Install from <https://dotnet.microsoft.com>. The templates create `net10.0` projects; the packages themselves also support .NET 8 applications.
 - **A dev HTTPS cert** (only if you'll use `https://` / `wss://` locally):
   ```bash
   dotnet dev-certs https --trust

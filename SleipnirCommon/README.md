@@ -25,7 +25,7 @@ surface that all of them share.
 <PackageReference Include="Sleipnir.Common" Version="1.8.1" />
 ```
 
-Targets `net8.0` and `netstandard2.1`. Brings only `MessagePack.Annotations`
+Targets `net8.0`, `net10.0` and `netstandard2.1`. Brings only `MessagePack.Annotations`
 (the wire models carry MessagePack attributes; the formatter implementations live
 in `Sleipnir.Hub` / `Sleipnir.Client`, compiled against their own MessagePack version).
 

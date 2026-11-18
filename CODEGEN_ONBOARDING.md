@@ -48,7 +48,7 @@ rejected loudly (`SLEIPNIR001`), never silently degraded.
 
 ## Prerequisites
 
-- .NET 8 SDK.
+- .NET 8 SDK or newer (the export tool runs on the newest installed runtime).
 - A Sleipnir server (controllers decorated `[SleipnirController]` / `[SleipnirMethod]`).
 - For the client, `Sleipnir.Client` (the runtime the generated stubs call).
 
@@ -166,7 +166,7 @@ Reference the generator (as an analyzer) and the Sleipnir client runtime, and dr
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
     <!-- The runtime the generated stubs call (SleipnirRestJsonClient, ISleipnirClient, SleipnirCall, ...). -->

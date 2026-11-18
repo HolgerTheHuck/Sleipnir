@@ -44,6 +44,16 @@ export class SleipnirClient {
     return this._router.activeTransport;
   }
 
+  /**
+   * Aggregated connection status of the active transport profile, as a store
+   * (`connection.state` + `connection.subscribe(listener) → unsubscribe`); one of
+   * `connecting | open | reconnecting | closed` on every transport.
+   * @returns {{ state: string, subscribe(listener: (state: string) => void): () => void }}
+   */
+  get connection() {
+    return this._router.connection;
+  }
+
   /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
   async call(call) {
     return this._router.call(call.toRequest());

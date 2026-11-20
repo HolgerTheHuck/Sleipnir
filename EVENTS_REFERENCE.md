@@ -81,8 +81,7 @@ resolve overloads by parameters").
 surface (`kind:"stream"` in Discovery, consumed into a `List<T>` JSON array).
 Events are strictly `IObservable<T>` and are **not chainable**: `@alias` /
 `exposes` apply to call results, not event streams (`SleipnirCore/Attributes/SleipnirEventAttribute.cs`
-→ `SleipnirEventAttribute`, "nicht chainable"; `ROADMAP.md` §"Phase 3 —
-Echtzeit-Kohärenz").
+→ `SleipnirEventAttribute`).
 
 The subscribe result the server produces is a `SleipnirSubscribeResult`
 carrying `IObservable<object?>? Observable` (`SleipnirCommon/Models/SleipnirSubscribeResult.cs`
@@ -737,8 +736,7 @@ Events (SSE)".
   (`SleipnirEventAttribute` class doc, "long-lived hot/durable observable";
   `README_DETAILS.md` §"Cold vs. hot observables").
 - Events are **not chainable** (`@alias`/`exposes` apply to call results, not
-  event streams) — compile error in codegen (`SleipnirEventAttribute` class doc,
-  "nicht chainable"; `ROADMAP.md` §"Phase 3 — Echtzeit-Kohärenz").
+  event streams) — compile error in codegen (`SleipnirEventAttribute` class doc).
 - SSE query-param binding has **no type hints** — `?count=3` binds to a number
   and 400s for a `string` parameter; complex/typed params need WS
   (`SleipnirSseConnection.BuildParams()` remarks doc).
@@ -782,7 +780,7 @@ reconnect the client sends `lastEventId` for at-least-once-within-the-replay-win
 replay (client dedups by `eventId`). Non-resumable events keep the v1 ephemeral
 at-most-once behavior. `CHANGELOG.md` §"Added — Events: Last-Event-Id resume +
 server disconnect buffer (Phase R, experimental)"; `STABILITY.md` §"2.
-Experimental surface"; `ROADMAP.md` §"Offene Design-Entscheidungen".
+Experimental surface".
 
 Adds: `SleipnirSubscriptionStore` DI singleton, `ResumeDecision`/`ResumePolicy`
 client hook, reconnect auth re-check against the original route, knobs
@@ -796,8 +794,7 @@ disconnect buffer (Phase R, experimental)").
   class doc, R1 scope note; `STABILITY.md` §"2. Experimental surface";
   `README_DETAILS.md` §"Resume (Last-Event-Id) — resumable events"; `PROTOCOL.md`
   §"Resume (Last-Event-Id) — resumable events").
-- Exactly-once + cross-process durable remain future (`ROADMAP.md` §"Offene
-  Design-Entscheidungen").
+- Exactly-once + cross-process durable delivery are not supported.
 - R1 resume re-attaches without re-auth (safe because no client sends a resume
   request until Phase R2 ships the resume hook) (`SleipnirSubscriptionStore`
   class doc, R1 scope note).
@@ -808,8 +805,7 @@ Same `[SleipnirEvent]` methods over `text/event-stream` for clients behind
 proxies/firewalls that block WS upgrades. Reuses the exact Phase R resume
 machinery and the process-wide store → cross-transport resume (a WS
 subscription resumes over SSE and vice-versa). `CHANGELOG.md` §"Added — Events
-over REST: SSE"; `STABILITY.md` §"2. Experimental surface"; `ROADMAP.md`
-§"Later (v1.x+, unsorted)".
+over REST: SSE"; `STABILITY.md` §"2. Experimental surface".
 
 **Phase S limitations:**
 
@@ -859,7 +855,6 @@ PR #15 → main `b4866ef`). See the `sleipnir-cross-transport-resume` and
 | `README_DETAILS.md` | Deepest user reference: Server-Push Events (§"Server-Push Events (IObservable<T>)"), Event vs Call vs Stream table (§"Events vs. calls vs. streams"), authoring + wire (§"Server-Push Events (IObservable<T>)"), lifecycle/gap semantics (§"Server-Push Events (IObservable<T>)"), Resume/Last-Event-Id (§"Resume (Last-Event-Id) — resumable events"), Discovery (§"Discovery"), REST Events SSE (§"REST Events (SSE)"), 1.2.0 migration (§"Migration from 1.1.x"). |
 | `PROTOCOL.md` | Wire spec: subscribe/unsubscribe/event/complete/error frames (§"Server-Push Events (Phase 3, experimental)"), ack + `replayedFrom` (§"Subscribe response (server → client)"), Resume (Last-Event-Id) (§"Resume (Last-Event-Id) — resumable events"), Discovery `kind:"event"` (§"Discovery"), REST Events SSE endpoints + wire mapping + 410 (§"REST Events (SSE)"), SignalR hub-streaming (§"Transport selection (client)"). |
 | `STABILITY.md` | Stability contract: Phase 3 experimental, `[SleipnirEvent]` required marker (1.2.0), `EventBackpressureStrategy`/`EventBufferCapacity`, Phase S SSE experimental, Phase R resume experimental + in-process limitation (§"2. Experimental surface"). |
-| `ROADMAP.md` | Phase 3 events, gap-semantics decision (at-most-once v1 vs resume Phase R), Phase S SSE delivered, SSE-vs-stream distinction (§"Phase 3 — Echtzeit-Kohärenz", §"Offene Design-Entscheidungen", §"Later (v1.x+, unsorted)"). |
 | `CHANGELOG.md` | Phase S SSE entries (§"Added — Events over REST: SSE"), Phase R resume + configurable backpressure + `sleipnir.event.dropped` fix + `[SleipnirEvent]` required-marker change (§"[1.2.0]"). |
 | `TRANSPORT_REFERENCE.md` | Client-side: cross-transport subscribe/resume, `ResumePolicy`/`ResumeDecision`, durable store pointer, WS-direction resume limitation (§6, §10). |
 | `CODEGEN_REFERENCE.md` | `kind:"event"` discovery surface, events-not-chainable codegen rule. |

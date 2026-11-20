@@ -1,6 +1,5 @@
 # Sleipnir Architecture
 
-> German version: [ARCHITECTURE.de.md](ARCHITECTURE.de.md)
 
 ## Design Philosophy
 

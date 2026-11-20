@@ -255,7 +255,7 @@ Base64 is avoided **only on the SignalR/MessagePack channel**. REST and WebSocke
 
 **Limits:** REST 1 MB request body; WebSocket 1 MB per message (hardcoded); SignalR `MaximumReceiveMessageSize` in `SleipnirOptions` (defaults to SignalR's limit when unset). The cardinality caps `MaxParameterArrayLength` / `MaxResultElementCount` do not apply to `byte[]` — they guard collection sizes, not binary size.
 
-**Practical guidance:** Binary over REST or WebSocket is fine for payloads up to the limits. For large or frequent binary, run a plain REST or WebSocket endpoint alongside Sleipnir — there is nothing about binary that requires the RPC channel. Streamed/chunked binary upload and a streamed `byte[]` response are not in v1; see [ROADMAP.md](ROADMAP.md) for the v1.x+ binary-transfer plan.
+**Practical guidance:** Binary over REST or WebSocket is fine for payloads up to the limits. For large or frequent binary, run a plain REST or WebSocket endpoint alongside Sleipnir — there is nothing about binary that requires the RPC channel. Streamed/chunked binary upload and a streamed `byte[]` response are not supported.
 
 **Client support:** TypeScript ships `withBinary(Uint8Array)` and `callBinary()`; SignalR clients (C# + TS) carry `byte[]` natively. The C# REST/WebSocket client offers `CallBinary()` for responses, but the fluent builder has **no `WithBinary` yet** — set `request.BinaryData` directly until it lands. See [PROTOCOL.md](PROTOCOL.md) for exact field semantics.
 
@@ -353,7 +353,7 @@ Sleipnir does **not** offer a `[SleipnirMethod]` that returns raw bytes as a bro
 - It opens the **HTTP-semantics slope**: a media endpoint without `Range` / `ETag` / `304` / `Cache-Control` is a toy for real frontends, and each header pulls in the next.
 - Media delivery is **operationally better served** by a CDN/static store in front of a plain `GET` than by an RPC framework acting as a file server.
 
-If you need media to appear inside the **typed/codegen client surface** (discovery + a generated `DownloadAsync`), that is a future *resource pillar* — explicitly experimental, not in v1. Track it in [ROADMAP.md](ROADMAP.md). Until then, the co-hosted `GET` pattern above is the supported way to serve media from a Sleipnir application.
+If you need media to appear inside the **typed/codegen client surface** (discovery + a generated `DownloadAsync`), that is a future *resource pillar* — not supported yet. Until then, the co-hosted `GET` pattern above is the supported way to serve media from a Sleipnir application.
 
 ## Cross-Platform
 
@@ -831,17 +831,17 @@ when the active profile is `rest` (or to WebSocket / SignalR otherwise). Escape 
 
 Sleipnir v1 is intentionally focused. The following are deliberate scope decisions, not bugs — documented here so adopters can plan around them:
 
-- **No built-in API versioning.** The `controller` field is a free-form string. There is no framework-level versioning mechanism. The recommended convention is to encode the version in the controller name, e.g. `[SleipnirController("Customer.v1")]`, so a v2 can coexist without breaking v1 clients. Build-time version enforcement via a source generator (the `wsdl.exe` model) is planned for v1.1 — see [ROADMAP.md](ROADMAP.md).
+- **No built-in API versioning.** The `controller` field is a free-form string. There is no framework-level versioning mechanism. The recommended convention is to encode the version in the controller name, e.g. `[SleipnirController("Customer.v1")]`, so a v2 can coexist without breaking v1 clients. Contract drift between server and generated clients is caught at build time instead — see [CONTRACT_EVOLUTION.md](CONTRACT_EVOLUTION.md).
 - **No Native AOT.** Method discovery uses runtime reflection, and invocation uses `Expression.Compile`-produced delegates. This is incompatible with Native AOT trimming. Standard (JIT) publishing is the supported deployment model.
 - **REST streaming is materialized.** An `IAsyncEnumerable<T>` *call* result is fully consumed server-side and serialized as a JSON array before the REST response is sent. True streamed delivery of a *call* over REST is not supported — use the WebSocket or SignalR transport for streaming semantics. (Server-push **events** — `IObservable<T>` — *are* available over REST via SSE; that is a different path from `IAsyncEnumerable<T>` call materialization — see [REST Events (SSE)](#rest-events-sse).)
 - **Attribute-based registration only.** Controllers and methods are discovered via `[SleipnirController]` / `[SleipnirMethod]` attribute scanning. Direct/fluent registration of individual handlers in code (without attributes) is on the roadmap, not in v1.
 - **No parameter-based overloading.** A call is addressed by `Controller.Method` only — the parameter set is **not** part of the dispatch key, so Sleipnir does not resolve C# overloads by signature over the wire. Two `[SleipnirMethod]`s on the same controller, or two `[SleipnirController]`s app-wide, must therefore carry distinct names; otherwise `SleipnirInvoker.Register` throws `InvalidOperationException` at startup rather than silently shadowing one with the other (the dispatch key is `{Controller}_{Method}`, purely name-based). Model what would be C# overloads with distinct Sleipnir names (`add`, `addAll`, `addRange`). To exclude a controller from the auto-discovery bulk scan (e.g. a test fixture you register only by hand), set `[SleipnirController("name", AutoDiscover = false)]` and register it explicitly via `Register<T>()` or `SleipnirControllerBuilder.Add<T>()`.
 - **Dotted namespaces, not URL hierarchies.** The `controller` field accepts a dotted namespace (e.g. `Customer.Address.Contact`) to express arbitrarily deep groupings, but it is a single string key — it is not translated into a nested URL path. Routing stays two-part (`controller` + `method`) at the protocol level.
 - **Error details in development only.** `SleipnirError.details` (stack trace) is populated only when `EnableDetailedErrors` is set or the host runs in Development. In production, error messages are intentionally generic and do not leak exception internals.
-- **Binary is base64 over REST and WebSocket.** Only the SignalR/MessagePack channel carries `byte[]` without base64; the WebSocket transport honors text frames only. Binary is bounded by the transport message-size limits (REST 1 MB, WebSocket 1 MB). For large or frequent binary, run a plain REST or WebSocket endpoint alongside Sleipnir — see [Binary](#binary) and the v1.x+ plan in [ROADMAP.md](ROADMAP.md).
+- **Binary is base64 over REST and WebSocket.** Only the SignalR/MessagePack channel carries `byte[]` without base64; the WebSocket transport honors text frames only. Binary is bounded by the transport message-size limits (REST 1 MB, WebSocket 1 MB). For large or frequent binary, run a plain REST or WebSocket endpoint alongside Sleipnir — see [Binary](#binary).
 - **`byte[]` parameters bind first-match-only.** A method with more than one `byte[]` parameter receives `binaryData` in only the first; the others are not filled.
 - **No streamed binary.** `byte[]` responses are buffered into `content`; a `ContentStream` field exists on the model but is not wired by any transport in v1.
-- **C# fluent builder has no `WithBinary`.** Set `request.BinaryData` directly for binary uploads from C# until the helper lands (see [ROADMAP.md](ROADMAP.md)).
+- **C# fluent builder has no `WithBinary`.** Set `request.BinaryData` directly for binary uploads from C# (no helper yet).
 
 ## Project Structure
 
@@ -863,22 +863,22 @@ Sleipnir v1 is intentionally focused. The following are deliberate scope decisio
 
 ```xml
 <!-- Server: all transports (hub + REST + WebSocket + DevUI) -->
-<PackageReference Include="Sleipnir.Server" Version="1.8.1" />
+<PackageReference Include="Sleipnir.Server" Version="1.9.0" />
 
 <!-- Optional: OpenTelemetry SDK bootstrap -->
-<PackageReference Include="Sleipnir.Telemetry" Version="1.8.1" />
+<PackageReference Include="Sleipnir.Telemetry" Version="1.9.0" />
 
 <!-- Optional: embedded Heimdall telemetry backend (dashboard + PromQL API under /otel) -->
-<PackageReference Include="Sleipnir.Telemetry.Heimdall" Version="1.8.1" />
+<PackageReference Include="Sleipnir.Telemetry.Heimdall" Version="1.9.0" />
 
 <!-- Or individual transports -->
-<PackageReference Include="Sleipnir.Core" Version="1.8.1" />
-<PackageReference Include="Sleipnir.Hub" Version="1.8.1" />
-<PackageReference Include="Sleipnir.Rest" Version="1.8.1" />
-<PackageReference Include="Sleipnir.WebSocket" Version="1.8.1" />
+<PackageReference Include="Sleipnir.Core" Version="1.9.0" />
+<PackageReference Include="Sleipnir.Hub" Version="1.9.0" />
+<PackageReference Include="Sleipnir.Rest" Version="1.9.0" />
+<PackageReference Include="Sleipnir.WebSocket" Version="1.9.0" />
 
 <!-- Client -->
-<PackageReference Include="Sleipnir.Client" Version="1.8.1" />
+<PackageReference Include="Sleipnir.Client" Version="1.9.0" />
 ```
 
 ### Distributed Tracing
@@ -908,7 +908,9 @@ See [`PROTOCOL.md`](PROTOCOL.md) → Observability Endpoints for the instrument 
 ## Requirements
 
 - .NET 8.0+ / ASP.NET Core 8.0+ — the packages ship `net8.0` and `net10.0` assets; .NET 10 (LTS)
-  and later pick the `net10.0` build with ASP.NET Core 10 dependencies.
+  and later pick the `net10.0` build with ASP.NET Core 10 dependencies. .NET 11 runs that build
+  unchanged; CI runs the full test suite on the .NET 11 runtime, and the repository builds with
+  SDK 10 and SDK 11.
 
 ## License
 

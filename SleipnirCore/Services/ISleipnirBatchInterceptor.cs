@@ -14,7 +14,7 @@ namespace SleipnirCore.Services;
 /// straight into parallel/serial/topological execution without a batch-level interceptor
 /// pipeline, so instances registered via <c>SleipnirOptions.BatchInterceptors</c> are never
 /// invoked. Do not rely on this seam in 1.1.x; wiring a consumer (or removing the interface)
-/// is tracked for 1.2 (<c>ROADMAP.md</c> R7).</para>
+/// is still open.</para>
 /// <para>Phase 1 — see <c>docs/design/phase-1-interceptor-pipeline.md</c>. Experimental until the
 /// pipeline lands (see <c>STABILITY.md</c> §2).</para>
 /// </remarks>

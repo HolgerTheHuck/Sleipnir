@@ -13,7 +13,7 @@ namespace SleipnirTests.Unit.Core;
 /// R5: <see cref="UseSleipnir"/> logs a one-time warning when a user registered custom
 /// interceptors, because they run on the single-call path only in 1.1.x and are silently
 /// bypassed on batches. Authorization is unaffected (enforced structurally); the warning
-/// keeps the bypass from staying silent. The real fix is tracked for 1.2 (ROADMAP.md R7).
+/// keeps the bypass from staying silent. The real fix is still open.
 /// </summary>
 public class SleipnirInterceptorBypassWarningTests
 {

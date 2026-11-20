@@ -109,7 +109,7 @@ Result of a method invocation.
 |-------|------|-------------|
 | `code` | int | HTTP-like status code (200, 400, 401, 404, 500, etc.) |
 | `data` | any (JSON value)\|null | The method result serialized **directly as a structured JSON value** — an object, array, string, number, or boolean, exactly as `System.Text.Json` (camelCase) would emit it. Type-preserving: a `string` result arrives as a JSON string (`"Alice"`), an `int` as a JSON number (`42`), an object as `{...}`. It is **not** a JSON-encoded string blob and there is no `$.data` envelope level. `null` on `204` (no content) and on non-2xx (the error message lives in `error.message`, not here). |
-| `content` | base64\|null | Binary response for `byte[]`-returning methods (the bytes live exclusively here — never duplicated as a base64 string in `data`). base64 over REST and WebSocket; native MessagePack `bin` over SignalR. Buffered into `byte[]` in v1 — a `ContentStream` field exists on the model but is not wired by any transport (see [ROADMAP.md](ROADMAP.md)). |
+| `content` | base64\|null | Binary response for `byte[]`-returning methods (the bytes live exclusively here — never duplicated as a base64 string in `data`). base64 over REST and WebSocket; native MessagePack `bin` over SignalR. Buffered into `byte[]` in v1 — a `ContentStream` field exists on the model but is not wired by any transport. |
 | `id` | string\|null | Correlates with request ID |
 | `exposedDependencies` | object\|null | Map of alias → value (each value is a JSON-encoded scalar/structure) for dependency chaining |
 | `error` | object\|null | Structured error (when code != 2xx) |
@@ -542,7 +542,7 @@ method (first-match-only; a method with more than one `byte[]` parameter is
 not supported in v1). `byte[]` responses are **buffered** into `content`; a
 `ContentStream` field exists on the model but is not wired by any transport in
 v1. For large or frequent binary, run a plain REST or WebSocket endpoint
-alongside Sleipnir; the v1.x+ binary-transfer plan is in [ROADMAP.md](ROADMAP.md).
+alongside Sleipnir.
 
 > **Media (images / video / downloads) is out of scope for the RPC wire.** The
 > Sleipnir wire is `POST` + JSON with a base64 binary envelope — the wrong shape

@@ -26,7 +26,7 @@ live in [`samples/csharp/`](../samples/csharp).
 ## Install
 
 ```xml
-<PackageReference Include="Sleipnir.Client" Version="1.8.1" />
+<PackageReference Include="Sleipnir.Client" Version="1.9.0" />
 ```
 
 The package targets `net8.0` and `net10.0` (runs on .NET 8+). It brings `MessagePack` and the
@@ -335,7 +335,7 @@ The WebSocket client additionally links its `callTimeout` with the caller's toke
 ## Known limitations
 
 - **No `WithBinary` on `SleipnirCall`.** Set `request.BinaryData` directly for binary
-  uploads (tracked in [ROADMAP.md](../ROADMAP.md)).
+  uploads.
 - **`byte[]` parameters bind first-match-only.** A method with more than one
   `byte[]` parameter receives `binaryData` in only the first.
 - **Batch `id` collisions.** Concurrent batches whose first request shares the same

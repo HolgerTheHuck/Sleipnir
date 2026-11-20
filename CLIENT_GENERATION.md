@@ -5,8 +5,7 @@
 > (`Sleipnir.Generator`), the regen flow, CI, config, and troubleshooting. This document is the
 > *why* and the design history.
 
-> Operationalizes the roadmap items in [`ROADMAP.md`](ROADMAP.md) → *v1.1 Versioning &
-> build-time contract* and *Later → Discovery → TypeScript codegen*. Status: Increments 1–2
+> Covers the build-time contract and discovery → typed client codegen. Status: Increments 1–2
 > done (TS/JS/C#/Python Node emitters); the **.NET-native C# codegen trio (Roslyn source
 > generator + server-side export/drift-check + parity gate) is delivered**, Node-free and
 > NuGet-shipped, with the drift-detection failure path + regen + generator diagnostics now

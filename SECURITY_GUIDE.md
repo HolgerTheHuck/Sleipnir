@@ -130,7 +130,7 @@ Hardening adds gates; several defenses are already structural and need no config
   rate limiting, audit logging — is silently bypassed on every batch call. Do not build a
   security control on the interceptor seam in 1.1.x; use `[SleipnirAuthorise]`/policies and the
   framework-level gates instead. Routing the batch path through the interceptor pipeline is
-  tracked for 1.2 (`ROADMAP.md` R7). The single-call-only scope is logged as a warning once at
+  a known gap. The single-call-only scope is logged as a warning once at
   startup when `options.Interceptors` is non-empty.
 - **Parameter binding is `System.Text.Json` with server-fixed types.** Types come from the method
   signature, never from the client. Sleipnir does not use `TypeNameHandling`, so the known

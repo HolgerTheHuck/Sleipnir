@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed — .NET 10 support (.NET 8 left support on 2026-11-10)
+## [1.9.0] — 2026-11-20
 
+### Changed — .NET 10 support, .NET 11 tested (.NET 8 left support on 2026-11-10)
+
+- **.NET 11:** Sleipnir runs on .NET 11 with the `net10.0` build — no separate `net11.0` target
+  (.NET 11 is an STS release). A new CI leg installs only the .NET 11 SDK and runs the full test
+  suite on the .NET 11 runtime; releases are gated on it. The repository builds with SDK 10 and
+  SDK 11.
 - **All library packages multi-target `net8.0` and `net10.0`** (`Sleipnir.Common` additionally
   keeps `netstandard2.1`). A .NET 10+ application gets the `net10.0` build with ASP.NET Core 10
   dependencies (`Microsoft.AspNetCore.SignalR.Client` / `.Protocols.MessagePack` 10.0.x); .NET 8
@@ -20,7 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs on a machine with only the .NET 10 runtime. `Sleipnir.Server.Codegen` stays `net8.0` and
   rolls forward to the newest installed runtime, as before.
 - `dotnet new` templates, samples, stories and the guide apps target `net10.0`; building the
-  repository needs the .NET 10 SDK (no .NET 8 runtime required). CI installs 10.0.x only.
+  repository needs the .NET 10 or 11 SDK (no .NET 8 runtime required).
+- `Sleipnir.Common` (`netstandard2.1` target only) now depends on `System.ComponentModel.Annotations`
+  5.0.0 for the DataAnnotations-based validation; `net8.0`/`net10.0` have it in the box.
 
 ### Added
 
@@ -50,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   install section): major/minor versions ship in lockstep, patches per channel.
 - `sleipnir-codegen` README: why the generated files differ per `--transport`, and to pass the
   same value to `--selfcheck`.
+- `ROADMAP.md` and the German `ARCHITECTURE.de.md` are no longer part of the repository; links to
+  them were replaced (the build-time contract is documented in `CONTRACT_EVOLUTION.md`).
 
 ## [1.8.1] — 2026-10-18
 

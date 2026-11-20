@@ -288,6 +288,9 @@ class SleipnirError(Exception):
         self.code = error.get("code", 0)
         self.message = error.get("message", "Sleipnir error")
         self.details = error.get("details")
+        # Field-level validation errors (ASP.NET ValidationProblemDetails.errors shape):
+        # field path -> list of messages; None unless the server reported a validation problem.
+        self.errors = error.get("errors")
         super().__init__(f"[{self.code}] {self.message}")
 
 

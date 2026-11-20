@@ -92,6 +92,73 @@ not localizable. **Clients should therefore branch on `category`, not on the tex
 their own text for the framework categories they care about (`Unauthenticated`,
 `PermissionDenied`, `InvalidArgument` from binding, `ResourceExhausted`, `Internal`).
 
+### 1.3 Field-level validation errors (`error.errors`)
+
+A command that validates its input can report *which* fields are wrong, so a form can show each
+message next to its field. The shape is the one ASP.NET Core uses in `ValidationProblemDetails`
+(RFC 9457): `error.errors` maps a field path to one or more messages.
+
+```json
+{
+  "code": 400,
+  "data": null,
+  "error": {
+    "code": 400,
+    "message": "One or more validation errors occurred.",
+    "category": "InvalidArgument",
+    "errors": {
+      "scenario.name": ["Name is required."],
+      "scenario.steps[1].hsn": ["Must be 4 digits."]
+    }
+  }
+}
+```
+
+`errors` is present only on validation failures. On every other error it is absent (not `null`),
+so existing payloads are unchanged, and clients that predate it ignore it. Over SignalR/MessagePack
+it is the sixth element of the error array (`[code, message, details, requestId, category,
+errors]`). `details` stays free text.
+
+**Returning it from a controller:**
+
+```csharp
+// Your own checks — keys as you choose them:
+return SleipnirResults.ValidationProblem(new Dictionary<string, string[]>
+{
+    ["steps[1].hsn"] = ["Must be 4 digits."],
+});
+
+// From ASP.NET Core: ValidationProblemDetails.Errors / ModelState passes straight in.
+return SleipnirResults.ValidationProblem(problemDetails.Errors);
+
+// From DataAnnotations — the recursive walker below, by hand:
+var errors = SleipnirValidation.Validate(scenario, "scenario");
+if (errors.Count > 0) return SleipnirResults.ValidationProblem(errors);
+```
+
+`SleipnirResponse<T>.ValidationProblem(...)` does the same for the typed envelope. All of them return
+`400` with category `InvalidArgument` and the message `"One or more validation errors occurred."`
+(overridable).
+
+**Automatic validation (opt-in):** with `SleipnirOptions.ValidateParameters = true`, Sleipnir
+validates every bound parameter before the method runs: validation attributes on the parameter
+itself (`[Required]`, `[StringLength]`, …), and the value's object graph — property and class
+attributes and `IValidatableObject` (run only when the attributes pass, as in ASP.NET), descending
+into nested objects and list elements. A failure returns the `400` above and the method is not
+called. It applies to single calls, every batch mode (per request — the other requests of the
+batch still run) and subscriptions. Types from `System.*` / `Microsoft.*` and dictionaries are not
+descended into; cycles are cut and depth is capped at 32.
+
+**Key convention (framework-generated keys):** the wire names — camelCase, or the
+`[JsonPropertyName]` — joined with `.` for members and `[i]` for list indexes, rooted at the
+parameter name: `scenario.steps[1].hsn`. That is the path a TypeScript client uses to reach the
+value, so a form bound to the `scenario` object strips the `scenario.` prefix and looks the rest
+up. Member names a `ValidationResult` carries (`"Steps[1].Hsn"`) are camelCased per segment. Keys
+you pass to `ValidationProblem(IDictionary)` yourself are used unchanged.
+
+**On the client:** C# `SleipnirException.Error.Errors`, TS/JS `SleipnirError.errors`, Python
+`SleipnirError.errors`; JSON-RPC puts them in `error.data.errors` (§5).
+
 ---
 
 ## 2. Semantic categories (`SleipnirErrorCategory`)

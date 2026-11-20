@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -127,6 +128,53 @@ public static class SleipnirResults
     /// <summary>400 Bad Request — ungültige Parameter / Validierungsfehler.</summary>
     public static SleipnirResponse BadRequest(string message, string? details = null)
         => Error(SleipnirErrorCodes.BadRequest, message, SleipnirErrorCategory.InvalidArgument, details);
+
+    /// <summary>Default <see cref="SleipnirError.Message"/> of a validation problem (ASP.NET Core's title).</summary>
+    public const string DefaultValidationMessage = "One or more validation errors occurred.";
+
+    /// <summary>
+    /// 400 Bad Request with field-level errors in the ASP.NET Core
+    /// <c>ValidationProblemDetails.errors</c> shape (<see cref="SleipnirError.Errors"/>),
+    /// category <see cref="SleipnirErrorCategory.InvalidArgument"/>. An ASP.NET
+    /// <c>ValidationProblemDetails</c> or <c>ModelStateDictionary.ToDictionary()</c> passes
+    /// straight in: <c>SleipnirResults.ValidationProblem(vpd.Errors)</c>. Keys are used as given;
+    /// the framework's own convention is documented in <c>ERROR_CATALOG.md</c>.
+    /// </summary>
+    /// <param name="errors">Field path → messages. Copied, so later changes to the source do not leak.</param>
+    /// <param name="message">Summary text; default <see cref="DefaultValidationMessage"/>.</param>
+    /// <param name="details">Optional free-text details.</param>
+    public static SleipnirResponse ValidationProblem(IDictionary<string, string[]> errors,
+        string? message = null, string? details = null) => new()
+        {
+            Code = SleipnirErrorCodes.BadRequest,
+            Data = null,
+            Error = BuildValidationError(errors, message, details),
+        };
+
+    /// <summary>
+    /// 400 validation problem from DataAnnotations results (e.g. <c>Validator.TryValidateObject</c>
+    /// or <see cref="SleipnirValidation.Validate"/>). Each result is filed under each of its
+    /// member names (camelCased, prefixed with <paramref name="prefix"/>); a result without
+    /// member names is filed under <paramref name="prefix"/> (or <c>""</c>).
+    /// </summary>
+    public static SleipnirResponse ValidationProblem(IEnumerable<ValidationResult> results,
+        string? prefix = null, string? message = null)
+        => ValidationProblem(SleipnirValidation.ToErrors(results, prefix), message);
+
+    /// <summary>
+    /// Shared construction for <see cref="ValidationProblem(IDictionary{string, string[]}, string?, string?)"/>
+    /// and the typed envelope's <c>SleipnirResponse&lt;T&gt;.ValidationProblem</c>.
+    /// </summary>
+    internal static SleipnirError BuildValidationError(IDictionary<string, string[]> errors,
+        string? message, string? details)
+    {
+        if (errors is null) throw new ArgumentNullException(nameof(errors));
+        var error = BuildError(SleipnirErrorCodes.BadRequest,
+            string.IsNullOrEmpty(message) ? DefaultValidationMessage : message!,
+            SleipnirErrorCategory.InvalidArgument, details);
+        error.Errors = new Dictionary<string, string[]>(errors, StringComparer.Ordinal);
+        return error;
+    }
 
     /// <summary>401 Unauthorized — Authentifizierung erforderlich/fehlgeschlagen.</summary>
     public static SleipnirResponse Unauthorized(string message = "Unauthorized.")

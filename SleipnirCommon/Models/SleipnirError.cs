@@ -1,4 +1,5 @@
 using MessagePack;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using SleipnirCommon.Results;
 
@@ -50,6 +51,22 @@ public class SleipnirError
     [Key(4)]
     [JsonPropertyName("category")]
     public SleipnirErrorCategory Category { get; set; } = SleipnirErrorCategory.None;
+
+    /// <summary>
+    /// Field-level validation errors in the ASP.NET Core <c>ValidationProblemDetails.errors</c>
+    /// shape (RFC 9457): field path → one or more messages, e.g.
+    /// <c>{ "scenario.steps[1].hsn": ["Must be 4 digits."] }</c>. Set by
+    /// <see cref="SleipnirResults.ValidationProblem(IDictionary{string, string[]}, string?, string?)"/>
+    /// and by the opt-in parameter validation (<c>SleipnirOptions.ValidateParameters</c>);
+    /// <c>null</c> on every other error. Additive (STABILITY.md §3.2): omitted from JSON when
+    /// <c>null</c>, so existing error payloads stay byte-identical; older clients ignore it.
+    /// Path convention (framework-generated keys): camelCase wire names, <c>.</c> for members,
+    /// <c>[i]</c> for list indexes, rooted at the parameter name. See <c>ERROR_CATALOG.md</c>.
+    /// </summary>
+    [Key(5)]
+    [JsonPropertyName("errors")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string[]>? Errors { get; set; }
 
     /// <summary>
     /// Creates an SleipnirError from an SleipnirResponse (when Code != 200). Die Message

@@ -210,8 +210,8 @@ internal static class JsonRpcAdapter
                 ["code"] = MapErrorCode(sleipnir.Code, sleipnir.Error?.Category ?? SleipnirCommon.Results.SleipnirErrorCategory.None, sleipnir.Error?.Message),
                 ["message"] = msg,
             };
-            // error.data: bevorzugt das strukturierte Sleipnir-Data (z.B. ProblemDetails),
-            // sonst die Error.Details als String. Beides null → Feld entfällt.
+            // error.data: the structured Sleipnir Data (e.g. ProblemDetails) first, then the
+            // field errors ({ errors, details? }), else Error.Details as a string; none → omitted.
             var dataNode = ErrorDataNode(sleipnir);
             if (dataNode is not null) err["data"] = dataNode;
             obj["error"] = err;
@@ -291,6 +291,18 @@ internal static class JsonRpcAdapter
     {
         if (sleipnir.Data.HasValue)
             return JsonNode.Parse(sleipnir.Data.Value.GetRawText());
+        // Field-level validation errors (SleipnirError.Errors) → { "errors": {...}, "details"? },
+        // the ValidationProblemDetails member name, so JSON-RPC clients read the same shape.
+        if (sleipnir.Error?.Errors is { } fieldErrors)
+        {
+            var errorsNode = new JsonObject();
+            foreach (var kv in fieldErrors)
+                errorsNode[kv.Key] = new JsonArray(kv.Value.Select(m => (JsonNode?)JsonValue.Create(m)).ToArray());
+            var data = new JsonObject { ["errors"] = errorsNode };
+            if (!string.IsNullOrEmpty(sleipnir.Error.Details))
+                data["details"] = sleipnir.Error.Details;
+            return data;
+        }
         if (!string.IsNullOrEmpty(sleipnir.Error?.Details))
             return sleipnir.Error!.Details;
         return null;

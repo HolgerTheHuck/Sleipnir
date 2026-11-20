@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Field-level validation errors** — `SleipnirError.Errors` (`error.errors` on the wire) carries
+  `{ "<field path>": ["message", …] }` in the ASP.NET Core `ValidationProblemDetails.errors` shape,
+  typed in the C#, TS/JS and Python clients and mapped to `error.data.errors` in JSON-RPC.
+  `SleipnirResults.ValidationProblem(...)` / `SleipnirResponse<T>.ValidationProblem(...)` return it
+  (400, `InvalidArgument`) from a dictionary, an ASP.NET `ValidationProblemDetails.Errors` or
+  DataAnnotations results. `SleipnirOptions.ValidateParameters = true` (opt-in) validates every
+  bound parameter with DataAnnotations — recursively, including `IValidatableObject` — before the
+  method runs, with keys like `scenario.steps[1].hsn`. Additive: the field is omitted when unset,
+  and over MessagePack it is a sixth error element that older clients skip.
+  [ERROR_CATALOG.md](ERROR_CATALOG.md) §1.3.
 - **Localizable 401/403 messages** — `SleipnirOptions.Messages` (`SleipnirMessages`) sets the text
   of the framework-generated `Unauthenticated` / `PermissionDenied` errors; a subclass can resolve
   them per request culture (e.g. via `IStringLocalizer`). Code and category are unchanged; the

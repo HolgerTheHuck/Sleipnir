@@ -221,6 +221,17 @@ namespace SleipnirHub.Extensions
         public AliasBindingMode AliasBindingMode { get; set; } = AliasBindingMode.Weak;
 
         /// <summary>
+        /// Validates every bound parameter with DataAnnotations before the method runs
+        /// (default <c>false</c>): attributes on the parameter itself (<c>[Required]</c>,
+        /// <c>[Range]</c>, …) and the value's object graph — property and class attributes and
+        /// <see cref="System.ComponentModel.DataAnnotations.IValidatableObject"/>, descending into
+        /// nested objects and list elements. Failures return <c>400</c> <c>InvalidArgument</c> with
+        /// <c>error.errors</c> in the ASP.NET <c>ValidationProblemDetails.errors</c> shape, keyed
+        /// <c>param.camelCase.path[i]</c>. See ERROR_CATALOG.md §1.3.
+        /// </summary>
+        public bool ValidateParameters { get; set; }
+
+        /// <summary>
         /// Texts of the error messages Sleipnir generates for authentication/authorization
         /// (401 <c>Unauthenticated</c>, 403 <c>PermissionDenied</c>) — set them to return these
         /// in your application's language (<c>options.Messages.Unauthenticated = "Bitte anmelden.";</c>),

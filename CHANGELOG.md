@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.1] — 2026-11-20
+
+NuGet only — the npm packages stay at 1.9.0 (unaffected).
+
+### Fixed
+
+- **`Sleipnir.Server.Codegen` could not be restored** (NU1101) in 1.8.0, 1.8.1 and 1.9.0: the
+  package declared a dependency on `Sleipnir.Codegen.Core`, which was never published. The library
+  is internal and already ships inside the package (`tasks/net8.0/`); the dependency is no longer
+  declared. Upgrade `Sleipnir.Server.Codegen` to 1.9.1 — the other packages are unchanged apart
+  from the version.
+
 ## [1.9.0] — 2026-11-20
 
 ### Changed — .NET 10 support, .NET 11 tested (.NET 8 left support on 2026-11-10)

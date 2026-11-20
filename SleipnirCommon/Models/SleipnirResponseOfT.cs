@@ -103,6 +103,19 @@ public sealed class SleipnirResponse<T> : SleipnirResponse
     public static SleipnirResponse<T> BadRequest(string message, string? details = null)
         => Fail(SleipnirErrorCodes.BadRequest, message, SleipnirErrorCategory.InvalidArgument, details);
 
+    /// <summary>
+    /// 400 Bad Request with field-level errors (<see cref="SleipnirError.Errors"/>, ASP.NET
+    /// <c>ValidationProblemDetails.errors</c> shape). Mirror of
+    /// <see cref="SleipnirResults.ValidationProblem(IDictionary{string, string[]}, string?, string?)"/>.
+    /// </summary>
+    public static SleipnirResponse<T> ValidationProblem(IDictionary<string, string[]> errors,
+        string? message = null, string? details = null)
+    {
+        var envelope = new SleipnirResponse<T> { Code = SleipnirErrorCodes.BadRequest };
+        envelope.AssignError(SleipnirResults.BuildValidationError(errors, message, details));
+        return envelope;
+    }
+
     /// <summary>401 Unauthorized — authentication required/failed.</summary>
     public static SleipnirResponse<T> Unauthorized(string message = "Unauthorized.")
         => Fail(SleipnirErrorCodes.Unauthorized, message, SleipnirErrorCategory.Unauthenticated);

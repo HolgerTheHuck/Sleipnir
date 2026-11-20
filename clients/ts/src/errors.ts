@@ -4,7 +4,8 @@ import type { SleipnirErrorBody, SleipnirErrorCategory, SleipnirResponse } from 
  * Error from a Sleipnir call. Mirrors the C# equivalent (SleipnirException).
  *
  * - **Logical error** (non-2xx `code` in the response body): `code`/`message`/
- *   `details`/`requestId` from SleipnirResponse.error (or derived from the response).
+ *   `details`/`requestId`/`category`/`errors` from SleipnirResponse.error (or derived
+ *   from the response). `errors` holds field-level validation messages, keyed by path.
  * - **Transport error** (network, non-200 HTTP, malformed JSON): `code` = 0,
  *   `message` describes the transport failure, the original exception in `cause`.
  *
@@ -17,6 +18,11 @@ export class SleipnirError extends Error {
   readonly requestId?: string | null;
   /** Semantic category from `error.category` (absent for transport errors / older servers). */
   readonly category?: SleipnirErrorCategory;
+  /**
+   * Field-level validation errors (`error.errors`, ASP.NET `ValidationProblemDetails.errors`
+   * shape): field path → messages. Absent unless the server reported a validation problem.
+   */
+  readonly errors?: Readonly<Record<string, readonly string[]>> | null;
 
   constructor(
     code: number,
@@ -25,6 +31,7 @@ export class SleipnirError extends Error {
       details?: string | null;
       requestId?: string | null;
       category?: SleipnirErrorCategory;
+      errors?: Record<string, string[]> | null;
       cause?: unknown;
     },
   ) {
@@ -34,6 +41,7 @@ export class SleipnirError extends Error {
     this.details = options?.details;
     this.requestId = options?.requestId;
     this.category = options?.category;
+    this.errors = options?.errors;
   }
 
   /** Builds a SleipnirError from a SleipnirErrorBody (e.g. response.error). */
@@ -42,6 +50,7 @@ export class SleipnirError extends Error {
       details: body.details,
       requestId: body.requestId,
       category: body.category,
+      errors: body.errors,
     });
   }
 

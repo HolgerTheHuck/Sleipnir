@@ -169,6 +169,8 @@ namespace SleipnirHub.Extensions
                 // Propagate the alias binding mode (default Weak; Strict = fragment must
                 // fully cover the consumer type, otherwise 400 — see DEPENDENCY_BINDING.md).
                 invoker.AliasBindingMode = options.AliasBindingMode;
+                // Opt-in DataAnnotations parameter validation → 400 with error.errors.
+                invoker.ValidateParameters = options.ValidateParameters;
                 // Localizable 401/403 texts (ERROR_CATALOG.md §1.2); shared with the auth interceptor.
                 invoker.Messages = options.Messages ?? new SleipnirCommon.Results.SleipnirMessages();
                 // Event backpressure (Phase 3, experimental): per-subscription buffer capacity

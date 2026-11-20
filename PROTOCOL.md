@@ -147,6 +147,8 @@ Structured error details, included in `SleipnirResponse.error` when `code != 2xx
 | `message` | string | Human-readable error message |
 | `details` | string\|null | Additional details (stack trace in development only) |
 | `requestId` | string\|null | Correlates with request ID |
+| `category` | string | Semantic category (`SleipnirErrorCategory`), see below |
+| `errors` | object (absent) | Field-level validation errors, `{ "<field path>": ["message", …] }` — the ASP.NET `ValidationProblemDetails.errors` shape. Present only on validation failures (`400`, `InvalidArgument`); omitted otherwise. Over MessagePack the error is the array `[code, message, details, requestId, category, errors]`. See `ERROR_CATALOG.md` §1.3. |
 
 ### SleipnirMultiRequest
 
@@ -1126,7 +1128,14 @@ interface SleipnirResponse {
   data: unknown | null; // structured JSON value — NOT a string blob, no JSON.parse needed
   content?: string | null; // base64 for byte[] results
   id: string | null;
-  error: { code: number; message: string; details?: string; requestId?: string | null } | null;
+  error: {
+    code: number;
+    message: string;
+    details?: string;
+    requestId?: string | null;
+    category?: string;
+    errors?: Record<string, string[]>; // field-level validation errors (400 InvalidArgument only)
+  } | null;
   exposedDependencies?: Record<string, string> | null;
   isSuccess: boolean; // derived client-side from code (server does not send it)
 }

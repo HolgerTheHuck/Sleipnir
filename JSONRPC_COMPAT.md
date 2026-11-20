@@ -144,8 +144,11 @@ found"; a business 404 maps to `-32000` with the domain message intact in `error
 ### `error.data`
 
 When the Sleipnir error carries a structured payload (e.g. a `ProblemDetails` body from
-`SleipnirResults.Error(ProblemDetails)`), that payload becomes `error.data`. Otherwise,
-`SleipnirError.details` (a diagnostic string, present in Development) is used. If neither
+`SleipnirResults.Error(ProblemDetails)`), that payload becomes `error.data`. Field-level
+validation errors (`SleipnirError.errors`, from `SleipnirResults.ValidationProblem` or
+`SleipnirOptions.ValidateParameters`) become `error.data = { "errors": { … }, "details"?: … }` —
+the `ValidationProblemDetails` member name, with `error.code` `-32602`. Otherwise,
+`SleipnirError.details` (a diagnostic string, present in Development) is used. If none
 exists, `data` is omitted.
 
 ---

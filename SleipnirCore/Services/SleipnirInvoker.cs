@@ -104,6 +104,15 @@ namespace SleipnirCore.Services
         public AliasBindingMode AliasBindingMode { get; set; } = AliasBindingMode.Weak;
 
         /// <summary>
+        /// Opt-in DataAnnotations validation of every bound parameter (default <c>false</c>):
+        /// parameter attributes plus the value's object graph (<see cref="SleipnirValidation"/>).
+        /// A failure short-circuits with <c>400</c> <c>InvalidArgument</c> carrying
+        /// <see cref="SleipnirError.Errors"/> — the controller method is not invoked. Runs in
+        /// <c>BuildParameters</c>, so single calls, every batch mode and subscribes are covered.
+        /// </summary>
+        public bool ValidateParameters { get; set; }
+
+        /// <summary>
         /// Texts of the framework-generated 401/403 messages (localizable). Set via
         /// <c>SleipnirOptions.Messages</c> in <c>AddSleipnir</c>; the defaults are the 1.x texts.
         /// Only <c>error.message</c> changes — code and category stay fixed.
@@ -1947,6 +1956,11 @@ namespace SleipnirCore.Services
                             "Paginate or raise the cap (0 = unlimited)."));
                     }
                 }
+                if (ValidateParameters)
+                {
+                    var validation = ValidateBoundParameters(methodParams, parameters);
+                    if (validation != null) return (null, validation);
+                }
                 return (parameters, null);
             }
             catch (Exception)
@@ -1964,6 +1978,17 @@ namespace SleipnirCore.Services
         /// Only reached for omitted parameters, so the per-call NullabilityInfoContext is off the
         /// hot path (the context is not thread-safe and therefore not shared).
         /// </summary>
+        private static SleipnirResponse? ValidateBoundParameters(ParameterInfo[] methodParams, object?[] values)
+        {
+            var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+            foreach (var param in methodParams)
+            {
+                if (param.ParameterType == typeof(CancellationToken)) continue;
+                SleipnirValidation.ValidateParameter(param, values[param.Position], errors);
+            }
+            return errors.Count == 0 ? null : SleipnirResults.ValidationProblem(errors);
+        }
+
         private static bool TryGetOmittedValue(ParameterInfo param, out object? value)
         {
             var type = param.ParameterType;

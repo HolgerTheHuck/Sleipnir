@@ -28,6 +28,26 @@ describe("SleipnirError", () => {
     expect(e.code).toBe(400);
   });
 
+  it("fromResponse carries field-level validation errors (error.errors)", () => {
+    const e = SleipnirError.fromResponse({
+      code: 400,
+      isSuccess: false,
+      error: {
+        code: 400,
+        message: "One or more validation errors occurred.",
+        category: "InvalidArgument",
+        errors: { "scenario.steps[1].hsn": ["Must be 4 digits."] },
+      },
+    });
+    expect(e.category).toBe("InvalidArgument");
+    expect(e.errors).toEqual({ "scenario.steps[1].hsn": ["Must be 4 digits."] });
+  });
+
+  it("errors is absent on a plain error", () => {
+    const e = SleipnirError.fromBody({ code: 404, message: "not found" });
+    expect(e.errors).toBeUndefined();
+  });
+
   it("fromResponse mit Fallback-Message bei leerem data", () => {
     const e = SleipnirError.fromResponse({ code: 403, data: null, isSuccess: false });
     expect(e.message).toContain("403");

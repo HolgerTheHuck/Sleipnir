@@ -88,6 +88,14 @@ export interface SleipnirErrorBody {
    * status, and on servers that predate it). See {@link SleipnirErrorCategory}.
    */
   category?: SleipnirErrorCategory;
+  /**
+   * Field-level validation errors in the ASP.NET `ValidationProblemDetails.errors` shape:
+   * field path → messages, e.g. `{ "scenario.steps[1].hsn": ["Must be 4 digits."] }`.
+   * Present only on validation failures (`code` 400, `category` "InvalidArgument"); absent
+   * otherwise and on servers that predate it. Framework-generated keys are camelCase paths
+   * rooted at the parameter name (`.` members, `[i]` indexes).
+   */
+  errors?: Record<string, string[]> | null;
 }
 
 /** A single parameter within SleipnirRequest.params. */

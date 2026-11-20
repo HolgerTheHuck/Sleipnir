@@ -20,7 +20,11 @@ namespace SleipnirTests.Integration;
 /// test-auth scheme is wired. The span→metric end-to-end query (make a Sleipnir call, then query
 /// Heimdall for the <c>SleipnirCall</c> span) is deliberately out of scope here — the assertions
 /// prove the wiring is live, not that a specific call produced a specific span.
+/// <para>Runs in the <c>sleipnir-tracing</c> collection: <c>AddSleipnirHeimdallTelemetry</c> subscribes
+/// the process-global <c>"Sleipnir"</c> ActivitySource while the host runs, which would otherwise
+/// race <c>SleipnirTracingTests.NoListener_StartActivityReturnsNull_IsCostNeutral</c>.</para>
 /// </remarks>
+[Collection("sleipnir-tracing")]
 public class HeimdallTelemetryEndpointTests
 {
     private static readonly JsonSerializerOptions JsonOpts = new()

@@ -134,9 +134,10 @@ jobs:
 
   build-test-net11:
     # .NET 11 runs the net10.0 builds (README: "runs on .NET 8, 10 and 11"). This leg installs
-    # ONLY the 11.0.x SDK, so there is no .NET 10 runtime on the runner: the net10.0 test host,
-    # the stories/samples it launches and the net8.0 export tool all roll forward onto .NET 11
-    # (DOTNET_ROLL_FORWARD=LatestMajor). It also covers building with SDK 11. Release-gating:
+    # the 11.0.x SDK (the runner image also ships older runtimes, see the listing step);
+    # DOTNET_ROLL_FORWARD=LatestMajor makes the net10.0 test host, the stories/samples it launches
+    # and the net8.0 export tool all run on the highest installed major, i.e. .NET 11. It also
+    # covers building with SDK 11 (the newest SDK wins without a global.json). Release-gating:
     # pack/publish-npm need it, so no release ships without a green .NET 11 run.
     runs-on: ubuntu-latest
     timeout-minutes: 40

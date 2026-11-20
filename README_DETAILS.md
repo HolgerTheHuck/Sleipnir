@@ -908,7 +908,9 @@ See [`PROTOCOL.md`](PROTOCOL.md) → Observability Endpoints for the instrument 
 ## Requirements
 
 - .NET 8.0+ / ASP.NET Core 8.0+ — the packages ship `net8.0` and `net10.0` assets; .NET 10 (LTS)
-  and later pick the `net10.0` build with ASP.NET Core 10 dependencies.
+  and later pick the `net10.0` build with ASP.NET Core 10 dependencies. .NET 11 runs that build
+  unchanged; CI runs the full test suite on the .NET 11 runtime, and the repository builds with
+  SDK 10 and SDK 11.
 
 ## License
 

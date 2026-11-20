@@ -132,6 +132,36 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: rm -f vuln-report.txt
 
+  build-test-net11:
+    # .NET 11 runs the net10.0 builds (README: "runs on .NET 8, 10 and 11"). This leg installs
+    # ONLY the 11.0.x SDK, so there is no .NET 10 runtime on the runner: the net10.0 test host,
+    # the stories/samples it launches and the net8.0 export tool all roll forward onto .NET 11
+    # (DOTNET_ROLL_FORWARD=LatestMajor). It also covers building with SDK 11. Release-gating:
+    # pack/publish-npm need it, so no release ships without a green .NET 11 run.
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      DOTNET_ROLL_FORWARD: LatestMajor
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 11
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+
+      - name: Runtimes on the runner
+        run: dotnet --list-runtimes
+
+      - name: Restore
+        run: dotnet restore Sleipnir.sln
+
+      - name: Build
+        run: dotnet build Sleipnir.sln --configuration Release --no-restore
+
+      - name: Test (net10.0 builds on the .NET 11 runtime)
+        run: dotnet test SleipnirTests/SleipnirTests.csproj --configuration Release --no-build --verbosity normal
+
   ts-tests:
     # The TS side (clients/ts + clients/codegen) had NO test job: the .NET parity gate
     # compares committed golden fixtures against vitest-tested emitters, but the vitest
@@ -166,7 +196,7 @@ jobs:
 
   pack:
     runs-on: ubuntu-latest
-    needs: [build-test, ts-tests]
+    needs: [build-test, build-test-net11, ts-tests]
     if: startsWith(github.ref, 'refs/tags/v')
     # contents: write lets the default GITHUB_TOKEN create the GitHub Release;
     # pull-requests: write is needed by generate_release_notes to label PR notes.
@@ -238,7 +268,7 @@ jobs:
     # registry, so a re-dispatch (or a dispatch where only one package changed)
     # is idempotent and never 403s on a re-publish.
     runs-on: ubuntu-latest
-    needs: [build-test, ts-tests]
+    needs: [build-test, build-test-net11, ts-tests]
     if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read

@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed — .NET 10 support (.NET 8 left support on 2026-11-10)
+### Changed — .NET 10 support, .NET 11 tested (.NET 8 left support on 2026-11-10)
+
+- **.NET 11:** Sleipnir runs on .NET 11 with the `net10.0` build — no separate `net11.0` target
+  (.NET 11 is an STS release). A new CI leg installs only the .NET 11 SDK and runs the full test
+  suite on the .NET 11 runtime; releases are gated on it. The repository builds with SDK 10 and
+  SDK 11.
 
 - **All library packages multi-target `net8.0` and `net10.0`** (`Sleipnir.Common` additionally
   keeps `netstandard2.1`). A .NET 10+ application gets the `net10.0` build with ASP.NET Core 10

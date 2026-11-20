@@ -251,7 +251,7 @@ All `Sleipnir.*` packages ship to **nuget.org**: [`nuget.org/packages?q=Sleipnir
 
 > **Versions across NuGet and npm:** major and minor versions ship in lockstep on both channels; a patch release ships only on the channel it fixes, so `Sleipnir.Server 1.8.1` with `sleipnir-client 1.8.0` is an intended, compatible pair. Any server and client of the same major version are wire-compatible (details: [`STABILITY.md`](STABILITY.md) §3, rule 9). The [CHANGELOG](CHANGELOG.md) names the channels each release ships on.
 
-Requires .NET 8.0+ — the packages ship `net8.0` and `net10.0` builds (.NET 10 is the recommended LTS; .NET 8 left support on 2026-11-10).
+Runs on .NET 8, 10 and 11 — the packages ship `net8.0` and `net10.0` builds; .NET 11 uses the `net10.0` build and is tested in CI. .NET 10 is the recommended LTS; .NET 8 left support on 2026-11-10.
 
 ---
 

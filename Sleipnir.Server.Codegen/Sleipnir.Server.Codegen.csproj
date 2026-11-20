@@ -43,8 +43,11 @@
     <ProjectReference Include="..\SleipnirCommon\SleipnirCommon.csproj" />
     <!-- Contract compatibility engine (ContractCompatibility), shared with the TS port via the
          clients/codegen/test/fixtures/compat spec. Not packable on its own: `dotnet publish` puts
-         the dll into tasks/net8.0 with the rest of the tool's closure. -->
-    <ProjectReference Include="..\Sleipnir.Codegen.Core\Sleipnir.Codegen.Core.csproj" />
+         the dll into tasks/net8.0 with the rest of the tool's closure. PrivateAssets="all" keeps
+         it OUT of the nuspec dependencies — without it, 1.8.0-1.9.0 declared a dependency on a
+         "Sleipnir.Codegen.Core" package that does not exist, so restoring Sleipnir.Server.Codegen
+         failed (NU1101). -->
+    <ProjectReference Include="..\Sleipnir.Codegen.Core\Sleipnir.Codegen.Core.csproj" PrivateAssets="all" />
   </ItemGroup>
 
   <!-- Pack the build/ targets into the nupkg so PackageReference auto-imports them. -->

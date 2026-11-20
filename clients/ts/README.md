@@ -4,8 +4,7 @@ Isomorphic JavaScript/TypeScript client for [Sleipnir](../../README.md) — the 
 multi-transport framework for command-oriented web APIs on .NET 8+. Runs in the
 **browser** and **Node.js** with the same API.
 
-- **Transports:** REST (`fetch`) + WebSocket. (SignalR is a roadmap item — see
-  [ROADMAP.md](../../ROADMAP.md).)
+- **Transports:** REST (`fetch`), WebSocket, SSE (events) and SignalR.
 - **API:** fluent `SleipnirCall` builder **and** functional `client.call("C","M",{...})`.
 - **Batching + dependency chaining** in a single roundtrip (resolved server-side).
 - **Binary:** `byte[]` parameters and binary results, base64 over the wire.

@@ -20,7 +20,7 @@ namespace Sleipnir.Samples.NotificationChat.Server.Data;
 /// echten Connections, <see cref="ConcurrentDictionary{TKey, TValue}"/> ist thread-safe).
 /// </para>
 /// <para>
-/// Siehe <c>ROADMAP.md</c> Phase 2 und <c>BEST_PRACTICES.md</c> §1.3 (Controller lifetime
+/// Siehe <c>BEST_PRACTICES.md</c> §1.3 (Controller lifetime
 /// and DI). Das Muster: Design den Service einmal, expose ihn via Sleipnir — der Store ist
 /// austauschbar unter derselben Schnittstelle.
 /// </para>

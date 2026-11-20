@@ -173,7 +173,7 @@ the enumeration completes. Two consequences:
   for bounded request-time work.
 
 > There is no on-the-wire streaming for REST in v1. WebSocket/SignalR are the streaming
-> transports. See [ROADMAP.md](ROADMAP.md) for native streaming evolution.
+> transports.
 
 ---
 

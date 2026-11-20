@@ -27,8 +27,7 @@ public delegate Task<SleipnirResponse?> SleipnirInvocationDelegate(SleipnirInvoc
 /// <i>custom</i> logic you place behind this seam (tenant isolation, request validation, rate
 /// limiting, audit logging) is bypassed on batches. Do not build a security control on this
 /// seam in 1.1.x; use <c>[SleipnirAuthorise]</c>/policies and the framework-level gates instead.
-/// Routing the batch path through the interceptor pipeline is tracked for 1.2
-/// (<c>ROADMAP.md</c> R7); a startup warning is logged once when <c>SleipnirOptions.Interceptors</c>
+/// Routing the batch path through the interceptor pipeline is still open; a startup warning is logged once when <c>SleipnirOptions.Interceptors</c>
 /// is non-empty.</para>
 /// <para>Phase 1 — see <c>docs/design/phase-1-interceptor-pipeline.md</c>. The signature changed
 /// from <c>InvokeAsync(SleipnirRequest, SleipnirInvocationDelegate, CancellationToken)</c> to

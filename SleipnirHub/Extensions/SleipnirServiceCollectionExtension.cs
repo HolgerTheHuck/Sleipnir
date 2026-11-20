@@ -288,7 +288,7 @@ namespace SleipnirHub.Extensions
             // 1.1.x — batch elements bypass the interceptor seam (authorization is unaffected;
             // it is enforced structurally). Warn once at startup when a user registered custom
             // interceptors, so the bypass does not stay silent. The real fix (route the batch path
-            // through the pipeline) is tracked for 1.2 (ROADMAP.md R7).
+            // through the pipeline) is still open.
             var startupOptions = app.ApplicationServices.GetService<SleipnirOptions>();
             if (startupOptions?.Interceptors.Count > 0 || startupOptions?.BatchInterceptors.Count > 0)
             {
@@ -298,8 +298,8 @@ namespace SleipnirHub.Extensions
                         "Sleipnir: user interceptors (Interceptors={InterceptorCount}, BatchInterceptors={BatchInterceptorCount}) " +
                         "currently run on the single-call path only, not on batch request elements " +
                         "(/json/multi, WebSocket multi, JSON-RPC batch). Authorization is unaffected (enforced structurally), " +
-                        "but any custom interceptor logic is bypassed on batches. Batch-pipeline routing is tracked for 1.2. " +
-                        "See ROADMAP.md R7 and SECURITY_GUIDE.md.",
+                        "but any custom interceptor logic is bypassed on batches. " +
+                        "See SECURITY_GUIDE.md.",
                         startupOptions.Interceptors.Count, startupOptions.BatchInterceptors.Count);
             }
 

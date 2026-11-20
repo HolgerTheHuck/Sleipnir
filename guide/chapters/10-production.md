@@ -99,7 +99,7 @@ built-in order is `Auth → Telemetry → Logging` deliberately: Auth rejects un
 User interceptors run on the **single-call path only** — `POST /json` (single), a WebSocket
 single-frame request. They do **not** run on the per-element invocations of a **batch**
 (`/json/multi`, a WS multi-request, a JSON-RPC batch); the batch path bypasses the interceptor
-pipeline (routing it through the pipeline is tracked for 1.2, `ROADMAP.md` R7). A startup
+pipeline (routing it through the pipeline is a known gap). A startup
 warning is logged once when `options.Interceptors` is non-empty.
 
 **Authorization is unaffected** — `[SleipnirAuthorise]` is enforced structurally by the

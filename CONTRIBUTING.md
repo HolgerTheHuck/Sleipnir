@@ -175,5 +175,4 @@ third-party code, attribute it and confirm its license is compatible with MIT.
 
 ---
 
-Questions? Open a `question`-tagged issue, or check [ROADMAP.md](ROADMAP.md) for where
-the project is headed. Happy hacking.
+Questions? Open a `question`-tagged issue. Happy hacking.

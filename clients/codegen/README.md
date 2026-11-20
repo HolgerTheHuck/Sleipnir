@@ -94,7 +94,7 @@ sleipnir-gen --lang <ts|js|cs|py> --discovery <url|file|-> [--out <dir> | --stdo
   compare it against the committed tree at `--out`; exit `4` on drift (a missing
   or changed generated file), `0` if clean. **No files are written.** This is the
   client-side contract-drift gate — the CLI counterpart of the server-side MSBuild
-  drift check (`ROADMAP.md` §3): without it, a server change without regen leaves
+  drift check ([CONTRACT_EVOLUTION.md](../../CONTRACT_EVOLUTION.md)): without it, a server change without regen leaves
   the client build green and the drift surfaces only at runtime as a `400`. The
   comparison is one-directional (generated ⊆ committed): a file present in `--out`
   that the emitter no longer produces is not flagged (`--out` is a project client

@@ -1,6 +1,6 @@
 // sleipnir-gen --selfcheck — the client-side contract-drift gate.
 //
-// Counterpart to the server-side MSBuild drift check described in ROADMAP.md §3
+// Counterpart to the server-side MSBuild drift check described in CONTRACT_EVOLUTION.md
 // ("the part that would have made wsdl.exe better"): without a gate, someone
 // changes the server contract, forgets to regenerate the client, and the client
 // build stays green — the drift surfaces only at runtime as a 400. `--selfcheck`

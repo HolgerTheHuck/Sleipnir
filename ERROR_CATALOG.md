@@ -247,8 +247,7 @@ if (res.error?.category === "PermissionDenied") { /* 403: show "insufficient per
 ### 3.3 Generated clients (Phase 3-B — planned)
 
 Codegen will emit typed exceptions per category (`SleipnirPermissionDeniedException`,
-`SleipnirNotFoundException`, …) so the switch becomes type-based. Tracked in
-[`ROADMAP.md`](ROADMAP.md) Benutzbarkeit-Roadmap Phase 3 (item B).
+`SleipnirNotFoundException`, …) so the switch becomes type-based. Not implemented yet.
 
 ---
 

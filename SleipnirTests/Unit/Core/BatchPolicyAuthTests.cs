@@ -14,7 +14,7 @@ using Xunit;
 namespace SleipnirTests.Unit.Core;
 
 /// <summary>
-/// Regression tests for the 1.1.1 batch-path policy fix (<c>ROADMAP.md</c> R6).
+/// Regression tests for the 1.1.1 batch-path policy fix.
 ///
 /// <c>[SleipnirAuthorise(Policy=...)]</c> was evaluated only by the
 /// <c>SleipnirAuthorizationInterceptor</c> on the single-call path; the batch path

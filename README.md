@@ -328,7 +328,6 @@ Use the abstraction that fits the interaction.
 * [Wire protocol](PROTOCOL.md)
 * [JSON-RPC 2.0 compatibility](JSONRPC_COMPAT.md)
 * [Code generation onboarding](CODEGEN_ONBOARDING.md)
-* [Roadmap](ROADMAP.md)
 
 ### Consolidated lookup references
 

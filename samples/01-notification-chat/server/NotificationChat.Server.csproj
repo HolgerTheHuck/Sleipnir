@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Sleipnir.Server" Version="1.9.1" />
+    <PackageReference Include="Sleipnir.Server" Version="1.10.0" />
   </ItemGroup>
 
 </Project>

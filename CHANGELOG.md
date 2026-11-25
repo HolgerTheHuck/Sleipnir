@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-11-25
+
+Both channels — NuGet lockstep and npm (`sleipnir-client`, `sleipnir-codegen`) at 1.10.0.
+
 ### Added
 
 - **History + live event streams (experimental)** — `SleipnirReplayStream<T>` (`SleipnirCore.Events`)

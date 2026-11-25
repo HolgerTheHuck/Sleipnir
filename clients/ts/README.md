@@ -8,6 +8,8 @@ multi-transport framework for command-oriented web APIs on .NET 8+. Runs in the
 - **API:** fluent `SleipnirCall` builder **and** functional `client.call("C","M",{...})`.
 - **Batching + dependency chaining** in a single roundtrip (resolved server-side).
 - **Binary:** `byte[]` parameters and binary results, base64 over the wire.
+- **For AI coding agents:** the package ships `AGENT_GUIDE.md`, a short map of the whole
+  framework (server setup, errors, codegen, events, pitfalls).
 - **Cancellation & timeout** via `AbortSignal` → `CancelledError` (not wrapped as
   `SleipnirError`).
 - **Discovery:** `client.discover()` returns the full API metadata from

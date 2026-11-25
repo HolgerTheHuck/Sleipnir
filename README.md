@@ -218,13 +218,13 @@ Already have an ASP.NET Core project? Add the packages directly.
 **Server** — all transports + Developer UI:
 
 ```xml
-<PackageReference Include="Sleipnir.Server" Version="1.9.1" />
+<PackageReference Include="Sleipnir.Server" Version="1.10.0" />
 ```
 
 **C# client:**
 
 ```xml
-<PackageReference Include="Sleipnir.Client" Version="1.9.1" />
+<PackageReference Include="Sleipnir.Client" Version="1.10.0" />
 ```
 
 **TypeScript / JavaScript client:**
@@ -236,7 +236,7 @@ npm i sleipnir-client
 **Telemetry with built-in dashboard** — optional, replaces the Prometheus scrape with an embedded Heimdall backend (dashboard + PromQL API under `/otel`, no collector):
 
 ```xml
-<PackageReference Include="Sleipnir.Telemetry.Heimdall" Version="1.9.1" />
+<PackageReference Include="Sleipnir.Telemetry.Heimdall" Version="1.10.0" />
 ```
 
 **Typed client generation:**
@@ -324,6 +324,7 @@ Use the abstraction that fits the interaction.
 
 ### Reference
 
+* [Guide for AI coding agents](AGENT_GUIDE.md) — the 5-minute map: packages, setup, errors, codegen, events, pitfalls ([llms.txt](llms.txt))
 * [Full feature reference](README_DETAILS.md)
 * [Wire protocol](PROTOCOL.md)
 * [JSON-RPC 2.0 compatibility](JSONRPC_COMPAT.md)

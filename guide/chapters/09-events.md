@@ -150,6 +150,11 @@ The `ack` frame (`type:"ack"`) lands **before** the first `event` frame and carr
 `subscriptionId` the client echoes back to resume. This invariant — ack-then-events — is what
 lets the client capture the id for resume before any data arrives.
 
+> **Not what you need for job progress.** Resume replays what *one* dropped subscription missed.
+> A page that opens while a job is already running needs the job's history from the start, then
+> the live events. That is a different tool: `SleipnirReplayStream<T>` with a per-entity sequence
+> number in the payload — recipe in `EVENTS_REFERENCE.md` §15.
+
 ## Three transports, one store
 
 The same `SleipnirSubscriptionStore` (a process-wide DI singleton) backs all three event

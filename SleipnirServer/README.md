@@ -6,6 +6,9 @@ Developer UI behind a single `PackageReference`, so an ASP.NET Core app gets
 `AddSleipnir` + `UseSleipnirTransports` + `MapSleipnir` without referencing each transport
 individually.
 
+> **Using an AI coding agent?** This package ships `docs/AGENT_GUIDE.md` — a short map of
+> setup, errors, codegen, events and pitfalls, with pointers into the full references.
+
 ## What it brings (transitively)
 
 - `Sleipnir.Core` — the execution engine (`ISleipnirCore`).
@@ -17,7 +20,7 @@ individually.
 ## Install
 
 ```xml
-<PackageReference Include="Sleipnir.Server" Version="1.9.1" />
+<PackageReference Include="Sleipnir.Server" Version="1.10.0" />
 ```
 
 Targets `net8.0`. Because it pulls the `Microsoft.NET.Sdk.Web` transports, the

@@ -240,7 +240,7 @@ namespace SleipnirCore.Services
             if (type.IsEnum)
             {
                 EnsureRegistered(type, ctx);
-                return new TypeRef { Kind = "ref", Ref = TypeKey(type), Nullable = nullable };
+                return new TypeRef { Kind = "ref", Ref = TypeKey(type, ctx), Nullable = nullable };
             }
 
             // Scalar from the fixed table (primitives + BCL value types + string).
@@ -268,7 +268,7 @@ namespace SleipnirCore.Services
             if (IsExpandableType(type, ctx.ContractAssemblies))
             {
                 EnsureRegistered(type, ctx);
-                return new TypeRef { Kind = "ref", Ref = TypeKey(type), Nullable = nullable };
+                return new TypeRef { Kind = "ref", Ref = TypeKey(type, ctx), Nullable = nullable };
             }
 
             // Everything else (framework envelopes, BCL opaque, third-party) -> opaque with a hint.
@@ -304,12 +304,12 @@ namespace SleipnirCore.Services
         /// <summary>Idempotently registers an expandable object or enum type in discovery.types.</summary>
         private static void EnsureRegistered(Type type, BuildCtx ctx)
         {
-            string key = TypeKey(type);
+            string key = TypeKey(type, ctx);
             if (ctx.Types.ContainsKey(key)) return;
 
             if (type.IsEnum)
             {
-                ctx.Types[key] = BuildEnumTypeMeta(type);
+                ctx.Types[key] = BuildEnumTypeMeta(type, key);
                 return;
             }
 
@@ -321,9 +321,9 @@ namespace SleipnirCore.Services
             PopulateObjectMeta(meta, type, ctx);
         }
 
-        private static TypeMeta BuildEnumTypeMeta(Type type)
+        private static TypeMeta BuildEnumTypeMeta(Type type, string key)
         {
-            var meta = new TypeMeta { Kind = "enum", TypeName = TypeKey(type), Example = null };
+            var meta = new TypeMeta { Kind = "enum", TypeName = key, Example = null };
             var underlying = Enum.GetUnderlyingType(type);
             var members = new List<EnumMember>();
             foreach (var name in Enum.GetNames(type))
@@ -416,7 +416,85 @@ namespace SleipnirCore.Services
 
         // --- Helpers --------------------------------------------------------------------------
 
-        private static string TypeKey(Type type) => type.FullName ?? type.Name;
+        /// <summary>
+        /// The <c>discovery.types</c> key of a registered type. Non-generic types keep their CLR
+        /// <c>FullName</c> (<c>MyApp.Order</c>). A closed generic's <c>FullName</c> is the
+        /// assembly-qualified CLR form (<c>MyApp.Page`1[[MyApp.TicketDto, MyApp, Version=…]]</c>),
+        /// which is not a usable contract name — it is flattened instead to
+        /// <c>{Namespace}.{Name}Of{Arg1}And{Arg2}</c> (<c>MyApp.PageOfTicketDto</c>), see
+        /// <see cref="MangledName"/>. Arguments use their short CLR name; should two distinct
+        /// closed types flatten to the same key (<c>Page&lt;A.Dto&gt;</c> + <c>Page&lt;B.Dto&gt;</c>),
+        /// the later one qualifies its arguments with their namespace (<c>PageOfBDto</c>).
+        /// </summary>
+        private static string TypeKey(Type type, BuildCtx ctx)
+        {
+            if (ctx.KeyByType.TryGetValue(type, out var cached)) return cached;
+            if (!type.IsGenericType)
+            {
+                // Recorded so a later generic that flattens onto a real type name
+                // (Page<TicketDto> vs. a declared PageOfTicketDto) takes the qualified form.
+                string plain = type.FullName ?? type.Name;
+                ctx.KeyByType[type] = plain;
+                ctx.TypeByKey.TryAdd(plain, type);
+                return plain;
+            }
+
+            string prefix = KeyPrefix(type);
+            string key = prefix + MangledName(type, qualifyArgs: false, isArg: false);
+            if (ctx.TypeByKey.TryGetValue(key, out var owner) && owner != type)
+                key = prefix + MangledName(type, qualifyArgs: true, isArg: false);
+
+            ctx.KeyByType[type] = key;
+            ctx.TypeByKey[key] = type;
+            return key;
+        }
+
+        /// <summary>Namespace + enclosing types (<c>MyApp.</c>, <c>MyApp.Outer+</c>), mirroring FullName.</summary>
+        private static string KeyPrefix(Type type)
+        {
+            string prefix = string.IsNullOrEmpty(type.Namespace) ? string.Empty : type.Namespace + ".";
+            var enclosing = new List<string>();
+            for (var d = type.DeclaringType; d != null; d = d.DeclaringType)
+                enclosing.Insert(0, StripArity(d.Name));
+            foreach (var e in enclosing) prefix += e + "+";
+            return prefix;
+        }
+
+        /// <summary>
+        /// Flat identifier for a type used inside a contract key: <c>Page&lt;TicketDto&gt;</c> →
+        /// <c>PageOfTicketDto</c>, <c>Pair&lt;A, List&lt;B&gt;&gt;</c> → <c>PairOfAAndListOfB</c>,
+        /// <c>T[]</c> → <c>TArray</c>, scalars by CLR name (<c>Int32</c>, <c>String</c>). The argument
+        /// order is the declaration order of the generic parameters. The codegen applies the same
+        /// rule defensively to AQ names from older servers (<c>casing.ts</c> / <c>Casing.cs</c>).
+        /// </summary>
+        private static string MangledName(Type type, bool qualifyArgs, bool isArg)
+        {
+            if (type.IsArray)
+                return MangledName(type.GetElementType()!, qualifyArgs, isArg) + "Array";
+            string name = StripArity(type.Name);
+            string head = qualifyArgs && isArg ? Qualifier(type) + name : name;
+            if (!type.IsGenericType) return head;
+
+            // Generic args of a nested type include the enclosing type's args; only the own ones
+            // belong to this name segment.
+            var args = type.GetGenericArguments();
+            int own = type.GetGenericTypeDefinition().GetGenericArguments().Length
+                      - (type.DeclaringType?.GetGenericArguments().Length ?? 0);
+            var ownArgs = args.Skip(args.Length - Math.Max(own, 0)).ToArray();
+            if (ownArgs.Length == 0) return head;
+            return head + "Of" + string.Join("And", ownArgs.Select(a => MangledName(a, qualifyArgs, isArg: true)));
+        }
+
+        private static string Qualifier(Type type)
+            => string.Concat((type.Namespace ?? string.Empty)
+                .Split('.', StringSplitOptions.RemoveEmptyEntries)
+                .Select(seg => char.ToUpperInvariant(seg[0]) + seg.Substring(1)));
+
+        private static string StripArity(string name)
+        {
+            int tick = name.IndexOf('`');
+            return tick < 0 ? name : name.Substring(0, tick);
+        }
 
         /// <summary>Maps an NRT state to the wire form: only Nullable -> true (absent otherwise).</summary>
         private static bool? ReadNullable(Func<NullabilityState> read)
@@ -457,6 +535,9 @@ namespace SleipnirCore.Services
             public readonly Dictionary<string, TypeMeta> Types;
             public readonly HashSet<Assembly> ContractAssemblies;
             public readonly NullabilityInfoContext NrtCtx = new();
+            /// <summary>Closed generic → flattened key, and its reverse (collision detection).</summary>
+            public readonly Dictionary<Type, string> KeyByType = new();
+            public readonly Dictionary<string, Type> TypeByKey = new(StringComparer.OrdinalIgnoreCase); // same comparer as discovery.types
             public BuildCtx(Dictionary<string, TypeMeta> types, HashSet<Assembly> contractAssemblies)
             {
                 Types = types;

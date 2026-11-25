@@ -212,7 +212,8 @@ They are expected to *graduate* into the stable surface over later minor version
   (`EventMaxDurableSubscriptions`, fallback 10 000); the durable store is in-process (no
   cross-restart persistence). Events beyond the replay window are still lost and counted in
   `sleipnir.event.dropped`. See `PROTOCOL.md` → *Resume (Last-Event-Id)* and
-  `docs/design/phase-3-events.md`.
+  `docs/design/phase-3-events.md`. **`SleipnirReplayStream<T>` / `SleipnirReplayStreams<TKey, T>`**
+  (history + live per entity, `EVENTS_REFERENCE.md` §15) are experimental as well.
 - **The `samples/`, `spikes/`, `stories/`, and `Sleipnir/` (sample app) projects.** Reference and
   demo material; no stability promise.
 

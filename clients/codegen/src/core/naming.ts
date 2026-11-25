@@ -11,7 +11,7 @@
 // short-name collisions) emits identical names to before.
 
 import type { TypeMeta } from "sleipnir-client";
-import { shortName } from "./casing.js";
+import { normalizeTypeKey, shortName } from "./casing.js";
 
 export class NamingResolver {
   /** fullName → emitted name. */
@@ -65,7 +65,7 @@ export class NamingResolver {
    * the colliding `siblings`. `Foo.Bar.Order` → `BarOrder` → `FooBarOrder`.
    */
   private disambiguate(fullName: string, short: string, siblings: Set<string>): string {
-    const parts = fullName.split(".");
+    const parts = normalizeTypeKey(fullName).split(".");
     // parts[last] === short. Prepend parents from nearest outward.
     let name = short;
     for (let depth = 1; depth < parts.length; depth++) {
@@ -85,7 +85,7 @@ export class NamingResolver {
 
 /** The disambiguation candidate for `fullName` at `depth` prepended parents. */
 function candidateAtDepth(fullName: string, depth: number): string {
-  const parts = fullName.split(".");
+  const parts = normalizeTypeKey(fullName).split(".");
   let name = parts[parts.length - 1];
   for (let d = 1; d <= depth && d < parts.length; d++) {
     name = pascalConcat(parts[parts.length - 1 - d]) + name;

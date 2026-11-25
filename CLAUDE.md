@@ -63,7 +63,7 @@ Sleipnir (sample app) · SleipnirTests (xUnit + FluentAssertions) · SleipnirBen
 
 **`ISleipnirInterceptor`** / `SleipnirInvocationDelegate`: middleware pipeline pattern. Interceptors wrap the actual execution in reverse registration order. Built-in `SleipnirLoggingInterceptor` logs call duration.
 
-**`SleipnirDiscoveryService`** generates `DiscoveryInfo` from registered controllers, including contract types, `[SleipnirDocumentation]` summaries, and `[SleipnirExample]` JSON samples. Contract types are **inferred from method signatures** by default (Weg C): any class type whose assembly belongs to the registered controllers' assemblies is fully expanded (property schema, example, nested types); types from other assemblies (BCL, framework envelope, third-party) stay opaque unless overridden. `[SleipnirDataContract]` is an optional override (bare = force-expand, `Exclude = true` = force-opaque). Cached with invalidation on new registrations.
+**`SleipnirDiscoveryService`** generates `DiscoveryInfo` from registered controllers, including contract types, `[SleipnirDocumentation]` summaries, and `[SleipnirExample]` JSON samples. Contract types are **inferred from method signatures** by default (Weg C): any class type whose assembly belongs to the registered controllers' assemblies is fully expanded (property schema, example, nested types); types from other assemblies (BCL, framework envelope, third-party) stay opaque unless overridden. `[SleipnirDataContract]` is an optional override (bare = force-expand, `Exclude = true` = force-opaque). Cached with invalidation on new registrations. `types` keys are the CLR `FullName`, except **closed generics**, which `TypeKey` flattens to `{Namespace}.{Name}Of{Arg1}And{Arg2}` (`Ns.PageOfTicketDto`, never the assembly-qualified ``Page`1[[…]]`` form); both codegens normalize legacy AQ keys the same way (`normalizeTypeKey` in `clients/codegen/src/core/casing.ts` = `Casing.NormalizeTypeKey` — keep identical).
 
 ### Transports
 
@@ -164,6 +164,10 @@ Uses **xUnit** + **FluentAssertions** + **Moq**. Tests are organized as:
 - Controllers are registered via attribute scanning (`[SleipnirController]`), not manual registration.
 - The `SleipnirInvoker` is a singleton — controllers are resolved per-call via `IServiceScopeFactory.CreateScope()`.
 - Expression Tree compilation happens once at registration time, not per invocation.
+
+### History + live event streams
+
+`SleipnirCore/Events/SleipnirReplayStream.cs` → `SleipnirReplayStream<T>` (public, experimental): a hot `IObservable<T>` with a bounded history and a per-stream sequence number (`Publish(seq => …)`), `From(afterSeq)` for re-subscribes, `Complete`/`Fail` kept for late subscribers. Publish, subscribe and delivery share one lock, which is what makes the history→live handover gap- and duplicate-free; observers run under the lock (Subject semantics), so never pair it with `EventBackpressureStrategy.Block`. `SleipnirReplayStreams<TKey, T>` holds one stream per key, evicts finished streams lazily after `completedRetention` (`TimeProvider`-driven, testable), and its `Observe(key, afterSeq)` returns an empty completed stream for unknown keys without allocating. The replay goes synchronously into the subscription's send buffer, so the event's `BufferCapacity` must be ≥ `maxHistory` (negative control in `ReplayStreamSseTests.HistoryLongerThanTheDefaultBuffer_IsReplayedCompletely`). Recipe: `EVENTS_REFERENCE.md` §15; tests: `SleipnirTests/Unit/Core/ReplayStreamTests.cs`, `SleipnirTests/Integration/ReplayStreamSseTests.cs`, fixture `SleipnirTests/Fixtures/ReplayRunFixture.cs`.
 
 ### Distributed Tracing
 

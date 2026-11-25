@@ -1,4 +1,6 @@
 node_modules/
+# Copied from the repository root by the prepack script (single source: /AGENT_GUIDE.md).
+AGENT_GUIDE.md
 dist/
 *.tsbuildinfo
 .DS_Store

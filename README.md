@@ -324,6 +324,7 @@ Use the abstraction that fits the interaction.
 
 ### Reference
 
+* [Guide for AI coding agents](AGENT_GUIDE.md) — the 5-minute map: packages, setup, errors, codegen, events, pitfalls ([llms.txt](llms.txt))
 * [Full feature reference](README_DETAILS.md)
 * [Wire protocol](PROTOCOL.md)
 * [JSON-RPC 2.0 compatibility](JSONRPC_COMPAT.md)

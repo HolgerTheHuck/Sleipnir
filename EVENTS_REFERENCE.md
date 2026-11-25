@@ -45,6 +45,7 @@ per `CLAUDE.md`.
 12. [Phase history & limitations](#12-phase-history--limitations)
 13. [How it is verified (the gates)](#13-how-it-is-verified-the-gates)
 14. [Relationship to other docs](#14-relationship-to-other-docs)
+15. [History + live — per-entity streams with late subscribers](#15-history--live--per-entity-streams-with-late-subscribers)
 
 ---
 
@@ -89,6 +90,9 @@ carrying `IObservable<object?>? Observable` (`SleipnirCommon/Models/SleipnirSubs
 `IObservable<T>` to `IObservable<object?>` via `TryAsObservableObject` —
 covariance cast for reference types, a boxing adapter for value types
 (`SleipnirCore/Services/SleipnirInvoker.cs` → `SleipnirInvoker.TryAsObservableObject()`).
+
+For a per-entity stream that late subscribers must see from the start (job progress,
+history + live), see §15.
 
 Discovery tags event methods with `kind:"event"`
 (`PROTOCOL.md` §"Discovery", `README_DETAILS.md` §"Discovery").
@@ -869,3 +873,91 @@ PR #15 → main `b4866ef`). See the `sleipnir-cross-transport-resume` and
 > (REST/WS/SignalR) but **does not exercise events** — its controllers use
 > `[SleipnirMethod]` only. For a runnable event, use the guide's
 > `PriceFeedController`.
+
+---
+
+## 15. History + live — per-entity streams with late subscribers
+
+**Use case.** A long-running job exposes a progress stream per job (`Runs.Progress(runId)`). A
+client that opens the job's page while it runs, or reconnects, must first get everything that
+already happened, then the live events, and the stream must complete when the job ends.
+
+The framework's own mechanisms do not cover this on their own. The `eventId` restarts with every
+subscription, and `Resumable` replays only what one *disconnected* subscription missed, not what
+happened before a client first subscribed. The building block for it is
+`SleipnirCore/Events/SleipnirReplayStream.cs` → `SleipnirReplayStream<T>`, with
+`SleipnirReplayStreams<TKey, T>` (`SleipnirReplayStreams.cs`) holding one stream per entity.
+
+| Concern | How it is handled |
+|---------|-------------------|
+| History | Each stream retains up to `maxHistory` events (default 1000, evict-oldest). |
+| Handover without gaps or duplicates | Publishing, subscribing and delivery share one lock: a subscriber gets the retained history and is attached atomically. |
+| Stable position across subscriptions | Each event gets a per-stream sequence number (1, 2, 3, …). Put it into the payload with `Publish(seq => new Progress(seq, …))`. |
+| Re-subscribe / reconnect | The event method takes `long afterSeq = 0` and returns `From(afterSeq)`: only events after that number are replayed. The client also drops anything `<= lastSeq` (after an auto-reconnect the client re-subscribes with the *original* parameters). |
+| Completion | `Complete()` / `Fail(ex)` ends current subscriptions. A later subscriber still gets the history plus the terminal signal. |
+| Cleanup | `SleipnirReplayStreams` evicts finished streams after `completedRetention` (default 10 min), lazily on access. Streams that never complete stay until `Remove(key)`. |
+| Unknown key | `Observe(key, afterSeq)` returns an empty stream that completes immediately and does not allocate a stream. |
+
+**Size the send buffer to the history.** The history is replayed synchronously into the
+subscription's send buffer (§4: default 100, `DropOldest`). A longer history silently loses its
+oldest events — a 300-event history arrives as events 201–300 (`SleipnirTests/Integration/ReplayStreamSseTests.cs`
+→ `HistoryLongerThanTheDefaultBuffer_IsReplayedCompletely`, which fails without the sizing).
+Set `BufferCapacity` from the same constant as `maxHistory`. Do not use
+`EventBackpressureStrategy.Block` with this type: a slow client would hold the stream's lock and
+stall the producer.
+
+**Server:**
+
+```csharp
+public sealed record ProgressEvent(long Seq, string Step, bool Finished);
+
+[SleipnirController("Runs")]
+public class RunsController(SleipnirReplayStreams<string, ProgressEvent> progress)
+{
+    public const int MaxHistory = 5000;
+
+    // Non-resumable on purpose: seq + afterSeq already cover reconnects on every transport.
+    [SleipnirEvent("Progress", BufferCapacity = MaxHistory + 100)]
+    public IObservable<ProgressEvent> Progress(string runId, long afterSeq = 0)
+        => progress.Observe(runId, afterSeq);
+}
+
+// Program.cs
+builder.Services.AddSingleton(new SleipnirReplayStreams<string, ProgressEvent>(RunsController.MaxHistory));
+
+// The job (e.g. a BackgroundService), injected with the same singleton:
+var stream = progress.GetOrCreate(runId);
+stream.Publish(seq => new ProgressEvent(seq, "Opening browser", Finished: false));
+// … one Publish per step …
+stream.Publish(seq => new ProgressEvent(seq, "Done", Finished: true));
+stream.Complete();   // or stream.Fail(ex) when the job fails
+```
+
+**Client (generated TypeScript client):**
+
+```ts
+let lastSeq = 0;
+
+const sub = await client.runs.progress(runId, lastSeq, {
+  onNext: (e) => {
+    if (e.seq <= lastSeq) return;   // duplicate after an auto-reconnect → drop
+    lastSeq = e.seq;
+    render(e);
+  },
+  onComplete: () => markFinished(),
+  onError: (err) => showError(err),
+});
+```
+
+To re-subscribe yourself (for example after navigating away and back), call `progress(runId,
+lastSeq, …)` again; the server then sends only what is missing.
+
+**Limits.** In-process only: the history lives in the server's memory, like the durable replay
+ring (§5) — it is lost on restart and not shared between instances. A client whose `afterSeq` is
+older than `FirstRetainedSeq - 1` has missed evicted events; compare with the first `seq` it
+receives if it needs to detect that. Experimental, like the rest of the event surface
+(`STABILITY.md` §"2. Experimental surface").
+
+Verified by `SleipnirTests/Unit/Core/ReplayStreamTests.cs` (ordering under concurrent publish +
+subscribe, cursor, termination, eviction, retention) and
+`SleipnirTests/Integration/ReplayStreamSseTests.cs` (end-to-end over SSE).

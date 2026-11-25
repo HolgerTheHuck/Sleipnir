@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **History + live event streams (experimental)** — `SleipnirReplayStream<T>` (`SleipnirCore.Events`)
+  is a hot per-entity stream for job progress and similar cases: a late or reconnecting subscriber
+  gets the retained history, then the live events, then the completion, without gaps or
+  duplicates. Every event gets a stable per-stream sequence number (`Publish(seq => …)`), and
+  `From(afterSeq)` replays only what a re-subscribing client is missing.
+  `SleipnirReplayStreams<TKey, T>` keeps one stream per key and evicts finished ones after a
+  retention period. Recipe incl. the TypeScript client side and send-buffer sizing:
+  [EVENTS_REFERENCE.md](EVENTS_REFERENCE.md) §15.
+
+### Docs
+
+- **[AGENT_GUIDE.md](AGENT_GUIDE.md)** — a ~12 KB entry point for AI coding agents that build an
+  application with Sleipnir: packages and versions, minimal setup, errors incl. validation, the
+  contract + codegen loop, events incl. history + live, the top pitfalls and which reference to
+  read for what. Ships in the `Sleipnir.Server` NuGet package (`docs/AGENT_GUIDE.md`) and the
+  `sleipnir-client` npm package, so an agent finds it in the package cache. Plus
+  [llms.txt](llms.txt) in the repository root.
+
 ## [1.9.1] — 2026-11-20
 
 NuGet only — the npm packages stay at 1.9.0 (unaffected).

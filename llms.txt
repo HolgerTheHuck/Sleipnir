@@ -1,0 +1,31 @@
+# Sleipnir
+
+> Code-first multi-transport RPC framework for .NET 8/10/11: C# controller classes are the contract (no .proto), every method is served over REST, WebSocket, SSE (events) and SignalR, and typed TS/JS/C#/Python clients are generated from a committed contract file. NuGet: Sleipnir.Server, Sleipnir.Client, Sleipnir.Server.Codegen, Sleipnir.Generator. npm: sleipnir-client, sleipnir-codegen.
+
+Start with AGENT_GUIDE.md: packages and versions, minimal setup, error handling, the codegen loop, events, pitfalls, and which reference answers which question. The references below are the source of truth; read only the one you need.
+
+## Start here
+
+- [AGENT_GUIDE.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/AGENT_GUIDE.md): the 5-minute map for agents building an app with Sleipnir
+- [GETTING_STARTED.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/GETTING_STARTED.md): first server, first call, first generated client
+- [README_DETAILS.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/README_DETAILS.md): every feature with examples
+
+## References
+
+- [ERROR_CATALOG.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/ERROR_CATALOG.md): status codes, categories, returning errors, field-level validation
+- [CODEGEN_ONBOARDING.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/CODEGEN_ONBOARDING.md): contract.sleipnir.json, the drift gate, the C# source generator
+- [CLIENT_GENERATION.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/CLIENT_GENERATION.md): sleipnir-gen for TS/JS/C#/Python
+- [CONTRACT_EVOLUTION.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/CONTRACT_EVOLUTION.md): breaking-change gate against a released baseline
+- [EVENTS_REFERENCE.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/EVENTS_REFERENCE.md): server push, buffers, resume, history + live streams
+- [TRANSPORT_REFERENCE.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/TRANSPORT_REFERENCE.md): transports, reconnect, client options
+- [DEPENDENCY_BINDING.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/DEPENDENCY_BINDING.md): batches, @alias chaining, binding modes, casing
+- [SECURITY_GUIDE.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/SECURITY_GUIDE.md): authentication, authorization, limits
+- [BEST_PRACTICES.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/BEST_PRACTICES.md): controller design, lifetimes, production settings
+- [STABILITY.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/STABILITY.md): stable vs. experimental surface, versioning rules
+
+## Optional
+
+- [PROTOCOL.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/PROTOCOL.md): the wire format, only needed for a hand-written client
+- [JSONRPC_COMPAT.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/JSONRPC_COMPAT.md): the JSON-RPC 2.0 compatibility endpoint
+- [OBSERVABILITY_REFERENCE.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/OBSERVABILITY_REFERENCE.md): metrics, tracing, logging
+- [guide/README.md](https://github.com/HolgerTheHuck/Sleipnir/blob/main/guide/README.md): a 10-chapter tutorial building one multi-tier app

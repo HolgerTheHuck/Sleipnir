@@ -43,7 +43,7 @@ internal sealed class NamingResolver
     /// </summary>
     private static string Disambiguate(string fullName, string shortName, HashSet<string> siblings)
     {
-        var parts = fullName.Split('.');
+        var parts = Casing.NormalizeTypeKey(fullName).Split('.');
         // parts[last] === shortName. Prepend parents from nearest outward.
         string name = shortName;
         for (int depth = 1; depth < parts.Length; depth++)
@@ -59,7 +59,7 @@ internal sealed class NamingResolver
     /// <summary>The disambiguation candidate for <paramref name="fullName"/> at <paramref name="depth"/> prepended parents.</summary>
     private static string CandidateAtDepth(string fullName, int depth)
     {
-        var parts = fullName.Split('.');
+        var parts = Casing.NormalizeTypeKey(fullName).Split('.');
         string name = parts[parts.Length - 1];
         for (int d = 1; d <= depth && d < parts.Length; d++)
         {

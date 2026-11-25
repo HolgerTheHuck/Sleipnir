@@ -18,6 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retention period. Recipe incl. the TypeScript client side and send-buffer sizing:
   [EVENTS_REFERENCE.md](EVENTS_REFERENCE.md) §15.
 
+### Fixed
+
+- **Closed generic DTOs in discovery** — a type such as `Page<TicketDto>` was registered in
+  `discovery.types` under its assembly-qualified CLR name
+  (``Ns.Page`1[[Ns.TicketDto, Asm, Version=…, Culture=…, PublicKeyToken=…]]``), which the codegen
+  turned into invalid identifiers inside `TypedCall<…>`. The key is now flattened to
+  `{Namespace}.{Name}Of{Arg1}And{Arg2}` (`Ns.PageOfTicketDto`; arrays → `…Array`, scalars by CLR
+  name, arguments in declaration order; namespace-qualified arguments if that name is already
+  taken). Generated clients get a named type (`PageOfTicketDto`). Both codegens (`sleipnir-gen`,
+  `Sleipnir.Codegen.Core`) also normalize the old assembly-qualified keys, so contracts exported
+  by older servers generate the same client. **Contract hash:** contracts with generic DTOs get
+  new type keys and a new `ContractHash` — regenerate committed contracts and clients
+  (`SLEIPNIR_REGEN_GOLDEN=1`, then `sleipnir-gen`). Rule: [docs/discovery-schema.md](docs/discovery-schema.md).
+
 ### Docs
 
 - **[AGENT_GUIDE.md](AGENT_GUIDE.md)** — a ~12 KB entry point for AI coding agents that build an

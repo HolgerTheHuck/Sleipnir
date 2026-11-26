@@ -7,6 +7,9 @@ import { MarketClient } from "./controllers.js";
 import { PortfolioClient } from "./controllers.js";
 import { PriceFeedClient } from "./controllers.js";
 
+/** Contract hash this client was generated from — sent on every request so the server can tell which contracts its callers were built against. */
+export const SLEIPNIR_CONTRACT_HASH = "sha256:59e1405be519095a57c05888f5666d6964714e667b8b89d9bbf443af2369ddbe";
+
 export class SleipnirClient {
   /**
    * @param {string} baseUrl
@@ -14,7 +17,7 @@ export class SleipnirClient {
    *   callTimeout, probeTimeout, defaultTransport. Passed to SleipnirTransportRouter.
    */
   constructor(baseUrl, options = {}) {
-    this._router = new SleipnirTransportRouter({ baseUrl, capability: "rest", ...options });
+    this._router = new SleipnirTransportRouter({ baseUrl, capability: "rest", contractHash: SLEIPNIR_CONTRACT_HASH, ...options });
     const build = (controller, method) => SleipnirCall.init(controller, method);
   this._subscribe = (req, handlers) => this._router.subscribe(req, handlers);
   this.account = new AccountClient(build);
@@ -38,6 +41,16 @@ export class SleipnirClient {
     return this._router.activeTransport;
   }
 
+  /**
+   * Aggregated connection status of the active transport profile, as a store
+   * (`connection.state` + `connection.subscribe(listener) → unsubscribe`); one of
+   * `connecting | open | reconnecting | closed` on every transport.
+   * @returns {{ state: string, subscribe(listener: (state: string) => void): () => void }}
+   */
+  get connection() {
+    return this._router.connection;
+  }
+
   /** @param {TypedCall<*>} call @returns {Promise<SleipnirResponse<*|null>>} */
   async call(call) {
     return this._router.call(call.toRequest());
@@ -47,6 +60,18 @@ export class SleipnirClient {
   async batch(b) {
     const m = b.toMulti();
     return this._router.callBatch(m.requests, m.mode);
+  }
+
+  /**
+   * Resume a durable event subscription by `subscriptionId` + `lastEventId` (both on the
+   * SleipnirSubscription handle): the server replays the gap, then continues live. Runs over
+   * the active event backend (SSE or SignalR); resuming into WebSocket is not supported.
+   * @param {string} subscriptionId @param {number} lastEventId
+   * @param {SubscribeHandlers<*>} handlers @param {object} [options] signal, resumePolicy, timeout, headers
+   * @returns {Promise<SleipnirSubscription>}
+   */
+  resume(subscriptionId, lastEventId, handlers, options) {
+    return this._router.resume(subscriptionId, lastEventId, handlers, options);
   }
 
   /** @returns {SleipnirRestClient|undefined} underlying REST client (escape hatch). */

@@ -22,7 +22,7 @@ surface that all of them share.
 ## Install
 
 ```xml
-<PackageReference Include="Sleipnir.Common" Version="1.10.0" />
+<PackageReference Include="Sleipnir.Common" Version="1.10.1" />
 ```
 
 Targets `net8.0`, `net10.0` and `netstandard2.1`. Brings only `MessagePack.Annotations`

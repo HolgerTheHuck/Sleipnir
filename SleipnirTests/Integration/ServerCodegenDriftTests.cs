@@ -136,6 +136,7 @@ public class ServerCodegenDriftTests
             RedirectStandardError = true,
             UseShellExecute = false,
         };
+        SleipnirTests.Fixtures.DotnetBuildIsolation.Apply(psi);
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start `dotnet build` for " + csproj);
         // Read BOTH piped streams to completion — never WaitForExit alone: a full stdout pipe

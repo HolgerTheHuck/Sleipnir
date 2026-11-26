@@ -18,6 +18,12 @@ namespace SleipnirCore.Events;
 /// the completion — and is then removed. Eviction runs lazily on every <see cref="GetOrCreate"/>,
 /// <see cref="TryGet"/> and <see cref="Observe"/> call, so no timer is involved. Streams that never
 /// complete are never evicted; call <see cref="Remove"/> for those.
+/// <para>
+/// Create the stream (<see cref="GetOrCreate"/>) before the key reaches any client — typically in
+/// the command that starts the job, not in its background task. <see cref="Observe"/> on an unknown
+/// key returns an empty, already completed stream, so a client subscribing in between would see a
+/// finished entity without events.
+/// </para>
 /// </remarks>
 /// <typeparam name="TKey">The entity key type.</typeparam>
 /// <typeparam name="T">The event payload type.</typeparam>

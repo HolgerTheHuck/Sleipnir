@@ -22,6 +22,8 @@ public sealed class SleipnirSubscription<T> : IObservable<T>, IDisposable
     private readonly string _subscriptionId;
     private readonly CancellationToken _ct;
     private bool _disposed;
+    private Func<string>? _currentId;
+    private Func<long>? _lastEventId;
 
     internal SleipnirSubscription(string subscriptionId, Func<string, CancellationToken, Task> unsubscribeAsync, CancellationToken ct)
     {
@@ -30,7 +32,34 @@ public sealed class SleipnirSubscription<T> : IObservable<T>, IDisposable
         _ct = ct;
     }
 
-    internal string SubscriptionId => _subscriptionId;
+    /// <summary>
+    /// The durable server subscription id — live: it follows a re-key when a reconnect degrades to
+    /// a fresh server subscription. Persist it together with <see cref="LastEventId"/> to continue
+    /// the stream later via <see cref="ISleipnirClient.ResumeAsync{T}"/>.
+    /// </summary>
+    public string SubscriptionId
+    {
+        get
+        {
+            var id = _currentId?.Invoke();
+            return string.IsNullOrEmpty(id) ? _subscriptionId : id!;
+        }
+    }
+
+    /// <summary>
+    /// Highest event id delivered to this subscription (<c>0</c> = none yet, or a non-resumable
+    /// source whose frames carry no id). The resume cursor for <see cref="ISleipnirClient.ResumeAsync{T}"/>:
+    /// the server replays every event after it.
+    /// </summary>
+    public long LastEventId => _lastEventId?.Invoke() ?? 0;
+
+    /// <summary>Wires the live id/cursor of the owning backend's subscription state.</summary>
+    internal void AttachCursor(Func<string> currentId, Func<long> lastEventId)
+    {
+        _currentId = currentId;
+        _lastEventId = lastEventId;
+    }
+
     internal SleipnirSubject<T> Subject => _subject;
 
     /// <summary>Subscribiert auf die Events. Gibt einen IDisposable zurück, der den

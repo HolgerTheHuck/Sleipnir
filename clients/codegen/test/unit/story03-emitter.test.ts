@@ -81,6 +81,17 @@ describe("emitTsClient story03 (events, golden)", () => {
     expect(client).not.toContain("Sleipnir events require WebSocket transport");
   });
 
+  it("client.ts exposes resume() as a passthrough to the router (events only)", () => {
+    const client = emitTsClient(buildEmitterInput(readFixture("story03"), new NamingResolver()))["api/client.ts"];
+    expect(client).toContain(
+      "resume<T>(subscriptionId: string, lastEventId: number, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription> {",
+    );
+    expect(client).toContain("return this._router.resume<T>(subscriptionId, lastEventId, handlers, options);");
+    // Call-only contracts get no resume (and need no SleipnirSubscribeOptions import).
+    const callOnly = emitTsClient(buildEmitterInput(readFixture("story01"), new NamingResolver()))["api/client.ts"];
+    expect(callOnly).not.toContain("resume");
+  });
+
   it("the event surface is identical across all capabilities (only the capability literal differs)", () => {
     const surfaces = CAPABILITIES.map((cap) => {
       const c = emitTsClient(buildEmitterInput(readFixture("story03"), new NamingResolver()), { capability: cap })["api/client.ts"];
@@ -125,6 +136,14 @@ describe("emitJsClient story03 (events, golden)", () => {
     expect(client).toContain("this._subscribe = (req, handlers) => this._router.subscribe(req, handlers)");
     expect(client).not.toContain("this._ws.subscribe(req, handlers)");
     expect(client).not.toContain("this._sse.subscribe(");
+  });
+
+  it("client.js exposes resume() as a passthrough to the router (events only)", () => {
+    const client = emitJsClient(buildEmitterInput(readFixture("story03"), new NamingResolver()))["api/client.js"];
+    expect(client).toContain("resume(subscriptionId, lastEventId, handlers, options) {");
+    expect(client).toContain("return this._router.resume(subscriptionId, lastEventId, handlers, options);");
+    const callOnly = emitJsClient(buildEmitterInput(readFixture("story01"), new NamingResolver()))["api/client.js"];
+    expect(callOnly).not.toContain("resume");
   });
 });
 

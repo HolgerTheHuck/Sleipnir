@@ -97,6 +97,7 @@ public class ServerCodegenNet10RollForwardTests
             CreateNoWindow = true,
         };
         if (workingDir is not null) psi.WorkingDirectory = workingDir;
+        SleipnirTests.Fixtures.DotnetBuildIsolation.Apply(psi); // harmless for the non-build tool run
         using var p = Process.Start(psi)!;
         var stdoutTask = p.StandardOutput.ReadToEndAsync();
         var stderrTask = p.StandardError.ReadToEndAsync();

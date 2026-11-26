@@ -106,6 +106,9 @@ public class ResumeTests
         E2EResumeEventController.Stream.Push("a");
         await WaitUntilAsync(() => obs.NextCount >= 1, 3000);
         obs.Values.Should().Equal(["a"]);
+        var durableId = sub.SubscriptionId;
+        durableId.Should().NotBeNullOrEmpty("the handle exposes the durable server id");
+        sub.LastEventId.Should().Be(1, "the handle exposes the live resume cursor");
 
         // Force a transport drop → the client reconnects in the background; give the server a moment
         // to detach the live tap (the durable source + ring buffer persist).
@@ -125,8 +128,60 @@ public class ResumeTests
         await WaitUntilAsync(() => obs.NextCount >= 4, 5000);
 
         obs.Values.Should().Equal(["a", "b", "c", "d"], "the gap is replayed with no duplicates");
+        sub.SubscriptionId.Should().Be(durableId, "a honored resume keeps the durable id");
+        sub.LastEventId.Should().Be(4, "the cursor follows the replayed events");
 
         sub.Dispose();
+    }
+
+    // ─── Test 1b: handle id + cursor → cross-transport ResumeAsync over SSE ───
+
+    [Fact]
+    public async Task HandleCursor_ResumesOverSse_AfterWsClientIsGone()
+    {
+        await using var host = await BuildHostAsync(new SleipnirOptions { EnableDetailedErrors = true });
+
+        // A WS client subscribes, sees one event, then dies without unsubscribing (app crash /
+        // page reload) — the app only kept the handle's SubscriptionId + LastEventId.
+        var sockets = new List<ClientWebSocket>();
+        Func<ClientWebSocket> factory = () =>
+        {
+            var ws = new ClientWebSocket();
+            lock (sockets) sockets.Add(ws);
+            return ws;
+        };
+        string savedId;
+        long savedCursor;
+        await using (var wsClient = new SleipnirWebSocketClient(HttpUrl(host), autoReconnect: false, socketFactory: factory))
+        {
+            await wsClient.ConnectAsync();
+            var sub = await wsClient.SubscribeAsync<string>("E2EResumeEvent", "Tick");
+            var obs = new CountingObserver<string>();
+            sub.Subscribe(obs);
+
+            E2EResumeEventController.Stream.Push("a");
+            await WaitUntilAsync(() => obs.NextCount >= 1, 3000);
+            savedId = sub.SubscriptionId;
+            savedCursor = sub.LastEventId;
+            sockets[0].Abort();
+        }
+        savedCursor.Should().Be(1);
+        await Task.Delay(300); // let the server detach the live tap (durable state persists)
+
+        E2EResumeEventController.Stream.Push("b");
+        E2EResumeEventController.Stream.Push("c");
+
+        using var sse = new SleipnirSseClient(HttpUrl(host), reconnect: false);
+        var resumed = await sse.ResumeAsync<string>(savedId, savedCursor);
+        var obs2 = new CountingObserver<string>();
+        resumed.Subscribe(obs2);
+        await WaitUntilAsync(() => obs2.NextCount >= 2, 5000);
+
+        obs2.Values.Should().Equal(["b", "c"], "the gap after the saved cursor is replayed over SSE");
+        resumed.SubscriptionId.Should().Be(savedId, "a honored resume keeps the durable id");
+        resumed.LastEventId.Should().Be(3);
+
+        resumed.Dispose();
     }
 
     // ─── Test 2: over-cap gap → overflow lost, in-window replayed ─────────────

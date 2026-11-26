@@ -587,6 +587,22 @@ export const SLEIPNIR_CONTRACT_HASH = "${input.contractHash}";
 `
     : "";
   const contractOption = input.contractHash ? " contractHash: SLEIPNIR_CONTRACT_HASH," : "";
+  // `resume` (only when events exist) passes straight through to the router: its SSE and
+  // SignalR backends already end an active resumed subscription on `options.signal`, and
+  // resuming INTO WebSocket is rejected by the router (no controller/method on the handle).
+  const resumeMethod = events
+    ? `
+  /**
+   * Resume a durable event subscription by \`subscriptionId\` + \`lastEventId\` (both on the
+   * {@link SleipnirSubscription} handle): the server replays the gap, then continues live — e.g.
+   * after a page reload or a transport switch. Runs over the active event backend (SSE or
+   * SignalR); resuming into WebSocket is not supported — \`useTransport("rest")\` first.
+   */
+  resume<T>(subscriptionId: string, lastEventId: number, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription> {
+    return this._router.resume<T>(subscriptionId, lastEventId, handlers, options);
+  }
+`
+    : "";
 
   return `// Auto-generated root Sleipnir client (capability: ${capability}). Compose with the sleipnir-client runtime.
 // Transport is selected at runtime via SleipnirTransportRouter: "auto" (default) probes WebSocket
@@ -659,7 +675,7 @@ ${inits.join("\n")}
     const multi = b.toMulti();
     return this._router.callBatch(multi.requests, multi.mode);
   }
-
+${resumeMethod}
   /** The underlying REST client (escape hatch). \`undefined\` if not bundled. */
   get rest(): SleipnirRestClient | undefined { return this._router.rest; }
   /** The underlying WebSocket client (escape hatch). \`undefined\` if not bundled. */

@@ -896,7 +896,7 @@ happened before a client first subscribed. The building block for it is
 | Re-subscribe / reconnect | The event method takes `long afterSeq = 0` and returns `From(afterSeq)`: only events after that number are replayed. The client also drops anything `<= lastSeq` (after an auto-reconnect the client re-subscribes with the *original* parameters). |
 | Completion | `Complete()` / `Fail(ex)` ends current subscriptions. A later subscriber still gets the history plus the terminal signal. |
 | Cleanup | `SleipnirReplayStreams` evicts finished streams after `completedRetention` (default 10 min), lazily on access. Streams that never complete stay until `Remove(key)`. |
-| Unknown key | `Observe(key, afterSeq)` returns an empty stream that completes immediately and does not allocate a stream. |
+| Unknown key | `Observe(key, afterSeq)` returns an empty stream that completes immediately and does not allocate a stream. A client therefore cannot tell "not started yet" from "finished without events" — create the stream before the entity id reaches any client (see the server code below). |
 
 **Size the send buffer to the history.** The history is replayed synchronously into the
 subscription's send buffer (§4: default 100, `DropOldest`). A longer history silently loses its
@@ -925,8 +925,20 @@ public class RunsController(SleipnirReplayStreams<string, ProgressEvent> progres
 // Program.cs
 builder.Services.AddSingleton(new SleipnirReplayStreams<string, ProgressEvent>(RunsController.MaxHistory));
 
+// The command that starts the job creates the stream BEFORE it returns the id. Creating it later
+// in the background task races a client that subscribes right after the start: Observe on an
+// unknown key yields an empty, already completed stream, so the page shows a finished job.
+[SleipnirMethod("Start")]
+public string Start(StartRun request)
+{
+    var runId = Guid.NewGuid().ToString("N");
+    progress.GetOrCreate(runId);
+    jobQueue.Enqueue(runId, request);
+    return runId;
+}
+
 // The job (e.g. a BackgroundService), injected with the same singleton:
-var stream = progress.GetOrCreate(runId);
+var stream = progress.GetOrCreate(runId);   // returns the stream Start created
 stream.Publish(seq => new ProgressEvent(seq, "Opening browser", Finished: false));
 // … one Publish per step …
 stream.Publish(seq => new ProgressEvent(seq, "Done", Finished: true));
@@ -951,6 +963,12 @@ const sub = await client.runs.progress(runId, lastSeq, {
 
 To re-subscribe yourself (for example after navigating away and back), call `progress(runId,
 lastSeq, …)` again; the server then sends only what is missing.
+
+**Retention vs. your own job list.** The 10-minute `completedRetention` default suits "open the
+page right after the job ended". If the app lists past jobs (say, the last 20) and lets users open
+any of them, the history must live as long as the list entry: pass a longer `completedRetention`
+(e.g. `TimeSpan.FromDays(1)`) and call `Remove(runId)` when a job drops off the list, so memory
+stays bounded by the list rather than by time.
 
 **Limits.** In-process only: the history lives in the server's memory, like the durable replay
 ring (§5) — it is lost on restart and not shared between instances. A client whose `afterSeq` is

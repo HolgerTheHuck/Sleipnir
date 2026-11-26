@@ -266,6 +266,14 @@ namespace Sleipnir.Generated
         public Task<SleipnirSubscription<T>> Subscribe<T>(Call call, ResumePolicy? resumePolicy = null, CancellationToken ct = default)
             => _client.SubscribeAsync<T>(call.ToRequest(), resumePolicy, ct);
 
+        /// <summary>Resume a durable event subscription by <paramref name="subscriptionId"/> +
+        /// <paramref name="lastEventId"/> (both on the <see cref="SleipnirSubscription{T}"/> handle):
+        /// the server replays the gap, then continues live — e.g. after an app restart or a transport
+        /// switch. Runs over the active event backend (SSE or SignalR); resuming into WebSocket is
+        /// not supported — switch to the REST profile first.</summary>
+        public Task<SleipnirSubscription<T>> Resume<T>(string subscriptionId, long lastEventId, ResumePolicy? resumePolicy = null, CancellationToken ct = default)
+            => _client.ResumeAsync<T>(subscriptionId, lastEventId, resumePolicy, ct);
+
         /// <summary>Execute a typed batch (Serial — required for @alias resolution). Results are
         /// fetched by request id via <see cref="SleipnirMultiCallResponse.Get{T}"/>.</summary>
         public Task<SleipnirMultiCallResponse> Batch(Batch batch) =>

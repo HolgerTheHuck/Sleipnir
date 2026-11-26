@@ -23,13 +23,13 @@ purpose; the linked references stay the source of truth. Read the one you need, 
 Current versions — copy these pins:
 
 ```xml
-<PackageReference Include="Sleipnir.Server" Version="1.10.0" />
-<PackageReference Include="Sleipnir.Server.Codegen" Version="1.10.0" />
+<PackageReference Include="Sleipnir.Server" Version="1.10.1" />
+<PackageReference Include="Sleipnir.Server.Codegen" Version="1.10.1" />
 ```
 
 ```json
-"sleipnir-client": "^1.10.0",
-"sleipnir-codegen": "^1.10.0"
+"sleipnir-client": "^1.10.1",
+"sleipnir-codegen": "^1.10.1"
 ```
 
 **Compatibility rule:** NuGet and npm share major and minor (`1.9.x` with `1.9.x`); patch

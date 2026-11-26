@@ -9,6 +9,12 @@
  */
 
 /**
+ * @typedef {Object} LoginResult
+ * @property {Profile} profile
+ * @property {string} token
+ */
+
+/**
  * @typedef {Object} Order
  * @property {number} id
  * @property {number} price

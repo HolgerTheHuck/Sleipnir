@@ -3,7 +3,7 @@
 // and falls back to REST+SSE on failure; useTransport() switches explicitly. The public surface
 // is identical across all capabilities — only the bundled backends differ.
 import { SleipnirCall, SleipnirTransportRouter } from "sleipnir-client";
-import type { SleipnirResponse, SleipnirRequest, SubscribeHandlers, SleipnirSubscription, SleipnirSubscribeOptions, SleipnirTransport, SleipnirRestClient, SleipnirWebSocketClient, SleipnirSseClient, SleipnirSignalrClient, SleipnirRestClientOptions, SleipnirWebSocketClientOptions, SleipnirSseClientOptions, SleipnirSignalrClientOptions } from "sleipnir-client";
+import type { SleipnirResponse, SleipnirRequest, SubscribeHandlers, SleipnirSubscription, SleipnirSubscribeOptions, SleipnirTransport, SleipnirConnectionStore, SleipnirRestClient, SleipnirWebSocketClient, SleipnirSseClient, SleipnirSignalrClient, SleipnirRestClientOptions, SleipnirWebSocketClientOptions, SleipnirSseClientOptions, SleipnirSignalrClientOptions } from "sleipnir-client";
 import { Batch, TypedCall } from "./typed-call.js";
 import { AccountClient } from "./controllers.js";
 import { MarketClient } from "./controllers.js";
@@ -35,6 +35,9 @@ export interface SleipnirClientOptions {
   defaultTransport?: SleipnirTransport;
 }
 
+/** Contract hash this client was generated from — sent on every request so the server can tell which contracts its callers were built against. */
+export const SLEIPNIR_CONTRACT_HASH = "sha256:59e1405be519095a57c05888f5666d6964714e667b8b89d9bbf443af2369ddbe";
+
 export class SleipnirClient {
   private readonly _router: SleipnirTransportRouter;
   private readonly _subscribe = async <T>(req: SleipnirRequest, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription> => {
@@ -54,7 +57,7 @@ export class SleipnirClient {
   readonly priceFeed: PriceFeedClient;
 
   constructor(baseUrl: string, options: SleipnirClientOptions = {}) {
-    this._router = new SleipnirTransportRouter({ baseUrl, capability: "all", ...options });
+    this._router = new SleipnirTransportRouter({ baseUrl, capability: "all", contractHash: SLEIPNIR_CONTRACT_HASH, ...options });
     const build = (controller: string, method: string) => SleipnirCall.init(controller, method);
     this.account = new AccountClient(build);
     this.market = new MarketClient(build);
@@ -71,6 +74,14 @@ export class SleipnirClient {
   /** The resolved transport profile (`null` until `auto` is negotiated). */
   get activeTransport(): Exclude<SleipnirTransport, "auto"> | null { return this._router.activeTransport; }
 
+  /**
+   * Aggregated connection status of the active transport profile, as a store
+   * (`connection.state` + `connection.subscribe(listener) → unsubscribe`). Same vocabulary on
+   * every transport: `connecting | open | reconnecting | closed`. Store-shaped (Svelte store
+   * contract), so Svelte and Tsazor `observe()` consume it without adapters.
+   */
+  get connection(): SleipnirConnectionStore { return this._router.connection; }
+
   /** Execute a single typed call over the active call backend; `response.data` is narrowed to T. */
   async call<T, TPaths extends Record<string, unknown>>(call: TypedCall<T, TPaths>): Promise<TypedResponse<T>> {
     return (await this._router.call(call.toRequest())) as TypedResponse<T>;
@@ -80,6 +91,16 @@ export class SleipnirClient {
   async batch<A extends Record<string, unknown>>(b: Batch<A>): Promise<SleipnirResponse[]> {
     const multi = b.toMulti();
     return this._router.callBatch(multi.requests, multi.mode);
+  }
+
+  /**
+   * Resume a durable event subscription by `subscriptionId` + `lastEventId` (both on the
+   * {@link SleipnirSubscription} handle): the server replays the gap, then continues live — e.g.
+   * after a page reload or a transport switch. Runs over the active event backend (SSE or
+   * SignalR); resuming into WebSocket is not supported — `useTransport("rest")` first.
+   */
+  resume<T>(subscriptionId: string, lastEventId: number, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription> {
+    return this._router.resume<T>(subscriptionId, lastEventId, handlers, options);
   }
 
   /** The underlying REST client (escape hatch). `undefined` if not bundled. */

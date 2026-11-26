@@ -9,7 +9,7 @@ export class AccountClient {
    * Exchange username + password for a JWT bearer token. Try customer/customer or admin/admin. The token is sent back as Authorization: Bearer on subsequent calls.
    * @param {string} username
    * @param {string} password
-   * @returns {Promise<SleipnirResponse<unknown | null>>}
+   * @returns {Promise<SleipnirResponse<LoginResult | null>>}
    */
   async login(username, password) {
     const call = this._build("Account", "Login").with({ username: username, password: password });

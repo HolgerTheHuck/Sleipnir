@@ -87,7 +87,10 @@ describe(python ? "generated Python byte-compiles + typed diamond builds (py_com
     }
     writeFileSync(join(compileDir, "harness.py"), harness, "utf8");
 
-    const r = spawnSync(python!, ["-m", "py_compile", "types.py", "client.py", "__init__.py", "harness.py"], {
+    // -I (isolated): `-m` would otherwise put the cwd first on sys.path, where the GENERATED
+    // types.py shadows the stdlib `types` module that py_compile's own imports
+    // (dataclasses → re → enum) need → circular-import ImportError before compiling anything.
+    const r = spawnSync(python!, ["-I", "-m", "py_compile", "types.py", "client.py", "__init__.py", "harness.py"], {
       encoding: "utf8",
       cwd: compileDir,
       shell,

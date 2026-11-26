@@ -87,6 +87,16 @@ export class SleipnirClient {
     return this._router.callBatch(multi.requests, multi.mode);
   }
 
+  /**
+   * Resume a durable event subscription by `subscriptionId` + `lastEventId` (both on the
+   * {@link SleipnirSubscription} handle): the server replays the gap, then continues live — e.g.
+   * after a page reload or a transport switch. Runs over the active event backend (SSE or
+   * SignalR); resuming into WebSocket is not supported — `useTransport("rest")` first.
+   */
+  resume<T>(subscriptionId: string, lastEventId: number, handlers: SubscribeHandlers<T>, options?: SleipnirSubscribeOptions): Promise<SleipnirSubscription> {
+    return this._router.resume<T>(subscriptionId, lastEventId, handlers, options);
+  }
+
   /** The underlying REST client (escape hatch). `undefined` if not bundled. */
   get rest(): SleipnirRestClient | undefined { return this._router.rest; }
   /** The underlying WebSocket client (escape hatch). `undefined` if not bundled. */

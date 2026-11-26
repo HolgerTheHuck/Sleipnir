@@ -785,7 +785,9 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
                 var id = response?.IsSuccess == true ? ExtractSubscriptionId(response) : null;
                 if (string.IsNullOrEmpty(id)) return;
                 subscription = new SleipnirSubscription<T>(id!, UnsubscribeAsync, ct);
-                _subscriptions[id!] = new SleipnirSubscriptionHandler<T>(subscription);
+                var handler = new SleipnirSubscriptionHandler<T>(subscription) { SubscriptionId = id! };
+                subscription.AttachCursor(() => handler.SubscriptionId, () => handler.LastEventId);
+                _subscriptions[id!] = handler;
             }
             catch (Exception ex)
             {
@@ -965,6 +967,7 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
                             if (isResume) _subscriptions.TryRemove(oldId, out _);
                             handler.ResetEventCursor();
                         }
+                        handler.SubscriptionId = id!;
                         _subscriptions[id!] = handler;
                     }
                     catch (Exception ex)
@@ -1052,6 +1055,8 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
     {
         /// <summary>Highest event eventId processed for this subscription (0 = none yet).</summary>
         long LastEventId { get; }
+        /// <summary>The live server subscription id (re-keyed when a reconnect gets a new id).</summary>
+        string SubscriptionId { get; set; }
         void OnNext(long? eventId, string dataJson);
         void OnCompleted();
         void OnError(Exception ex);
@@ -1072,6 +1077,10 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
         public SleipnirSubscriptionHandler(SleipnirSubscription<T> subscription) => _subscription = subscription;
 
         public long LastEventId => Interlocked.Read(ref _lastEventId);
+
+        // Written on the reader thread (ack), read by the handle's SubscriptionId getter.
+        private volatile string _subscriptionId = "";
+        public string SubscriptionId { get => _subscriptionId; set => _subscriptionId = value; }
 
         public void OnNext(long? eventId, string dataJson)
         {

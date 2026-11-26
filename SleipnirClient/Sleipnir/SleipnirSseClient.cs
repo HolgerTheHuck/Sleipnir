@@ -371,6 +371,7 @@ public sealed class SleipnirSseClient : SleipnirClientBase, ISleipnirClient, IDi
                         LastEventId = 0;
 
                     _subscription = new SleipnirSubscription<T>(ActiveId, UnsubscribeAsync, _abortCts.Token);
+                    _subscription.AttachCursor(() => ActiveId, () => Interlocked.Read(ref LastEventId));
                     Completion.TrySetResult(_subscription);
                 }
                 catch (Exception ex)

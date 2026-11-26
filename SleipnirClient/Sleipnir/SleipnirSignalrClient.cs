@@ -376,6 +376,7 @@ public class SleipnirSignalrClient : SleipnirClientBase, ISleipnirClient, IAsync
         public void PreResolve()
         {
             Subscription = new SleipnirSubscription<T>(SubscriptionId, UnsubscribeAsync, AbortCts!.Token);
+            Subscription.AttachCursor(() => SubscriptionId, () => Interlocked.Read(ref LastEventId));
             Completion.TrySetResult(Subscription);
         }
 
@@ -478,6 +479,7 @@ public class SleipnirSignalrClient : SleipnirClientBase, ISleipnirClient, IAsync
                         if (Subscription == null)
                         {
                             Subscription = new SleipnirSubscription<T>(SubscriptionId, UnsubscribeAsync, AbortCts!.Token);
+                            Subscription.AttachCursor(() => SubscriptionId, () => Interlocked.Read(ref LastEventId));
                             _owner._activeSubs[SubscriptionId] = this;
                             Completion.TrySetResult(Subscription);
                         }

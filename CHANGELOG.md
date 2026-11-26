@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.1] — 2026-11-26
+
+Both channels — NuGet lockstep and npm (`sleipnir-client`, `sleipnir-codegen`) at 1.10.1. The npm
+packages were not published for 1.10.0 (npm stayed at 1.9.0), so 1.10.1 is the first npm release
+of the 1.10 line and also carries everything from [1.10.0] for npm consumers.
+
 ### Added
 
 - **Resume on the generated clients** — for contracts with events, the generated TS/JS
@@ -21,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the durable server id (previously `internal`) and the live resume cursor (highest delivered event
   id, `0` = none), matching the TS `SleipnirSubscription`. Both follow the backend's state, so they
   stay current across reconnects and a degrade-to-fresh re-key.
+
+### Documentation
+
+- **Replay streams: create the stream when the job starts** — the `EVENTS_REFERENCE.md` §15
+  recipe created the stream in the background job, which races a client that subscribes right
+  after the start (`Observe` on an unknown key yields an empty, completed stream, so the page shows
+  a finished job without events). The recipe now creates it in the command that returns the id;
+  a new note covers matching `completedRetention` + `Remove` to an app's own job list.
 
 ## [1.10.0] — 2026-11-25
 

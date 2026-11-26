@@ -164,6 +164,7 @@ public static class Program
                 CreateNoWindow = true,
                 WorkingDirectory = repo.FullName,
             };
+            SleipnirTests.Fixtures.DotnetBuildIsolation.Apply(psi);
             using var p = Process.Start(psi)!;
             // Drain stdout/stderr concurrently with the process to avoid the pipe-buffer deadlock
             // (reading only after WaitForExit lets the child block on a full pipe).

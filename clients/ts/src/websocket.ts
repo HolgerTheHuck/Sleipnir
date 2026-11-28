@@ -307,6 +307,8 @@ export class SleipnirWebSocketClient {
 
   private _ws?: IWebSocket;
   private _connectPromise?: Promise<void>;
+  /** Monotonic per-client counter for library-default request ids (see {@link nextRequestId}). */
+  private _reqSeq = 0;
   private _pending = new Map<string, PendingCall>();
   private _pendingSubscribes = new Map<string, PendingSubscribe>();
   private _subscriptions = new Map<string, ActiveSubscription>();
@@ -391,19 +393,27 @@ export class SleipnirWebSocketClient {
 
   /** Sends a single request. */
   async call(req: SleipnirRequest, opts?: WsCallOptions): Promise<SleipnirResponse> {
-    if (!req.id) req.id = `${req.controller}.${req.method}`;
+    this.ensureRequestId(req);
     await this.connect();
     return this.sendAndAwait(req, false, opts) as Promise<SleipnirResponse>;
   }
 
-  /** Sends a batch (multi-request). Auto-fills empty ids. */
+  /**
+   * Sends a batch (multi-request). Auto-fills empty/library-default ids with unique ones, so two
+   * concurrent identical batches no longer collide on the shared `_pending` key (the key is the
+   * FIRST request's id, see `sendAndAwait(explicitKey)`). Caller-chosen explicit ids are kept —
+   * reusing an explicit id as the first element of two concurrent batches correlates them wrong
+   * (JSON-RPC semantics: the id is the caller's correlation handle).
+   */
   async callBatch(
     requests: SleipnirRequest[],
     mode: ExecutionMode = ExecutionMode.Parallel,
     opts?: WsCallOptions,
   ): Promise<SleipnirResponse[]> {
     const normalized = requests.map((r) =>
-      r.id ? r : { ...r, id: `${r.controller}.${r.method}` },
+      r.id && r.id !== `${r.controller}.${r.method}`
+        ? r
+        : { ...r, id: this.nextRequestId(r) },
     );
     await this.connect();
     const multi: SleipnirMultiRequest = { requests: normalized, mode };
@@ -435,7 +445,8 @@ export class SleipnirWebSocketClient {
    * `subscriptionId`.
    *
    * The request is built via {@link SleipnirCall} (`SleipnirCall.init(c,m).with({...})`);
-   * `subscribe` sets `kind:"subscribe"` and (if missing) an `id`. On auto-reconnect the
+   * `subscribe` sets `kind:"subscribe"` and (if missing or the builder default) a unique `id`. On
+   * auto-reconnect the
    * client automatically re-subscribes with the same request (a new `subscriptionId`,
    * the same `handlers`).
    *
@@ -458,8 +469,7 @@ export class SleipnirWebSocketClient {
     ref?: SubscriptionRef,
   ): Promise<SleipnirSubscription> {
     if (this._disposed) throw new Error("SleipnirWebSocketClient: disposed.");
-    if (!req.id) req.id = `${req.controller}.${req.method}`;
-    const id = req.id;
+    const id = this.ensureRequestId(req);
     await this.connect();
 
     const promise = this.registerPendingSubscribe(id, req, handlers, opts);
@@ -620,6 +630,25 @@ export class SleipnirWebSocketClient {
       url += `?access_token=${encodeURIComponent(token)}`;
     }
     return withContractQuery(url, this._contractHash);
+  }
+
+  /** Unique library-default request id (`Controller.Method#n`, monotonic per client counter). */
+  private nextRequestId(req: SleipnirRequest): string {
+    return `${req.controller}.${req.method}#${++this._reqSeq}`;
+  }
+
+  /**
+   * Fills the id needed to correlate the response — unless the caller chose one. Overwritten are
+   * the library's own defaults (missing, or the `buildSingle`/fluent-builder default
+   * `Controller.Method`): being identical for every call to the same method, they cannot
+   * discriminate concurrent requests, and two in-flight twins used to overwrite each other in
+   * `_pending` (first caller awaited until timeout, second got the first's answer). Caller-chosen
+   * ids are kept intact (JSON-RPC semantics: the id is the caller's correlation handle).
+   * Returns the effective id (typed string, unlike reading `req.id` back).
+   */
+  private ensureRequestId(req: SleipnirRequest): string {
+    if (!req.id || req.id === `${req.controller}.${req.method}`) req.id = this.nextRequestId(req);
+    return req.id as string;
   }
 
   private sendAndAwait(

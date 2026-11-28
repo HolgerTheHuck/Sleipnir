@@ -336,9 +336,11 @@ await rest.call("C", "M", { id: 1 }, { signal: ac.signal, timeout: 5_000 }); // 
   `SleipnirOptions.AcceptAccessTokenQuery = true` (server ≥ 1.5.0-preview; WS upgrade + SSE only,
   stripped from logged query strings). Cookie authentication remains the recommended browser
   path. Node with `ws` sends the header. See `TRANSPORT_REFERENCE.md` §7.
-- **Batch `id` collisions:** concurrent batches whose first request shares the same `id`
-  (default `Controller.Method`) collide on correlation. Set explicit, unique `id`s via
-  `.named(...)` for concurrent batches (same constraint as the C# client).
+- **Batch `id` collisions (explicit ids only):** auto-filled request ids are unique per
+  connection (`Controller.Method#n`), so two concurrent identical calls, batches or subscribes
+  no longer collide on the pending-request key. Only caller-chosen explicit `id`s must stay
+  unique per connection: two concurrent batches sharing an explicit first `id` still correlate
+  wrong (the id is the caller's correlation handle — JSON-RPC semantics).
 
 ## Development
 

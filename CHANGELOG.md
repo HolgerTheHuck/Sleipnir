@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **WebSocket request-id collision on concurrent identical calls (TS + C# clients)** — the library
+  default request id `Controller.Method` (what `SleipnirCall.ToRequest()` / `buildSingle` emit when
+  no id is chosen) was identical for every call to the same method. Over the WebSocket transport,
+  two concurrent identical calls, batches or subscribes therefore shared one pending-correlation
+  key: the second write dropped the first, so the first caller waited until the call timeout while
+  the second received the first's answer and the second response frame was discarded
+  ("no matching pending request … Dropping"). Both clients now replace a missing id **or** the
+  library default with a unique id per connection (TS: `Controller.Method#n` via a per-client
+  counter, for calls, batch members and subscribes; C#: `NextId()` in the WS send path). The
+  readable `Controller.Method` form stays as the prefix. Caller-chosen explicit ids are kept
+  (JSON-RPC semantics: the id is the caller's correlation handle), so two concurrent batches
+  sharing an explicit first id still correlate wrong — both READMEs now state that constraint.
+  The SignalR TS client (which had the same default but no id-keyed pending map — SignalR
+  correlates invokes and streams itself) also emits unique ids now. No wire-contract change: the
+  server echoes the request id verbatim. Regression tests on both sides (vitest: calls, builder
+  default, batches, subscribes; xUnit: `SleipnirWebSocketClientCorrelationTests` against an
+  in-process Kestrel echo server).
+
 ## [1.10.1] — 2026-11-26
 
 Both channels — NuGet lockstep and npm (`sleipnir-client`, `sleipnir-codegen`) at 1.10.1. The npm

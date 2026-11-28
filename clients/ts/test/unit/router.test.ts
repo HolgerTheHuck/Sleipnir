@@ -317,12 +317,13 @@ describe("SleipnirTransportRouter — subscribe routing", () => {
     // Wait for the subscribe frame to be sent (pending request is registered alongside it)
     // before delivering the server response — otherwise the response arrives too early.
     await vi.waitFor(() => expect(ref.ws!.sent.length).toBeGreaterThan(0));
-    // Server sends the subscribe response with the subscriptionId.
-    ref.ws!.fireMessage(JSON.stringify({ code: 200, data: { subscriptionId: "WS1" }, id: "Ticker.Ticks" }));
+    const sent = ref.ws!.sent.map((s) => JSON.parse(s));
+    // Server sends the subscribe response with the subscriptionId — the id echoes the request id
+    // (the client replaced the builder default `Ticker.Ticks` with a unique `Ticker.Ticks#n`).
+    ref.ws!.fireMessage(JSON.stringify({ code: 200, data: { subscriptionId: "WS1" }, id: sent[0].id }));
     const sub = await subP;
     expect(sub.subscriptionId).toBe("WS1");
     // The WS subscribe frame carries kind:"subscribe" + the request fields.
-    const sent = ref.ws!.sent.map((s) => JSON.parse(s));
     expect(sent.some((f) => f.kind === "subscribe" && f.controller === "Ticker")).toBe(true);
     r.dispose();
   });
@@ -388,7 +389,10 @@ describe("SleipnirTransportRouter — cross-transport resume (WS → SSE)", () =
     await vi.waitFor(() => expect(ref.ws).toBeDefined());
     ref.ws!.fireOpen();
     await vi.waitFor(() => expect(ref.ws!.sent.length).toBeGreaterThan(0));
-    ref.ws!.fireMessage(JSON.stringify({ code: 200, data: { subscriptionId: "WS1" }, id: "Ticker.Ticks" }));
+    // id echoes the request id (the client replaced the builder default with a unique suffix).
+    ref.ws!.fireMessage(
+      JSON.stringify({ code: 200, data: { subscriptionId: "WS1" }, id: JSON.parse(ref.ws!.sent[0]).id }),
+    );
     const sub = await subP;
     expect(sub.subscriptionId).toBe("WS1");
     expect(sub.lastEventId).toBe(0);

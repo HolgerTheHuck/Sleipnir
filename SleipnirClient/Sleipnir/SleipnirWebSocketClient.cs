@@ -255,13 +255,24 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
         return $"ws-{n}-{Guid.NewGuid():N}";
     }
 
+    /// <summary>
+    /// True when the request id is missing — or the <see cref="SleipnirCall"/> builder default
+    /// "{controller}.{method}", which is identical for every call to the same method and cannot
+    /// discriminate concurrent requests. Such ids are replaced by <see cref="NextId"/> before
+    /// correlation, or two in-flight twins overwrite each other in _pendingRequests (the first
+    /// caller awaits until timeout while the second receives the first's answer). Caller-chosen
+    /// explicit ids are kept (the id is the caller's correlation handle).
+    /// </summary>
+    private static bool IsCorrelationDeadId(SleipnirRequest r)
+        => string.IsNullOrEmpty(r.Id) || r.Id == $"{r.Controller}.{r.Method}";
+
     private async Task<T?> SendAndAwaitResponseAsync<T>(object payload, CancellationToken ct)
     {
         // Assign a unique ID to the request for correlation
         string requestId;
         if (payload is SleipnirRequest hr)
         {
-            requestId = string.IsNullOrEmpty(hr.Id) ? NextId() : hr.Id;
+            requestId = IsCorrelationDeadId(hr) ? NextId() : hr.Id!;
             hr.Id = requestId;
         }
         else if (payload is SleipnirMultiRequest mr)
@@ -277,7 +288,7 @@ public class SleipnirWebSocketClient : SleipnirClientBase, ISleipnirClient, IAsy
             {
                 foreach (var r in mr.Requests)
                 {
-                    if (string.IsNullOrEmpty(r.Id))
+                    if (IsCorrelationDeadId(r))
                         r.Id = NextId();
                 }
             }

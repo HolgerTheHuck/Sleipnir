@@ -26,7 +26,7 @@ live in [`samples/csharp/`](../samples/csharp).
 ## Install
 
 ```xml
-<PackageReference Include="Sleipnir.Client" Version="1.10.1" />
+<PackageReference Include="Sleipnir.Client" Version="1.10.2" />
 ```
 
 The package targets `net8.0` and `net10.0` (runs on .NET 8+). It brings `MessagePack` and the
@@ -338,9 +338,11 @@ The WebSocket client additionally links its `callTimeout` with the caller's toke
   uploads.
 - **`byte[]` parameters bind first-match-only.** A method with more than one
   `byte[]` parameter receives `binaryData` in only the first.
-- **Batch `id` collisions.** Concurrent batches whose first request shares the same
-  `id` (default `Controller.Method`) collide on correlation. Set explicit, unique
-  `id`s via `.Named(...)` for concurrent batches (same constraint as the TS client).
+- **Batch `id` collisions (explicit ids only).** Auto-filled request ids are unique
+  per connection (`NextId()`), so concurrent identical batches do not collide. Only
+  caller-chosen explicit `id`s must stay unique per connection: two concurrent batches
+  sharing an explicit first `id` still correlate wrong (JSON-RPC semantics: the id is
+  the caller's correlation handle).
 - **WebSocket auth has no ctor convenience.** Inject a pre-configured
   `ClientWebSocket` (or `socketFactory`) with the header set.
 - **`IAsyncEnumerable<T>` call results are materialized.** A method returning

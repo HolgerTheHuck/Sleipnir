@@ -268,6 +268,8 @@ export class SleipnirSignalrClient {
   /** Active subscriptions keyed by an internal id (NOT the server subscriptionId, which can change). */
   private readonly _subs = new Map<number, ActiveSubscription<unknown>>();
   private _subSeq = 0;
+  /** Monotonic counter for library-default subscribe request ids (parity with the WS transport). */
+  private _reqSeq = 0;
   private readonly _onStateChanged?: (state: SleipnirConnectionState) => void;
   private _state: SleipnirConnectionState = SleipnirConnectionState.Disconnected;
 
@@ -478,7 +480,13 @@ export class SleipnirSignalrClient {
     opts?: SignalrSubscribeOptions,
   ): Promise<SleipnirSubscription> {
     if (this._disposed) throw new Error("SleipnirSignalrClient: disposed.");
-    if (!req.id) req.id = `${req.controller}.${req.method}`;
+    // Library default → unique id (parity with the WS transport). SignalR itself correlates invokes
+    // and streams (no client-side id map), but the request id rides the wire into the subscribe
+    // path (the server echoes it on the ack), so the readable `Controller.Method` default is kept
+    // only as the prefix — never as a shared key.
+    if (!req.id || req.id === `${req.controller}.${req.method}`) {
+      req.id = `${req.controller}.${req.method}#${++this._reqSeq}`;
+    }
     await this.connect();
     return this.openStream<T>(req, handlers, false, "", 0, opts);
   }

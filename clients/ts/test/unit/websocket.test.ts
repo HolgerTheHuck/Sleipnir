@@ -96,6 +96,85 @@ describe("SleipnirWebSocketClient", () => {
     ]);
   });
 
+  // --- Regression: shared pending key `Controller.Method` (unique correlation ids) ---
+
+  it("two concurrent identical auto-id calls get unique correlation ids (no pending collision)", async () => {
+    const { client, ref } = makeClient();
+    // Both twins go out without an id (and the builder default id is the readable form) — the
+    // regression: the shared key `Projects.ListProjects` let the second `_pending.set` drop the
+    // first, so a got the second's answer and b waited until timeout ("Dropping" on the server
+    // frame that came back for it).
+    const a = client.call({ controller: "Projects", method: "ListProjects", params: [] });
+    const b = client.call({ controller: "Projects", method: "ListProjects", params: [] });
+    ref.ws!.fireOpen();
+    await vi.waitFor(() => expect(ref.ws!.sent.length).toBe(2), { interval: 1, timeout: 1000 });
+    const fa = JSON.parse(ref.ws!.sent[0]);
+    const fb = JSON.parse(ref.ws!.sent[1]);
+    expect(fa.id).toBe("Projects.ListProjects#1"); // readable prefix, unique per-client suffix
+    expect(fb.id).toBe("Projects.ListProjects#2");
+    // Answers in reverse order — every caller must receive its own result.
+    ref.ws!.fireMessage(resp(fa.id, "v-first"));
+    ref.ws!.fireMessage(resp(fb.id, "v-second"));
+    const [ra, rb] = await Promise.all([a, b]);
+    expect(ra.data).toBe("v-first");
+    expect(rb.data).toBe("v-second");
+    client.dispose();
+  });
+
+  it("replaces the builder default id `Controller.Method` but keeps caller-chosen explicit ids", async () => {
+    const { client, ref } = makeClient();
+    // `id:"C.M"` is exactly the buildSingle/SleipnirCall default — it must be replaced like a
+    // missing id, or two builder-built concurrent calls to the same method still collide.
+    const a = client.call({ controller: "C", method: "M", params: [], id: "C.M" });
+    const b = client.call({ controller: "C", method: "M", params: [] });
+    ref.ws!.fireOpen();
+    await vi.waitFor(() => expect(ref.ws!.sent.length).toBe(2), { interval: 1, timeout: 1000 });
+    const [fa, fb] = ref.ws!.sent.map((s) => JSON.parse(s));
+    expect(fa.id).toBe("C.M#1");
+    expect(fb.id).toBe("C.M#2");
+    ref.ws!.fireMessage(resp(fa.id, "x"));
+    ref.ws!.fireMessage(resp(fb.id, "y"));
+    const [ra, rb] = await Promise.all([a, b]);
+    expect(ra.data).toBe("x");
+    expect(rb.data).toBe("y");
+
+    // A caller-chosen id is the caller's correlation handle — untouched (JSON-RPC semantics).
+    const chosen = client.call({ controller: "C", method: "M", params: [], id: "my-call-42" });
+    await vi.waitFor(() => expect(ref.ws!.sent.length).toBe(3), { interval: 1, timeout: 1000 });
+    const f = JSON.parse(ref.ws!.sent[2]);
+    expect(f.id).toBe("my-call-42");
+    ref.ws!.fireMessage(resp(f.id, "z"));
+    expect((await chosen).data).toBe("z");
+    client.dispose();
+  });
+
+  it("two concurrent identical batches get unique keys and each resolves with its own response array", async () => {
+    const { client, ref } = makeClient();
+    const mkBatch = () => [
+      { controller: "Projects", method: "ListProjects", params: [] },
+      { controller: "Projects", method: "GetNames", params: [] },
+    ];
+    const batchA = client.callBatch(mkBatch());
+    const batchB = client.callBatch(mkBatch());
+    ref.ws!.fireOpen();
+    await vi.waitFor(() => expect(ref.ws!.sent.length).toBe(2), { interval: 1, timeout: 1000 });
+    const fa = JSON.parse(ref.ws!.sent[0]);
+    const fb = JSON.parse(ref.ws!.sent[1]);
+    // Every auto-filled member id is unique — including ACROSS the two batches (the batch
+    // correlates via the FIRST element's id, so that is the pending key).
+    const idsA = fa.requests.map((r: { id: string }) => r.id);
+    const idsB = fb.requests.map((r: { id: string }) => r.id);
+    expect(new Set([...idsA, ...idsB]).size).toBe(4);
+    expect(idsA[0]).toBe("Projects.ListProjects#1");
+    expect(idsB[0]).toBe("Projects.ListProjects#3"); // seq continues past batch A's members
+    ref.ws!.fireMessage(JSON.stringify([{ code: 200, id: idsA[0], data: "rA", isSuccess: true }]));
+    ref.ws!.fireMessage(JSON.stringify([{ code: 200, id: idsB[0], data: "rB", isSuccess: true }]));
+    const [ra, rb] = await Promise.all([batchA, batchB]);
+    expect(ra[0].data).toBe("rA");
+    expect(rb[0].data).toBe("rB");
+    client.dispose();
+  });
+
   it("setzt den Bearer beim Connect (Browser-Pfad: ?access_token= in der URL)", async () => {
     const { client, ref } = makeClient({ bearer: "tok" });
     const p = client.connect();
@@ -368,6 +447,45 @@ describe("SleipnirWebSocketClient — Phase 3 subscribe", () => {
     return JSON.stringify({ type: "error", subscriptionId: sid, message });
   }
   const tick = () => new Promise<void>((r) => setTimeout(r, 10));
+
+  // Regression: shared pending key `Controller.Method`. The `_pendingSubscribes` key was the
+  // library default id, so the second twin overwrote the first — the first subscribe promise
+  // never resolved (neither resolve nor reject) and the second ack frame was "Dropped".
+  it("two concurrent identical auto-id subscribes both resolve and route their own frames", async () => {
+    const { client, ref } = makeClient();
+    const seenA: number[] = [];
+    const seenB: number[] = [];
+    const pa = client.subscribe<number>(
+      { controller: "Tickets", method: "TicketChanged", params: [] },
+      { onNext: (n) => seenA.push(n) },
+    );
+    const pb = client.subscribe<number>(
+      { controller: "Tickets", method: "TicketChanged", params: [] },
+      { onNext: (n) => seenB.push(n) },
+    );
+    const ws = ref.ws!;
+    ws.fireOpen();
+    await vi.waitFor(() => expect(ws.sent.length).toBe(2), { interval: 1, timeout: 1000 });
+    const fa = JSON.parse(ws.sent[0]);
+    const fb = JSON.parse(ws.sent[1]);
+    expect(fa.kind).toBe("subscribe");
+    expect(fa.id).toBe("Tickets.TicketChanged#1");
+    expect(fb.id).toBe("Tickets.TicketChanged#2");
+    ws.fireMessage(subResp(fa.id, "sid-a"));
+    ws.fireMessage(subResp(fb.id, "sid-b"));
+    const [sa, sb] = await Promise.all([pa, pb]);
+    expect(sa.subscriptionId).toBe("sid-a");
+    expect(sb.subscriptionId).toBe("sid-b");
+    // Each handle routes exactly its own subscription's frames.
+    ws.fireMessage(eventFrame("sid-a", 1));
+    await vi.waitFor(() => expect(seenA).toEqual([1]), { interval: 1, timeout: 1000 });
+    ws.fireMessage(eventFrame("sid-b", 2));
+    await vi.waitFor(() => expect(seenB).toEqual([2]), { interval: 1, timeout: 1000 });
+    await tick();
+    expect(seenA).toEqual([1]); // no leakage from sid-b
+    expect(seenB).toEqual([2]); // no leakage from sid-a
+    client.dispose();
+  });
 
   it("subscribe sends kind:\"subscribe\", resolves the subscriptionId, and routes event frames to onNext", async () => {
     const { client, ref } = makeClient();
